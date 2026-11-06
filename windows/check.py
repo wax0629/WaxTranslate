@@ -128,8 +128,10 @@ class Checks(unittest.TestCase):
 
         try:
             self.assertEqual(window.registered, [1, 2], "Close other WaxTranslate instances before this check.")
+            self.assertTrue(QTest.qWaitForWindowExposed(sample), "Sample window was never exposed")
             trigger(1)
-            wait_until(lambda: window.card.caption.text() == "句中释义")
+            wait_until(lambda: window.card.isVisible() and window.card.caption.text() not in ("", "本机英译中"))
+            self.assertEqual(window.card.caption.text(), "句中释义")
             self.assertIn("岸", window.card.text.toPlainText())
             QTest.keyClick(window.card, Qt.Key_Escape)
             self.assertFalse(window.card.isVisible())
