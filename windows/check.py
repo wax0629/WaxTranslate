@@ -158,7 +158,6 @@ class Checks(unittest.TestCase):
         metrics = sample.fontMetrics()
         point = sample.mapToGlobal(QPoint(16 + metrics.horizontalAdvance(RIVER.split("bank")[0] + "ba"),
                                           sample.height() // 2))
-        QCursor.setPos(point)
         user = ctypes.windll.user32
         ctrl = 0xA2
         copies = []
@@ -168,6 +167,14 @@ class Checks(unittest.TestCase):
         def key(code, down):
             user.keybd_event(code, user.MapVirtualKeyW(code, 0), 0 if down else 2, 0)
 
+        def move_cursor(global_point):
+            screen = sample.screen()
+            origin = screen.geometry().topLeft()
+            native = origin + (global_point - origin) * screen.devicePixelRatio()
+            x, y, w, h = (user.GetSystemMetrics(metric) for metric in (76, 77, 78, 79))
+            user.mouse_event(0xC001, round((native.x() - x) * 65535 / (w - 1)),
+                             round((native.y() - y) * 65535 / (h - 1)), 0, 0)
+
         def focus_sample():
             sample.raise_()
             sample.activateWindow()
@@ -175,18 +182,24 @@ class Checks(unittest.TestCase):
 
         def begin_drag():
             focus_sample()
-            QCursor.setPos(sample.mapToGlobal(sample.rect().bottomRight() - QPoint(4, 4)))
+            move_cursor(sample.mapToGlobal(sample.rect().bottomRight() - QPoint(4, 4)))
             key(ctrl, True)
             user.mouse_event(2, 0, 0, 0, 0)
             wait_until(lambda: window.gestures.owns_button)
-            QCursor.setPos(sample.mapToGlobal(QPoint(4, 4)))
-            user.mouse_event(1, 0, 0, 0, 0)  # move at the new cursor position
-            wait_until(lambda: window.overlay is not None)
+            move_cursor(sample.mapToGlobal(QPoint(4, 4)))
+            try:
+                wait_until(lambda: window.overlay is not None)
+            except AssertionError as error:
+                state = window.gestures
+                self.fail(f"{error}: ctrl={state.ctrl_down}, origin={state.origin}, "
+                          f"owns_button={state.owns_button}, dragging={state.dragging}, "
+                          f"cursor={QCursor.pos()}, card={window.card.caption.text()}")
 
         try:
             self.assertIsNone(window.gestures.error)
             self.assertTrue(QTest.qWaitForWindowExposed(sample), "Sample window was never exposed")
             focus_sample()
+            move_cursor(point)
             previous_ticket = window.ticket
             key(ctrl, True)
             key(ord("C"), True)
@@ -206,7 +219,7 @@ class Checks(unittest.TestCase):
             key(ctrl, False)
             wait_until(lambda: window.ticket != previous_ticket)
             # Moving after the shortcut must not retarget the delayed capture.
-            QCursor.setPos(sample.mapToGlobal(QPoint(5, 5)))
+            move_cursor(sample.mapToGlobal(QPoint(5, 5)))
             wait_until(lambda: window.card.isVisible() and window.card.caption.text() not in ("", "本机英译中"))
             self.assertEqual(window.card.caption.text(), "句中释义")
             self.assertIn("岸", window.card.text.toPlainText())
