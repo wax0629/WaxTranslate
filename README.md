@@ -1,8 +1,8 @@
-# 啄读 · Peekfinch
+# WaxTranslate · Wax 翻译
 
 在 Mac 上读外文时，把鼠标停在生词上，按 **⌥⇧T**，就能看到它在这句话里的意思。比如同一个 `bank`，在河边看水的句子里显示「岸边」，在存工资的句子里显示「银行」。浮窗里可以对照原句和整句译文，也可以把这个词连同语境存下来复习。
 
-Peekfinch 使用 Vision 在本机识字，使用 Apple 翻译处理句子，支持 macOS 15.2 及以上。目前安装的应用名为 `waxtranlate`。
+WaxTranslate 是 macOS 菜单栏里的悬停翻译工具，使用 Vision 在本机识字，使用 Apple 翻译处理句子，支持 macOS 15.2 及以上。当前开发版的应用文件名为 `waxtranlate.app`。
 
 ## 安装和运行
 
