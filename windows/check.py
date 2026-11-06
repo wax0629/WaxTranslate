@@ -2,6 +2,7 @@
 
 import asyncio
 import ctypes
+import faulthandler
 import os
 import sys
 import time
@@ -242,6 +243,10 @@ class Checks(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    if DESKTOP:
+        # A native input stall can block the event loop itself, bypassing
+        # wait_until's timeout. Preserve the stack in the runner log.
+        faulthandler.dump_traceback_later(75, exit=True)
     app = QApplication([])
     if not DESKTOP:
         # Qt's offscreen plugin has no system font database on Windows.
