@@ -31,8 +31,28 @@ enum SentenceContext {
         let slice = paragraph[bounds].drop(while: { $0.isWhitespace })
         let context = String(slice).trimmingCharacters(in: .whitespacesAndNewlines)
         let offset = wordOffset - slice.startIndex.utf16Offset(in: paragraph)
-        return Passage(text: word, context: context, selection: NSRange(location: offset, length: wordRange.length))
+        let hit = NSRange(location: offset, length: wordRange.length)
+        let token = Passage(text: word, context: context, selection: hit)
+        let sentenceRange = NSRange(context.startIndex..., in: context)
+        guard let match = englishPhrases.matches(in: context, range: sentenceRange).first(where: {
+            NSIntersectionRange($0.range, hit) == hit
+        }), token.sourceLanguage == "en", let range = Range(match.range, in: context) else { return token }
+        return Passage(text: String(context[range]), context: context, selection: match.range, anchor: hit)
     }
+
+    // Match only contiguous expressions, including ordinary inflections. Keep the
+    // actual spelling for display and exclude fragments of hyphenated compounds.
+    private static let englishPhrases = try! NSRegularExpression(
+        pattern: #"""
+            (?<![\w‐‑-])
+            (?:
+                (?:rule|rules|ruled|ruling)    \h+ out
+              | (?:run|runs|ran|running)       \h+ out \h+ of
+              | (?:look|looks|looked|looking)  \h+ up
+            )
+            (?![\w‐‑-])
+            """#,
+        options: [.caseInsensitive, .allowCommentsAndWhitespace])
 
     private static func neighbors(from anchor: Int, in lines: [TextLine], upward: Bool) -> [Int] {
         var result: [Int] = []
