@@ -2,6 +2,7 @@
 
 import ctypes
 from ctypes import wintypes as wt
+from threading import Event, Thread, get_native_id
 
 from PySide6.QtCore import QObject, Signal
 
@@ -12,6 +13,7 @@ REGION_HINT = "按住左 Ctrl，左键拖动"
 WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP = 0x200, 0x201, 0x202
 VK_LCONTROL, VK_ESCAPE = 0xA2, 0x1B
 REPLAY_TAG = 0x57585452
+REPLAY_CLICK = 0x8001  # private message on the hook thread
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 HookProc = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, ctypes.c_int, wt.WPARAM, wt.LPARAM)
@@ -23,6 +25,8 @@ user32.UnhookWindowsHookEx.argtypes = (wt.HANDLE,)
 user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
 user32.GetAsyncKeyState.restype = ctypes.c_short
 user32.GetCursorPos.argtypes = (ctypes.POINTER(wt.POINT),)
+user32.GetMessageW.argtypes = (ctypes.POINTER(wt.MSG), wt.HWND, wt.UINT, wt.UINT)
+user32.PostThreadMessageW.argtypes = (wt.DWORD, wt.UINT, wt.WPARAM, wt.LPARAM)
 
 
 class MouseEvent(ctypes.Structure):
@@ -60,18 +64,40 @@ class CtrlGestures(QObject):
         self.keyboard_proc = HookProc(self.keyboard)
         self.mouse_proc = HookProc(self.mouse)
         self.error = None
-        for kind, proc in ((13, self.keyboard_proc), (14, self.mouse_proc)):
-            handle = user32.SetWindowsHookExW(kind, proc, None, 0)
-            if not handle:
-                self.error = ctypes.get_last_error()
-                self.stop()
-                break
-            self.handles.append(handle)
+        self.ready = Event()
+        self.thread = Thread(target=self.listen, name="Ctrl gestures", daemon=True)
+        self.thread.start()
+        self.ready.wait()
+
+    def listen(self):
+        self.thread_id = get_native_id()
+        message = wt.MSG()
+        # Establish a queue before advertising readiness or accepting WM_QUIT.
+        user32.PeekMessageW(ctypes.byref(message), None, 0, 0, 0)
+        try:
+            for kind, proc in ((13, self.keyboard_proc), (14, self.mouse_proc)):
+                handle = user32.SetWindowsHookExW(kind, proc, None, 0)
+                if not handle:
+                    self.error = ctypes.get_last_error()
+                    return
+                self.handles.append(handle)
+            self.ready.set()
+            while user32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
+                if message.message == REPLAY_CLICK:
+                    pair = (Input * 2)(Input(mouse=MouseInput(flags=2, extra=REPLAY_TAG)),
+                                       Input(mouse=MouseInput(flags=4, extra=REPLAY_TAG)))
+                    if user32.SendInput(2, pair, ctypes.sizeof(Input)) == 1:
+                        user32.SendInput(1, ctypes.byref(pair[1]), ctypes.sizeof(Input))
+        finally:
+            for handle in self.handles:
+                user32.UnhookWindowsHookEx(handle)
+            self.handles.clear()
+            self.ready.set()
 
     def stop(self):
-        for handle in self.handles:
-            user32.UnhookWindowsHookEx(handle)
-        self.handles.clear()
+        if self.thread.is_alive():
+            user32.PostThreadMessageW(self.thread_id, 0x12, 0, 0)  # WM_QUIT
+            self.thread.join()
 
     def cancel(self):
         self.armed = False
@@ -131,10 +157,7 @@ class CtrlGestures(QObject):
             elif self.origin is not None:
                 # Replay a plain Ctrl+click to its foreground app. The tag keeps
                 # this pair out of our own recognizer.
-                pair = (Input * 2)(Input(mouse=MouseInput(flags=2, extra=REPLAY_TAG)),
-                                   Input(mouse=MouseInput(flags=4, extra=REPLAY_TAG)))
-                if user32.SendInput(2, pair, ctypes.sizeof(Input)) == 1:
-                    user32.SendInput(1, ctypes.byref(pair[1]), ctypes.sizeof(Input))
+                user32.PostThreadMessageW(self.thread_id, REPLAY_CLICK, 0, 0)
             self.dragging = False
             self.origin = None
             return True
