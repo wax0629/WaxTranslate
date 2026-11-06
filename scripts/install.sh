@@ -7,9 +7,10 @@ mkdir -p "$apps"
 stage="$(mktemp -d "$apps/.waxtranlate-install.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 bundle="$stage/waxtranlate.app"
-mkdir -p "$bundle/Contents/MacOS"
+mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 install -m 755 "$(swift build -c release --show-bin-path)/waxtranlate" "$bundle/Contents/MacOS/waxtranlate"
 cp Info.plist "$bundle/Contents/Info.plist"
+./scripts/build-icon.sh Assets/Brand/wax-icon.png "$bundle/Contents/Resources/AppIcon.icns"
 /usr/bin/python3 scripts/sign-local.py "$bundle" "$apps/waxtranlate.app"
 
 swift - "$bundle" "$apps/waxtranlate.app" "$apps/浮光译.app" <<'SWIFT'
