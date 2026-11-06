@@ -16,6 +16,8 @@
 
 ## 验收与交付
 
+- 所负责的 PR 检查通过且评审意见已处理后，由开发代理自行合并。串联 PR 按依赖关系合并，最后核对改动已进入默认分支，并更新关联 issue。
+
 - Windows 安装开发环境用 `windows\setup.cmd`。日常运行 `.venv\Scripts\python.exe windows\check.py -v`，在后台检查真实 OCR、翻译和缩放坐标。
 - Windows 桌面回归优先用 PR 的独立 Windows runner。`--desktop` 会显示窗口、全屏遮罩、移动鼠标并发送快捷键。在用户桌面运行前先在聊天说明影响并获得同意，再退出已运行的开发版，执行 `.venv\Scripts\python.exe windows\check.py --desktop -v`。
 - macOS 在满足 README 工具链要求的 Mac 上运行 `./scripts/check.sh`。修改安装或签名逻辑时，另行验证覆盖安装和权限。
