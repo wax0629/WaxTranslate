@@ -22,7 +22,8 @@ def check(root):
     user.FindWindowW.argtypes = (wt.LPCWSTR, wt.LPCWSTR)
     user.FindWindowW.restype = wt.HWND
     user.IsIconic.argtypes = (wt.HWND,)
-    user.ShowWindow.argtypes = (wt.HWND, ctypes.c_int)
+    user.IsWindowVisible.argtypes = (wt.HWND,)
+    user.PostMessageW.argtypes = (wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM)
     user.GetWindowThreadProcessId.argtypes = (wt.HWND, ctypes.POINTER(wt.DWORD))
     kernel = ctypes.windll.kernel32
     kernel.OpenProcess.argtypes = (wt.DWORD, wt.BOOL, wt.DWORD)
@@ -33,11 +34,17 @@ def check(root):
     title = "我靠翻译 · WaxTranslate"
     assert not user.FindWindowW(None, title), "Only run this check on an isolated desktop"
     subprocess.run([exe], check=True)
-    window = wait_for(lambda: user.FindWindowW(None, title))
+    def visible_main():
+        window = user.FindWindowW(None, title)
+        return window if window and user.IsWindowVisible(window) else None
+
+    # Qt creates the HWND during construction, before showing the main window.
+    # Wait until that first show has happened before sending a minimize request.
+    window = wait_for(visible_main)
     pid = wt.DWORD()
     user.GetWindowThreadProcessId(window, ctypes.byref(pid))
     try:
-        user.ShowWindow(window, 6)  # SW_MINIMIZE
+        assert user.PostMessageW(window, 0x0112, 0xF020, 0)  # WM_SYSCOMMAND / SC_MINIMIZE
         wait_for(lambda: user.IsIconic(window))
         subprocess.run([exe], check=True)
         wait_for(lambda: not user.IsIconic(window))
