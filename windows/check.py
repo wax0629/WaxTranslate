@@ -33,12 +33,12 @@ def word_in(text):
 
 
 def wait_until(predicate):
-    deadline = time.monotonic() + 12
+    deadline = time.monotonic() + 30
     while not predicate():
-        QApplication.processEvents()
-        time.sleep(0.015)
         if time.monotonic() >= deadline:
             raise AssertionError("Timed out waiting for desktop state")
+        QApplication.processEvents()
+        time.sleep(0.015)
 
 
 class Checks(unittest.TestCase):
@@ -136,7 +136,14 @@ class Checks(unittest.TestCase):
     @unittest.skipUnless(DESKTOP, "use --desktop with an unlocked Windows desktop")
     def test_desktop_flow(self):
         previous = QCursor.pos()
-        window = Window()
+        gestures = []
+
+        class TestWindow(Window):
+            def on_gesture(self, action, origin, end):
+                gestures.append((action, origin, end))
+                super().on_gesture(action, origin, end)
+
+        window = TestWindow()
         clicks = []
 
         class Sample(QLabel):
@@ -185,18 +192,12 @@ class Checks(unittest.TestCase):
             move_cursor(sample.mapToGlobal(sample.rect().bottomRight() - QPoint(4, 4)))
             key(ctrl, True)
             user.mouse_event(2, 0, 0, 0, 0)
-            wait_until(lambda: window.gestures.owns_button)
             move_cursor(sample.mapToGlobal(QPoint(4, 4)))
-            try:
-                wait_until(lambda: window.overlay is not None)
-            except AssertionError as error:
-                state = window.gestures
-                self.fail(f"{error}: ctrl={state.ctrl_down}, origin={state.origin}, "
-                          f"owns_button={state.owns_button}, dragging={state.dragging}, "
-                          f"cursor={QCursor.pos()}, card={window.card.caption.text()}")
+            wait_until(lambda: window.overlay is not None)
 
         try:
-            self.assertIsNone(window.gestures.error)
+            wait_until(lambda: window.gesture_ready or not window.gesture_warning.isHidden())
+            self.assertTrue(window.gesture_ready, window.gesture_warning.text())
             self.assertTrue(QTest.qWaitForWindowExposed(sample), "Sample window was never exposed")
             focus_sample()
             move_cursor(point)
@@ -205,14 +206,13 @@ class Checks(unittest.TestCase):
             key(ord("C"), True)
             key(ord("C"), False)
             key(ctrl, False)
-            wait_until(lambda: copies and not window.gestures.ctrl_down)
+            wait_until(lambda: bool(copies))
             key(ctrl, True)
             user.mouse_event(2, 0, 0, 0, 0)
             user.mouse_event(4, 0, 0, 0, 0)
             wait_until(lambda: bool(clicks))
             self.assertEqual(clicks, [Qt.ControlModifier])
             key(ctrl, False)
-            wait_until(lambda: not window.gestures.ctrl_down)
             app.processEvents()
             self.assertEqual(window.ticket, previous_ticket, "Ctrl chord or Ctrl+click opened a card")
             key(ctrl, True)
@@ -243,14 +243,17 @@ class Checks(unittest.TestCase):
             wait_until(lambda: window.pending.done())
             app.processEvents()
             self.assertFalse(window.card.isVisible(), "A dismissed request reopened its card")
+        except AssertionError as error:
+            future = window.pending
+            self.fail(f"{error}; recent gestures={gestures[-8:]}, ticket={window.ticket}, "
+                      f"card=({window.card.isVisible()}, {window.card.caption.text()!r}), "
+                      f"worker={future}, overlay={window.overlay is not None}")
         finally:
-            if window.gestures.owns_button:
-                key(0x1B, True)
-                key(0x1B, False)
-                user.mouse_event(4, 0, 0, 0, 0)
-            if window.gestures.ctrl_down:
-                key(ctrl, False)
             window.shutdown()
+            if user.GetAsyncKeyState(1) & 0x8000:
+                user.mouse_event(4, 0, 0, 0, 0)
+            if user.GetAsyncKeyState(ctrl) & 0x8000:
+                key(ctrl, False)
             sample.close()
             QCursor.setPos(previous)
 

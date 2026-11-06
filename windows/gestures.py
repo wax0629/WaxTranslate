@@ -1,10 +1,11 @@
-"""Global left-Ctrl tap and drag gestures for the Windows Qt message loop."""
+"""Win32 input listener, run as a child of the UI process."""
 
 import ctypes
 from ctypes import wintypes as wt
-from threading import Event, Thread, get_native_id
-
-from PySide6.QtCore import QObject, Signal
+import json
+from queue import SimpleQueue
+import sys
+from threading import Thread, get_native_id
 
 
 LOOKUP_HINT = "轻按左 Ctrl"
@@ -47,13 +48,8 @@ class Input(ctypes.Structure):
 user32.SendInput.argtypes = (wt.UINT, ctypes.POINTER(Input), ctypes.c_int)
 
 
-class CtrlGestures(QObject):
-    # Coordinates in hook events are physical screen pixels. The receiver is
-    # queued so painting, screenshots and OCR never run inside a Win32 hook.
-    action = Signal(str, object, object)
-
-    def __init__(self, parent):
-        super().__init__(parent)
+class CtrlGestures:
+    def __init__(self):
         self.ctrl_down = False
         self.armed = False
         self.origin = None
@@ -63,25 +59,25 @@ class CtrlGestures(QObject):
         self.handles = []
         self.keyboard_proc = HookProc(self.keyboard)
         self.mouse_proc = HookProc(self.mouse)
-        self.error = None
-        self.ready = Event()
-        self.thread = Thread(target=self.listen, name="Ctrl gestures", daemon=True)
-        self.thread.start()
-        self.ready.wait()
+        self.events = SimpleQueue()
 
     def listen(self):
-        self.thread_id = get_native_id()
+        # Windows drops slow hooks. Keep both Qt's event loop and the model's
+        # Python GIL out of the listener, and do pipe I/O outside the callback.
         message = wt.MSG()
-        # Establish a queue before advertising readiness or accepting WM_QUIT.
+        self.thread_id = get_native_id()
         user32.PeekMessageW(ctypes.byref(message), None, 0, 0, 0)
+        writer = Thread(target=self.write_events)
+        writer.start()
+        Thread(target=self.watch_parent, daemon=True).start()
         try:
             for kind, proc in ((13, self.keyboard_proc), (14, self.mouse_proc)):
                 handle = user32.SetWindowsHookExW(kind, proc, None, 0)
                 if not handle:
-                    self.error = ctypes.get_last_error()
+                    self.events.put(("error", ctypes.get_last_error(), None))
                     return
                 self.handles.append(handle)
-            self.ready.set()
+            self.events.put(("ready", None, None))
             while user32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
                 if message.message == REPLAY_CLICK:
                     pair = (Input * 2)(Input(mouse=MouseInput(flags=2, extra=REPLAY_TAG)),
@@ -92,19 +88,30 @@ class CtrlGestures(QObject):
             for handle in self.handles:
                 user32.UnhookWindowsHookEx(handle)
             self.handles.clear()
-            self.ready.set()
+            self.events.put(None)
+            writer.join()
 
-    def stop(self):
-        if self.thread.is_alive():
+    def watch_parent(self):
+        # The pipe also closes if the application crashes.
+        try:
+            sys.stdin.buffer.read()
+        finally:
             user32.PostThreadMessageW(self.thread_id, 0x12, 0, 0)  # WM_QUIT
-            self.thread.join()
+
+    def write_events(self):
+        while (event := self.events.get()) is not None:
+            try:
+                print(json.dumps(event), flush=True)
+            except (BrokenPipeError, OSError):
+                user32.PostThreadMessageW(self.thread_id, 0x12, 0, 0)
+                return
 
     def cancel(self):
         self.armed = False
         self.origin = None
         if self.dragging:
             self.dragging = False
-            self.action.emit("cancel", None, None)
+            self.events.put(("cancel", None, None))
 
     def keyboard(self, code, message, payload):
         if code == 0:
@@ -120,7 +127,7 @@ class CtrlGestures(QObject):
                     if self.armed and not self.owns_button:
                         point = wt.POINT()
                         if user32.GetCursorPos(ctypes.byref(point)):
-                            self.action.emit("lookup", (point.x, point.y), None)
+                            self.events.put(("lookup", (point.x, point.y), None))
                     self.ctrl_down = False
                     self.cancel()
             elif vk == VK_ESCAPE and (self.owns_escape or (down and self.owns_button)):
@@ -146,14 +153,14 @@ class CtrlGestures(QObject):
             return True
         if message == WM_MOUSEMOVE and self.origin is not None:
             if self.dragging:
-                self.action.emit("move", self.origin, point)
+                self.events.put(("move", self.origin, point))
             elif (point[0] - self.origin[0]) ** 2 + (point[1] - self.origin[1]) ** 2 >= 8 ** 2:
                 self.dragging = True
-                self.action.emit("start", self.origin, point)
+                self.events.put(("start", self.origin, point))
         elif message == WM_LBUTTONUP and self.owns_button:
             self.owns_button = False
             if self.dragging:
-                self.action.emit("finish", self.origin, point)
+                self.events.put(("finish", self.origin, point))
             elif self.origin is not None:
                 # Replay a plain Ctrl+click to its foreground app. The tag keeps
                 # this pair out of our own recognizer.
@@ -164,3 +171,7 @@ class CtrlGestures(QObject):
         elif message != WM_MOUSEMOVE:
             self.cancel()
         return False
+
+
+if __name__ == "__main__":
+    CtrlGestures().listen()

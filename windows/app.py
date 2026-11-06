@@ -1,14 +1,16 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from html import escape
+import json
+from pathlib import Path
 import sys
 
-from PySide6.QtCore import QPoint, QPointF, QRect, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QPointF, QProcess, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QMenu, QPushButton,
                                QSystemTrayIcon, QTextBrowser, QVBoxLayout, QWidget)
 
-from gestures import CtrlGestures, LOOKUP_HINT, REGION_HINT
+from gestures import LOOKUP_HINT, REGION_HINT
 from reader import Passage, recognize
 from translation import translate
 
@@ -219,12 +221,18 @@ class Window(QWidget):
         self.tray.activated.connect(self.tray_clicked)
         if self.tray.isSystemTrayAvailable():
             self.tray.show()
-        self.gestures = CtrlGestures(self)
-        self.gestures.action.connect(self.on_gesture, Qt.QueuedConnection)
-        if self.gestures.error is not None:
-            warning = QLabel(f"无法监听左 Ctrl（Windows 错误 {self.gestures.error}）。可点击「框选英文」。")
-            warning.setWordWrap(True)
-            layout.addWidget(warning)
+        self.gesture_warning = QLabel()
+        self.gesture_warning.setWordWrap(True)
+        layout.addWidget(self.gesture_warning)
+        self.gesture_warning.hide()
+        self.gesture_ready = False
+        self.stopping = False
+        self.gestures = QProcess(self)
+        self.gestures.readyReadStandardOutput.connect(self.read_gestures)
+        self.gestures.errorOccurred.connect(lambda error: self.gesture_failed(self.gestures.errorString()))
+        self.gestures.finished.connect(lambda: self.gesture_failed("监听进程已退出"))
+        self.gestures.start(str(Path(sys.executable).with_name("pythonw.exe")),
+                            ["-u", str(Path(__file__).with_name("gestures.py").resolve())])
         self.setMinimumWidth(320)
         QApplication.instance().aboutToQuit.connect(self.shutdown)
 
@@ -236,6 +244,24 @@ class Window(QWidget):
     def tray_clicked(self, reason):
         if reason == QSystemTrayIcon.Trigger:
             self.open_home()
+
+    def gesture_failed(self, reason):
+        self.gesture_ready = False
+        if not self.stopping and self.gesture_warning.isHidden():
+            self.gesture_warning.setText(f"无法监听左 Ctrl（{reason}）。可点击「框选英文」。")
+            self.gesture_warning.show()
+            if self.overlay is not None and self.overlay.from_ctrl:
+                self.overlay.close()
+
+    def read_gestures(self):
+        while self.gestures.canReadLine() and not self.stopping:
+            action, origin, end = json.loads(bytes(self.gestures.readLine()))
+            if action == "ready":
+                self.gesture_ready = True
+            elif action == "error":
+                self.gesture_failed(f"Windows 错误 {origin}")
+            else:
+                self.on_gesture(action, origin, end)
 
     def on_gesture(self, action, origin, end):
         if action in ("lookup", "start"):
@@ -370,7 +396,11 @@ class Window(QWidget):
             QApplication.quit()
 
     def shutdown(self):
-        self.gestures.stop()
+        self.stopping = True
+        self.gestures.closeWriteChannel()
+        if self.gestures.state() != QProcess.NotRunning and not self.gestures.waitForFinished(2000):
+            self.gestures.kill()
+            self.gestures.waitForFinished(2000)
         self.invalidate()
         self.tray.hide()
         self.pool.shutdown(wait=True, cancel_futures=True)
