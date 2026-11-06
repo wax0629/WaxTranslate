@@ -2,16 +2,19 @@
 
 import argparse
 import hashlib
+from http.client import IncompleteRead
 import os
 from pathlib import Path
 import shutil
 import tempfile
+from urllib.error import URLError
 import urllib.request
 import zipfile
 
 
 PACKAGE = "translate-en_zh-1_9"
 URL = f"https://argos-net.com/v1/{PACKAGE}.argosmodel"
+MIRROR = f"https://data.argosopentech.com/argospm/v1/{PACKAGE}.argosmodel"
 DIGEST = "433e7c4f034d87fbe2353161e05f18646d7999452f801a4e1f0378522b9850ab"
 MODEL = Path(os.environ["LOCALAPPDATA"]) / "WaxTranslate" / "models" / PACKAGE
 FILES = ("model/model.bin", "model/config.json", "model/shared_vocabulary.json",
@@ -26,8 +29,15 @@ def install(archive=None):
         if archive is None:
             print("Downloading English -> Chinese model (67.5 MiB)...", flush=True)
             archive = Path(stage) / "download.zip"
-            with urllib.request.urlopen(URL, timeout=90) as response, archive.open("wb") as output:
-                shutil.copyfileobj(response, output)
+            for url in (URL, MIRROR):
+                try:
+                    with urllib.request.urlopen(url, timeout=90) as response, archive.open("wb") as output:
+                        shutil.copyfileobj(response, output)
+                    break
+                except (URLError, TimeoutError, IncompleteRead) as error:
+                    if url == MIRROR:
+                        raise
+                    print(f"Download failed ({error}); trying the Argos model archive.", flush=True)
         with open(archive, "rb") as source:
             if hashlib.file_digest(source, "sha256").hexdigest() != DIGEST:
                 raise ValueError("Model checksum mismatch. Please download the package again.")
