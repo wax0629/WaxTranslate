@@ -1,7 +1,11 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Windows.Forms;
+
+[assembly: AssemblyTitle("WaxTranslate")]
+[assembly: AssemblyProduct("WaxTranslate")]
 
 internal static class Launcher
 {
@@ -20,7 +24,7 @@ internal static class Launcher
         }
         catch (Exception error)
         {
-            MessageBox.Show("请完整解压便携包后再启动。\n" + error.Message, "我靠翻译");
+            MessageBox.Show("请完整解压便携包后再启动。\n" + error.Message, "WaxTranslate");
             return 1;
         }
     }

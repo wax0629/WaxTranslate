@@ -2,39 +2,72 @@ from html import escape
 import sqlite3
 import time
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
                                QPushButton, QTextBrowser, QVBoxLayout, QWidget)
+
+from theme import label, nav_icon
 
 
 class Library(QWidget):
     def __init__(self, notebook):
         super().__init__()
+        self.setObjectName("library")
         self.notebook = notebook
         self.rows = []
         self.testing = False
         self.revealed = False
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(25, 22, 25, 20)
+        layout.setSpacing(11)
         header = QHBoxLayout()
-        self.status = QLabel()
+        self.heading = label("生词本", "heading")
+        header.addWidget(self.heading)
+        header.addStretch()
+        self.status = label("", "meta")
         self.status.setWordWrap(True)
         self.review = QPushButton("开始复习")
         self.review.clicked.connect(self.toggle_review)
-        header.addWidget(self.status, 1)
         header.addWidget(self.review)
         layout.addLayout(header)
-        self.list = QListWidget()
-        self.list.setMaximumHeight(120)
+        layout.addWidget(self.status)
+        self.empty = QWidget()
+        empty_layout = QVBoxLayout(self.empty)
+        empty_layout.addStretch()
+        glyph = QLabel(alignment=Qt.AlignCenter)
+        glyph.setPixmap(nav_icon(book=True).pixmap(32, 32))
+        empty_layout.addWidget(glyph)
+        empty_title = label("还没有收藏的生词", "subhead")
+        empty_title.setAlignment(Qt.AlignCenter)
+        empty_layout.addWidget(empty_title)
+        hint = label("取词时点「收藏生词」，原句和释义会一起保存在这里。", "meta")
+        hint.setAlignment(Qt.AlignCenter)
+        hint.setWordWrap(True)
+        empty_layout.addWidget(hint)
+        empty_layout.addStretch()
+        layout.addWidget(self.empty, 1)
+        content = QHBoxLayout()
+        content.setSpacing(9)
+        self.list = QListWidget(objectName="words")
+        self.list.setMinimumWidth(90)
+        self.list.setMaximumWidth(146)
+        self.list.setAccessibleName("收藏的词和语境")
         self.list.currentRowChanged.connect(self.display)
-        layout.addWidget(self.list)
-        self.detail = QTextBrowser()
+        content.addWidget(self.list, 1)
+        self.detail = QTextBrowser(objectName="entry")
         self.detail.setOpenLinks(False)
-        layout.addWidget(self.detail, 1)
+        content.addWidget(self.detail, 2)
+        layout.addLayout(content, 1)
         buttons = QHBoxLayout()
         self.reveal = QPushButton("查看释义")
         self.again = QPushButton("再学一次")
         self.known = QPushButton("记住了")
         self.remove = QPushButton("删除这条")
+        self.remove.setProperty("role", "quiet")
+        self.review.setProperty("role", "primary")
+        self.known.setProperty("role", "primary")
+        self.reveal.setProperty("role", "primary")
+        buttons.addStretch()
         self.reveal.clicked.connect(self.show_answer)
         self.again.clicked.connect(lambda: self.grade(False))
         self.known.clicked.connect(lambda: self.grade(True))
@@ -60,7 +93,10 @@ class Library(QWidget):
 
     def update_header(self):
         due = sum(row["due"] <= time.time() for row in self.rows)
-        self.status.setText(f"{len(self.rows)} 条生词 · {due} 条待复习" if self.rows else "在取词浮窗中点「收藏生词」，即可在这里复习。")
+        self.heading.setText("复习" if self.testing else "生词本")
+        self.status.setText(f"已收藏 {len(self.rows)} 条   ·   待复习 {due} 条" if self.rows else "")
+        self.status.setVisible(bool(self.rows))
+        self.review.setVisible(bool(self.rows))
         self.review.setText("结束复习" if self.testing else "开始复习")
         self.review.setEnabled(self.testing or due > 0)
 
@@ -74,6 +110,7 @@ class Library(QWidget):
             self.testing = False
             self.display()
             self.update_header()
+            self.status.show()
             self.status.setText(f"生词本读取失败：{error}")
             return
         if self.testing and not any(r["due"] <= time.time() for r in rows):
@@ -84,7 +121,7 @@ class Library(QWidget):
         self.list.clear()
         selected = 0
         for index, row in enumerate(rows):
-            item = QListWidgetItem(row["word"] + "    " + row["gloss"])
+            item = QListWidgetItem(row["word"] + "\n" + row["gloss"])
             item.setToolTip(row["context"])
             self.list.addItem(item)
             if not self.testing and current and row["id"] == current["id"]:
@@ -100,6 +137,7 @@ class Library(QWidget):
 
     def display(self, *_):
         row = self.current()
+        self.empty.setVisible(not self.rows)
         self.list.setVisible(not self.testing and bool(self.rows))
         self.detail.setVisible(bool(row))
         self.remove.setVisible(bool(row) and not self.testing)
@@ -111,10 +149,12 @@ class Library(QWidget):
             return
         pos, word, context = row["position"], row["word"], row["context"]
         marked = escape(context[:pos]) + "<b>" + escape(word) + "</b>" + escape(context[pos + len(word):])
-        parts = [f"<h2>{escape(word)}</h2>", f"<p>{marked}</p>"]
+        parts = [f"<p style='margin:4px 0 10px;font:bold 24pt Georgia;color:#272620'>{escape(word)}</p>",
+                 f"<p style='margin:6px 0;font-size:12pt;color:#494940'>{marked}</p>"]
         if not self.testing or self.revealed:
-            parts += [f"<p>{escape(row['source'])} · <b>{escape(row['gloss'])}</b></p>",
-                      f"<p>{escape(row['translation'])}</p>"]
+            parts += [f"<p style='margin:14px 0 3px;color:#69695e;font-size:9pt'>{escape(row['source'])}</p>",
+                      f"<p style='margin:0 0 8px;font-size:14pt'><b>{escape(row['gloss'])}</b></p>",
+                      f"<p style='margin:0;color:#62625a'>{escape(row['translation'])}</p>"]
         self.detail.setHtml("".join(parts))
 
     def toggle_review(self):

@@ -31,7 +31,7 @@ def check(root):
     kernel.TerminateProcess.argtypes = (wt.HANDLE, wt.UINT)
     kernel.CloseHandle.argtypes = (wt.HANDLE,)
     exe = root / "WaxTranslate.exe"
-    title = "我靠翻译 · WaxTranslate"
+    title = "WaxTranslate"
     assert not user.FindWindowW(None, title), "Only run this check on an isolated desktop"
     subprocess.run([exe], check=True)
     def visible_main():

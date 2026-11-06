@@ -16,7 +16,7 @@ SRC = Path(__file__).resolve().parent
 PYTHON_ZIP = "python-3.12.10-embed-amd64.zip"
 PYTHON_SHA = "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
 APP_FILES = ("app.py", "gestures.py", "library.py", "notebook.py", "reader.py", "translation.py",
-             "instance.py", "install_model.py", "waxtranslate.ico")
+             "instance.py", "theme.py", "install_model.py", "waxtranslate.ico")
 
 
 def build(output, archive=None):

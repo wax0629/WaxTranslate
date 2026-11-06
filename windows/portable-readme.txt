@@ -1,4 +1,4 @@
-我靠翻译 · Windows x64
+WaxTranslate · Windows x64
 
 完整解压文件夹，双击 WaxTranslate.exe。无需安装 Python，英译中模型已随包提供。
 屏幕取词需要 Windows 英语 OCR。在「设置 → 时间和语言 → 语言和区域」中安装英语语言功能。也可在主窗口粘贴英文直接翻译。
