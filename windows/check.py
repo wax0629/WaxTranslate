@@ -2,7 +2,6 @@
 
 import asyncio
 import ctypes
-from ctypes import wintypes
 import os
 import sys
 import time
@@ -120,27 +119,36 @@ class Checks(unittest.TestCase):
         point = sample.mapToGlobal(QPoint(16 + metrics.horizontalAdvance(RIVER.split("bank")[0] + "ba"),
                                           sample.height() // 2))
         QCursor.setPos(point)
-        post = ctypes.windll.user32.PostMessageW
-        post.argtypes = (wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
-
-        def trigger(index):
-            self.assertTrue(post(int(window.winId()), 0x0312, index, 0))
+        def trigger(letter):
+            # Exercise the OS hotkey registration while our sample owns focus.
+            sample.raise_()
+            sample.activateWindow()
+            wait_until(sample.isActiveWindow)
+            keys = (0x12, 0x10, ord(letter))  # Alt, Shift, T/R
+            for key in keys:
+                ctypes.windll.user32.keybd_event(key, 0, 0, 0)
+            for key in reversed(keys):
+                ctypes.windll.user32.keybd_event(key, 0, 2, 0)  # KEYEVENTF_KEYUP
 
         try:
             self.assertEqual(window.registered, [1, 2], "Close other WaxTranslate instances before this check.")
             self.assertTrue(QTest.qWaitForWindowExposed(sample), "Sample window was never exposed")
-            trigger(1)
+            previous_ticket = window.ticket
+            trigger("T")
+            wait_until(lambda: window.ticket != previous_ticket)
+            # Moving after the shortcut must not retarget the delayed capture.
+            QCursor.setPos(sample.mapToGlobal(QPoint(5, 5)))
             wait_until(lambda: window.card.isVisible() and window.card.caption.text() not in ("", "本机英译中"))
             self.assertEqual(window.card.caption.text(), "句中释义")
             self.assertIn("岸", window.card.text.toPlainText())
             QTest.keyClick(window.card, Qt.Key_Escape)
             self.assertFalse(window.card.isVisible())
-            trigger(2)
+            trigger("R")
             wait_until(lambda: window.overlay is not None)
             QTest.keyClick(window.overlay, Qt.Key_Escape)
             wait_until(lambda: window.overlay is None)
             self.assertFalse(window.card.isVisible())
-            trigger(2)
+            trigger("R")
             wait_until(lambda: window.overlay is not None)
             overlay = window.overlay
             top = overlay.mapFromGlobal(sample.mapToGlobal(QPoint(4, 4)))

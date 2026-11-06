@@ -17,6 +17,6 @@
 ## 验收与交付
 
 - Windows 安装开发环境用 `windows\setup.cmd`。日常运行 `.venv\Scripts\python.exe windows\check.py -v`，在后台检查真实 OCR、翻译和缩放坐标。
-- `--desktop` 测试会显示窗口、全屏遮罩并移动鼠标。先在聊天说明影响并获得同意，再在解锁的桌面退出已运行的开发版，执行 `.venv\Scripts\python.exe windows\check.py --desktop -v`。
+- Windows 桌面回归优先用 PR 的独立 Windows runner。`--desktop` 会显示窗口、全屏遮罩、移动鼠标并发送快捷键。在用户桌面运行前先在聊天说明影响并获得同意，再退出已运行的开发版，执行 `.venv\Scripts\python.exe windows\check.py --desktop -v`。
 - macOS 在满足 README 工具链要求的 Mac 上运行 `./scripts/check.sh`。修改安装或签名逻辑时，另行验证覆盖安装和权限。
 - 交付时写明实际测试的平台、命令、结果和仍待验证的场景。平台支持范围、依赖或启动方式变化时同步更新 README。
