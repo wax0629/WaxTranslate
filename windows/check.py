@@ -8,7 +8,7 @@ import time
 import unittest
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt
-from PySide6.QtGui import QCursor, QFont, QFontDatabase, QFontMetrics, QImage, QPainter
+from PySide6.QtGui import QCursor, QFont, QFontDatabase, QFontMetrics, QImage, QPainter, QShortcut
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel
 
@@ -136,7 +136,14 @@ class Checks(unittest.TestCase):
     def test_desktop_flow(self):
         previous = QCursor.pos()
         window = Window()
-        sample = QLabel(RIVER)
+        clicks = []
+
+        class Sample(QLabel):
+            def mouseReleaseEvent(self, event):
+                clicks.append(event.modifiers())
+                super().mouseReleaseEvent(event)
+
+        sample = Sample(RIVER)
         sample.setFont(QFont("Segoe UI", 20))
         sample.setMargin(16)
         sample.setStyleSheet("color:black;background:white")
@@ -151,22 +158,51 @@ class Checks(unittest.TestCase):
         point = sample.mapToGlobal(QPoint(16 + metrics.horizontalAdvance(RIVER.split("bank")[0] + "ba"),
                                           sample.height() // 2))
         QCursor.setPos(point)
-        def trigger(letter):
-            # Exercise the OS hotkey registration while our sample owns focus.
+        user = ctypes.windll.user32
+        ctrl = 0xA2
+        copies = []
+        copy_shortcut = QShortcut("Ctrl+C", sample)
+        copy_shortcut.activated.connect(lambda: copies.append(True))
+
+        def key(code, down):
+            user.keybd_event(code, user.MapVirtualKeyW(code, 0), 0 if down else 2, 0)
+
+        def focus_sample():
             sample.raise_()
             sample.activateWindow()
             wait_until(sample.isActiveWindow)
-            keys = (0x12, 0x10, ord(letter))  # Alt, Shift, T/R
-            for key in keys:
-                ctypes.windll.user32.keybd_event(key, 0, 0, 0)
-            for key in reversed(keys):
-                ctypes.windll.user32.keybd_event(key, 0, 2, 0)  # KEYEVENTF_KEYUP
+
+        def begin_drag():
+            focus_sample()
+            QCursor.setPos(sample.mapToGlobal(sample.rect().bottomRight() - QPoint(4, 4)))
+            key(ctrl, True)
+            user.mouse_event(2, 0, 0, 0, 0)
+            wait_until(lambda: window.gestures.owns_button)
+            QCursor.setPos(sample.mapToGlobal(QPoint(4, 4)))
+            user.mouse_event(1, 0, 0, 0, 0)  # move at the new cursor position
+            wait_until(lambda: window.overlay is not None)
 
         try:
-            self.assertEqual(window.registered, [1, 2], "Close other WaxTranslate instances before this check.")
+            self.assertIsNone(window.gestures.error)
             self.assertTrue(QTest.qWaitForWindowExposed(sample), "Sample window was never exposed")
+            focus_sample()
             previous_ticket = window.ticket
-            trigger("T")
+            key(ctrl, True)
+            key(ord("C"), True)
+            key(ord("C"), False)
+            key(ctrl, False)
+            wait_until(lambda: copies and not window.gestures.ctrl_down)
+            key(ctrl, True)
+            user.mouse_event(2, 0, 0, 0, 0)
+            user.mouse_event(4, 0, 0, 0, 0)
+            wait_until(lambda: bool(clicks))
+            self.assertEqual(clicks, [Qt.ControlModifier])
+            key(ctrl, False)
+            wait_until(lambda: not window.gestures.ctrl_down)
+            app.processEvents()
+            self.assertEqual(window.ticket, previous_ticket, "Ctrl chord or Ctrl+click opened a card")
+            key(ctrl, True)
+            key(ctrl, False)
             wait_until(lambda: window.ticket != previous_ticket)
             # Moving after the shortcut must not retarget the delayed capture.
             QCursor.setPos(sample.mapToGlobal(QPoint(5, 5)))
@@ -175,26 +211,31 @@ class Checks(unittest.TestCase):
             self.assertIn("岸", window.card.text.toPlainText())
             QTest.keyClick(window.card, Qt.Key_Escape)
             self.assertFalse(window.card.isVisible())
-            trigger("R")
-            wait_until(lambda: window.overlay is not None)
-            QTest.keyClick(window.overlay, Qt.Key_Escape)
+            begin_drag()
+            key(0x1B, True)
+            key(0x1B, False)
+            user.mouse_event(4, 0, 0, 0, 0)
+            key(ctrl, False)
             wait_until(lambda: window.overlay is None)
             self.assertFalse(window.card.isVisible())
-            trigger("R")
-            wait_until(lambda: window.overlay is not None)
-            overlay = window.overlay
-            top = overlay.mapFromGlobal(sample.mapToGlobal(QPoint(4, 4)))
-            bottom = overlay.mapFromGlobal(sample.mapToGlobal(sample.rect().bottomRight() - QPoint(4, 4)))
-            QTest.mousePress(overlay, Qt.LeftButton, pos=bottom)
-            QTest.mouseRelease(overlay, Qt.LeftButton, pos=top)
+            begin_drag()
+            user.mouse_event(4, 0, 0, 0, 0)
+            key(ctrl, False)
             wait_until(lambda: window.card.caption.text() == "选区译文")
             self.assertIn("河岸", window.card.text.toPlainText())
+            self.assertEqual(len(clicks), 1, "Capture drag reached the foreground window")
             window.demo()
             window.card.close()
             wait_until(lambda: window.pending.done())
             app.processEvents()
             self.assertFalse(window.card.isVisible(), "A dismissed request reopened its card")
         finally:
+            if window.gestures.owns_button:
+                key(0x1B, True)
+                key(0x1B, False)
+                user.mouse_event(4, 0, 0, 0, 0)
+            if window.gestures.ctrl_down:
+                key(ctrl, False)
             window.shutdown()
             sample.close()
             QCursor.setPos(previous)

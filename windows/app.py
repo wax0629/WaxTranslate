@@ -1,15 +1,14 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-import ctypes
-from ctypes import wintypes
 from html import escape
 import sys
 
-from PySide6.QtCore import QPointF, QRect, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QPointF, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QMenu, QPushButton,
                                QSystemTrayIcon, QTextBrowser, QVBoxLayout, QWidget)
 
+from gestures import CtrlGestures, LOOKUP_HINT, REGION_HINT
 from reader import Passage, recognize
 from translation import translate
 
@@ -100,8 +99,13 @@ class Card(QWidget):
 class Selection(QWidget):
     selected = Signal(object, object)
 
-    def __init__(self, screen, screenshot):
-        super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+    def __init__(self, screen, screenshot, from_ctrl=False):
+        flags = Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        if from_ctrl:
+            flags |= Qt.WindowDoesNotAcceptFocus | Qt.WindowTransparentForInput
+        super().__init__(None, flags)
+        self.from_ctrl = from_ctrl
+        self.setAttribute(Qt.WA_ShowWithoutActivating, from_ctrl)
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setWindowTitle("框选英文 · Esc 取消")
         self.setScreen(screen)
@@ -135,14 +139,20 @@ class Selection(QWidget):
             self.update()
 
     def mouseMoveEvent(self, event):
+        self.extend_to(event.position().toPoint())
+
+    def extend_to(self, point):
         if self.start is not None:
-            self.selection = QRect(self.start, event.position().toPoint()).normalized().intersected(self.rect())
+            self.selection = QRect(self.start, point).normalized().intersected(self.rect())
             self.update()
 
     def mouseReleaseEvent(self, event):
         if event.button() != Qt.LeftButton or self.start is None:
             return
-        self.mouseMoveEvent(event)
+        self.finish_at(event.position().toPoint())
+
+    def finish_at(self, point):
+        self.extend_to(point)
         if self.selection.width() >= 4 and self.selection.height() >= 4:
             # Selection is in logical coordinates; OCR operates on image pixels.
             r = self.selection
@@ -184,7 +194,7 @@ class Window(QWidget):
         heading.setStyleSheet("font-size:25px; font-weight:650")
         layout.addWidget(heading)
         layout.addWidget(QLabel("指向英文，看它在这句话里的意思。"))
-        for label, keys in [("悬停取词", "Alt + Shift + T"), ("框选翻译", "Alt + Shift + R")]:
+        for label, keys in [("悬停取词", LOOKUP_HINT), ("框选翻译", REGION_HINT)]:
             row = QHBoxLayout()
             row.addWidget(QLabel(label))
             row.addStretch()
@@ -199,7 +209,7 @@ class Window(QWidget):
             actions.addWidget(button)
         layout.addLayout(actions)
         self.tray = QSystemTrayIcon(QApplication.windowIcon(), self)
-        self.tray.setToolTip("我靠翻译 · Alt + Shift + T")
+        self.tray.setToolTip(f"我靠翻译 · {LOOKUP_HINT} 取词")
         menu = QMenu(self)
         menu.addAction("打开我靠翻译", self.open_home)
         menu.addAction("框选翻译", lambda: self.begin(True))
@@ -209,17 +219,12 @@ class Window(QWidget):
         self.tray.activated.connect(self.tray_clicked)
         if self.tray.isSystemTrayAvailable():
             self.tray.show()
-        self.registered = []
-        user = ctypes.windll.user32
-        user.RegisterHotKey.argtypes = (wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT)
-        user.UnregisterHotKey.argtypes = (wintypes.HWND, ctypes.c_int)
-        for index, key in enumerate("TR", 1):
-            if user.RegisterHotKey(int(self.winId()), index, 0x4005, ord(key)):  # NOREPEAT | ALT | SHIFT
-                self.registered.append(index)
-            else:
-                warning = QLabel(f"Alt + Shift + {key} 已被占用。请关闭冲突程序后重新打开我靠翻译。")
-                warning.setWordWrap(True)
-                layout.addWidget(warning)
+        self.gestures = CtrlGestures(self)
+        self.gestures.action.connect(self.on_gesture, Qt.QueuedConnection)
+        if self.gestures.error is not None:
+            warning = QLabel(f"无法监听左 Ctrl（Windows 错误 {self.gestures.error}）。可点击「框选英文」。")
+            warning.setWordWrap(True)
+            layout.addWidget(warning)
         self.setMinimumWidth(320)
         QApplication.instance().aboutToQuit.connect(self.shutdown)
 
@@ -232,12 +237,37 @@ class Window(QWidget):
         if reason == QSystemTrayIcon.Trigger:
             self.open_home()
 
-    def nativeEvent(self, event_type, message):
-        msg = wintypes.MSG.from_address(int(message))
-        if msg.message == 0x0312 and msg.wParam in (1, 2):  # WM_HOTKEY
-            self.begin(msg.wParam == 2)
-            return True, 0
-        return super().nativeEvent(event_type, message)
+    def on_gesture(self, action, origin, end):
+        if action in ("lookup", "start"):
+            native = QPoint(*origin)
+            # On Windows Qt keeps each screen's native origin but scales its size.
+            for screen in QApplication.screens():
+                geometry = screen.geometry()
+                ratio = screen.devicePixelRatio()
+                if QRect(geometry.topLeft(), geometry.size() * ratio).contains(native):
+                    point = geometry.topLeft() + (native - geometry.topLeft()) / ratio
+                    break
+            else:
+                return
+            if action == "lookup":
+                self.begin(False, point)
+                return
+            self.invalidate()
+            if not self.open_selection(screen, point, from_ctrl=True):
+                return
+            self.overlay.start = point - geometry.topLeft()
+        overlay = self.overlay
+        if overlay is None or not overlay.from_ctrl:
+            return
+        if action == "cancel":
+            overlay.close()
+            return
+        screen = overlay.screen()
+        local = (QPoint(*end) - screen.geometry().topLeft()) / screen.devicePixelRatio()
+        if action == "finish":
+            overlay.finish_at(local)
+        else:
+            overlay.extend_to(local)
 
     def invalidate(self):
         self.ticket += 1
@@ -254,8 +284,9 @@ class Window(QWidget):
         start = text.index("bank")
         self.submit(QCursor.pos(), passage=Passage(text, (start, start + 4)))
 
-    def begin(self, region):
-        point = QCursor.pos()
+    def begin(self, region, point=None):
+        if point is None:
+            point = QCursor.pos()
         self.invalidate()
         ticket = self.ticket
         QTimer.singleShot(80, lambda: self.capture(ticket, point, region))
@@ -269,27 +300,33 @@ class Window(QWidget):
         local = point - screen.geometry().topLeft()
         height = screen.size().height()
         if region:
-            shot = screen.grabWindow(0)
-        else:
-            band = max(1, height // 4)
-            top = max(0, min(local.y() - band // 2, height - band))
-            shot = screen.grabWindow(0, 0, top, screen.size().width(), band)
+            self.open_selection(screen, point)
+            return
+        band = max(1, height // 4)
+        top = max(0, min(local.y() - band // 2, height - band))
+        shot = screen.grabWindow(0, 0, top, screen.size().width(), band)
         if shot.isNull():
             self.card.present("截图失败", "请返回普通桌面后重试。", point)
             return
-        if region:
-            overlay = Selection(screen, shot)
-            self.overlay = overlay
-            overlay.destroyed.connect(lambda: self.clear_overlay(overlay))
-            overlay.selected.connect(lambda image, pos: self.submit(pos, image=image))
-            overlay.show()
-            overlay.raise_()
+        logical = screen.size()
+        logical.setHeight(band)
+        hit = image_point(QPointF(local.x(), local.y() - top), logical, shot.size())
+        self.submit(point, image=shot.toImage(), hit=hit)
+
+    def open_selection(self, screen, point, from_ctrl=False):
+        shot = screen.grabWindow(0)
+        if shot.isNull():
+            self.card.present("截图失败", "请返回普通桌面后重试。", point)
+            return False
+        overlay = Selection(screen, shot, from_ctrl)
+        self.overlay = overlay
+        overlay.destroyed.connect(lambda: self.clear_overlay(overlay))
+        overlay.selected.connect(lambda image, pos: self.submit(pos, image=image))
+        overlay.show()
+        overlay.raise_()
+        if not from_ctrl:
             overlay.activateWindow()
-        else:
-            logical = screen.size()
-            logical.setHeight(band)
-            hit = image_point(QPointF(local.x(), local.y() - top), logical, shot.size())
-            self.submit(point, image=shot.toImage(), hit=hit)
+        return True
 
     def clear_overlay(self, closed):
         if self.overlay is closed:
@@ -333,8 +370,7 @@ class Window(QWidget):
             QApplication.quit()
 
     def shutdown(self):
-        for index in self.registered:
-            ctypes.windll.user32.UnregisterHotKey(int(self.winId()), index)
+        self.gestures.stop()
         self.invalidate()
         self.tray.hide()
         self.pool.shutdown(wait=True, cancel_futures=True)

@@ -64,7 +64,7 @@ def passage_from_lines(lines, point):
     hit = next(((i, j) for i, line in enumerate(lines) for j, word in enumerate(line)
                 if word.rect.contains(point)), None)
     if hit is None:
-        raise ValueError("光标下没有识别到词。请指向字母，或按 Alt + Shift + R 框选。")
+        raise ValueError("光标下没有识别到词。请指向字母，或按住左 Ctrl 并用鼠标左键拖动框选。")
     anchor, column = hit
     match = word_at_point(lines[anchor][column], point)
     if not match:
