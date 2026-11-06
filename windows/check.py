@@ -7,13 +7,17 @@ import os
 import sys
 import time
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QCursor, QFont, QFontDatabase, QFontMetrics, QImage, QPainter, QShortcut
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel
 
-from app import Window, image_point, image_rect
+from app import Window, app_icon, image_point, image_rect
+from notebook import Notebook
 from reader import Passage, Word, passage_from_lines, recognize
 from translation import translate
 
@@ -42,6 +46,58 @@ def wait_until(predicate):
 
 
 class Checks(unittest.TestCase):
+    def test_save_copy_review_and_reopen(self):
+        from PySide6.QtCore import QProcess
+        from PySide6.QtWidgets import QMessageBox
+
+        with TemporaryDirectory() as tmp, patch.object(QProcess, "start"):
+            path = Path(tmp) / "notebook.sqlite3"
+            book = Notebook(path)
+            window = Window(notebook=book)
+            self.assertFalse(app_icon().isNull())
+            try:
+                window.demo()
+                wait_until(lambda: window.card.save.isVisible())
+                window.card.copy.click()
+                self.assertIn("岸", QApplication.clipboard().text())
+                window.card.save.click()
+                self.assertEqual(window.card.save.text(), "已收藏")
+                window.save_word()
+                self.assertEqual(len(Notebook(path).entries()), 1)
+                second = word_in(MONEY)
+                book.save(second, translate(second))
+                window.card.close()
+                window.open_library()
+                wait_until(lambda: window.library.list.count() == 2)
+                ui = window.library
+                ui.review.click()
+                self.assertTrue(ui.testing)
+                self.assertFalse(ui.list.isVisible())
+                self.assertFalse(ui.known.isVisible())
+                entry = ui.current()
+                ui.reveal.click()
+                self.assertIn(entry["gloss"], ui.detail.toPlainText())
+                ui.known.click()
+                ui.reveal.click()
+                ui.again.click()
+                self.assertFalse(ui.testing)
+                rows = Notebook(path).entries()
+                now = time.time()
+                self.assertTrue(590 < rows[0]["due"] - now <= 600)
+                self.assertTrue(86390 < rows[1]["due"] - now <= 86400)
+                with patch.object(QMessageBox, "question", return_value=QMessageBox.Yes):
+                    ui.remove.click()
+                self.assertEqual(len(Notebook(path).entries()), 1)
+                window.input.setPlainText(MONEY)
+                window.submit_text.click()
+                wait_until(lambda: window.card.caption.text() == "选区译文")
+                self.assertFalse(window.card.save.isVisible())
+                self.assertIn("银行", window.card.translation)
+            finally:
+                window.shutdown()
+                window.hide()
+                window.deleteLater()
+
     def test_words_on_each_side_of_slash(self):
         for scale in (1, 1.5):
             font = QFont("Segoe UI")
