@@ -7,11 +7,12 @@ import os
 import sys
 import time
 import unittest
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt
+from PySide6.QtCore import QPoint, QPointF, QProcess, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QCursor, QFont, QFontDatabase, QFontMetrics, QImage, QPainter, QShortcut
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel
@@ -20,6 +21,7 @@ from app import Window, app_icon, image_point, image_rect
 from notebook import Notebook
 from reader import Passage, Word, passage_from_lines, recognize
 from translation import translate
+from workspace import TextWorkspace
 
 
 RIVER = "They sat on the river bank and watched the water."
@@ -46,8 +48,74 @@ def wait_until(predicate):
 
 
 class Checks(unittest.TestCase):
+    def test_inline_keyboard_translation(self):
+        with patch.object(QProcess, "start"):
+            window = Window()
+            ui = window.workspace
+            try:
+                window.resize(880, 510)
+                window.show()
+                window.activateWindow()
+                wait_until(ui.input.hasFocus)
+                self.assertGreater(ui.output.mapTo(ui, QPoint()).x(), ui.input.mapTo(ui, QPoint()).x())
+                ui.input.setPlainText(RIVER + "\n\n" + MONEY)
+                QTest.keyClick(ui.input, Qt.Key_Return, Qt.ControlModifier)
+                wait_until(ui.copy.isEnabled)
+                river, money = ui.output.toPlainText().split("\n\n")
+                self.assertIn("岸", river)
+                self.assertIn("银行", money)
+                self.assertTrue(ui.input.hasFocus())
+                self.assertFalse(window.card.isVisible())
+                QTest.keyClick(ui.input, Qt.Key_C, Qt.ControlModifier | Qt.ShiftModifier)
+                self.assertEqual(QApplication.clipboard().text(), ui.output.toPlainText())
+                ui.input.setPlainText("仅中文")
+                self.assertFalse(ui.copy.isEnabled())
+                ui.submit.click()
+                wait_until(lambda: ui.pending is None)
+                self.assertIn("英文", ui.output.toPlainText())
+                self.assertFalse(ui.copy.isEnabled())
+                ui.input.setPlainText(RIVER)
+                QTest.keyClick(ui.input, Qt.Key_Enter, Qt.ControlModifier)
+                wait_until(ui.copy.isEnabled)
+                self.assertIn("岸", ui.output.toPlainText())
+                window.resize(610, 490)
+                wait_until(lambda: ui.output.mapTo(ui, QPoint()).y() > ui.input.mapTo(ui, QPoint()).y())
+                self.assertTrue(window.hints.isHidden())
+                window.hint_button.click()
+                self.assertFalse(window.hints.isHidden())
+            finally:
+                window.shutdown()
+                window.hide()
+                window.deleteLater()
+
+    def test_superseded_inline_result(self):
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            old, new, cancelled = Future(), Future(), Future()
+            old.set_running_or_notify_cancel()
+            cancelled.set_running_or_notify_cancel()
+            ui = TextWorkspace(pool)
+            with patch.object(pool, "submit", side_effect=[old, new, cancelled]):
+                ui.input.setPlainText(RIVER)
+                ui.submit.click()
+                stop_old = ui.stop
+                ui.input.setPlainText(MONEY)
+                self.assertTrue(stop_old.is_set())
+                ui.submit.click()
+                new.set_result("银行")
+                old.set_result("河岸")
+                QApplication.processEvents()
+                self.assertEqual(ui.output.toPlainText(), "银行")
+                self.assertTrue(ui.copy.isEnabled())
+                ui.submit.click()
+                stop_cancelled = ui.stop
+                ui.submit.click()
+                self.assertTrue(stop_cancelled.is_set())
+                cancelled.set_result("过期结果")
+                QApplication.processEvents()
+                self.assertFalse(ui.copy.isEnabled())
+                self.assertEqual(ui.output.toPlainText(), "")
+
     def test_save_copy_review_and_reopen(self):
-        from PySide6.QtCore import QProcess
         from PySide6.QtWidgets import QMessageBox
 
         with TemporaryDirectory() as tmp, patch.object(QProcess, "start"):
@@ -70,6 +138,13 @@ class Checks(unittest.TestCase):
                 window.open_library()
                 wait_until(lambda: window.library.list.count() == 2)
                 ui = window.library
+                ui.search.setText("PAYCHECK")
+                self.assertEqual(ui.current()["context"], MONEY)
+                ui.search.setText("岸")
+                self.assertEqual(ui.current()["context"], RIVER)
+                ui.search.setText("no matching sentence")
+                self.assertIsNone(ui.current())
+                self.assertTrue(ui.no_matches.isVisible())
                 ui.review.click()
                 self.assertTrue(ui.testing)
                 self.assertFalse(ui.list.isVisible())
@@ -81,6 +156,9 @@ class Checks(unittest.TestCase):
                 ui.reveal.click()
                 ui.again.click()
                 self.assertFalse(ui.testing)
+                self.assertTrue(ui.no_matches.isVisible())
+                ui.search.clear()
+                self.assertIsNotNone(ui.current())
                 rows = Notebook(path).entries()
                 now = time.time()
                 self.assertTrue(590 < rows[0]["due"] - now <= 600)
@@ -88,11 +166,6 @@ class Checks(unittest.TestCase):
                 with patch.object(QMessageBox, "question", return_value=QMessageBox.Yes):
                     ui.remove.click()
                 self.assertEqual(len(Notebook(path).entries()), 1)
-                window.input.setPlainText(MONEY)
-                window.submit_text.click()
-                wait_until(lambda: window.card.caption.text() == "选区译文")
-                self.assertFalse(window.card.save.isVisible())
-                self.assertIn("银行", window.card.translation)
             finally:
                 window.shutdown()
                 window.hide()

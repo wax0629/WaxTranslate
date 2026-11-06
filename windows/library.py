@@ -3,7 +3,8 @@ import sqlite3
 import time
 
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
                                QPushButton, QTextBrowser, QVBoxLayout, QWidget)
 
 from theme import label, nav_icon
@@ -31,6 +32,18 @@ class Library(QWidget):
         header.addWidget(self.review)
         layout.addLayout(header)
         layout.addWidget(self.status)
+        self.search = QLineEdit(objectName="search")
+        self.search.setAccessibleName("搜索生词")
+        self.search.setPlaceholderText("搜索单词、释义或原句")
+        self.search.setClearButtonEnabled(True)
+        layout.addWidget(self.search)
+        self.search.textChanged.connect(self.filter_rows)
+        find = QShortcut(QKeySequence.Find, self)
+        find.setContext(Qt.WidgetWithChildrenShortcut)
+        find.activated.connect(self.focus_search)
+        self.no_matches = label("没有找到匹配的生词", "meta")
+        self.no_matches.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.no_matches)
         self.empty = QWidget()
         empty_layout = QVBoxLayout(self.empty)
         empty_layout.addStretch()
@@ -129,6 +142,24 @@ class Library(QWidget):
         self.list.setCurrentRow(selected if rows else -1)
         self.list.blockSignals(False)
         self.update_header()
+        self.filter_rows()
+
+    def focus_search(self):
+        if self.search.isVisible():
+            self.search.setFocus()
+            self.search.selectAll()
+
+    def filter_rows(self):
+        query = "" if self.testing else self.search.text().strip().casefold()
+        first = -1
+        for index, row in enumerate(self.rows):
+            match = not query or any(query in row[key].casefold() for key in ("word", "gloss", "context", "translation"))
+            self.list.item(index).setHidden(not match)
+            if match and first == -1:
+                first = index
+        selected = self.list.currentItem()
+        if selected is None or selected.isHidden():
+            self.list.setCurrentRow(first)
         self.display()
 
     def current(self):
@@ -138,7 +169,9 @@ class Library(QWidget):
     def display(self, *_):
         row = self.current()
         self.empty.setVisible(not self.rows)
-        self.list.setVisible(not self.testing and bool(self.rows))
+        self.search.setVisible(not self.testing and bool(self.rows))
+        self.no_matches.setVisible(not self.testing and bool(self.rows) and not row)
+        self.list.setVisible(not self.testing and bool(row))
         self.detail.setVisible(bool(row))
         self.remove.setVisible(bool(row) and not self.testing)
         self.reveal.setVisible(self.testing and not self.revealed)

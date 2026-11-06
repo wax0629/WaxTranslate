@@ -45,21 +45,28 @@ def apply_theme(app):
         QWidget {color:#272722; font-size:13px;}
         QWidget#desk, QWidget#home, QWidget#library {background:#fbfaf7;}
         QFrame#sidebar {background:#f0eee7; border:0; border-right:1px solid #e3e0d8;}
+        QFrame#sidebar[compact="true"] {border-right:0; border-bottom:1px solid #e3e0d8;}
         QLabel {background:transparent; border:0;}
         QLabel[role="brand"] {font-family:'Segoe UI'; font-weight:650; font-size:18px;}
         QLabel[role="heading"] {font-size:24px; font-weight:650;}
         QLabel[role="subhead"] {font-size:14px; font-weight:600;}
         QLabel[role="meta"] {color:#69685f; font-size:12px;}
+        QLabel[role="language"] {color:#58594f; font-size:12px; font-weight:600;}
         QLabel[role="key"] {color:#56564e; background:#f2f1eb; border:1px solid #e2dfd6;
             border-radius:5px; padding:2px 7px; font-size:12px;}
         QLabel[role="warning"] {color:#963f26;}
-        QFrame#editor, QFrame#cardShell, QTextBrowser#entry, QListWidget#words {
+        QFrame#translationPane, QFrame#editor, QFrame#cardShell, QTextBrowser#entry, QListWidget#words {
             background:white; border:1px solid #e2dfd6; border-radius:12px;}
+        QFrame#translationPane {background:#f4f4ed;}
         QFrame#hairline {background:#e6e3da; border:0; max-height:1px;}
-        QPlainTextEdit#input, QTextBrowser#result {background:transparent; border:0; padding:0;
+        QPlainTextEdit#input, QPlainTextEdit#translation, QTextBrowser#result {background:transparent; border:0; padding:0;
             selection-background-color:#d8e6f6; selection-color:#202128;}
         QPlainTextEdit#input {font-family:'Segoe UI','Microsoft YaHei UI'; font-size:16px;}
+        QPlainTextEdit#translation {font-size:16px;}
         QTextBrowser#entry {padding:10px 14px;}
+        QLineEdit#search {background:white; color:#272722; border:1px solid #dedbd2;
+            border-radius:7px; padding:6px 10px;}
+        QLineEdit#search:focus {border-color:#6589ab;}
         QListWidget#words {padding:4px; outline:0;}
         QListWidget#words::item {padding:6px; border-radius:5px;}
         QListWidget#words::item:selected {background:#efeee7; color:#242620;}
@@ -75,6 +82,10 @@ def apply_theme(app):
         QPushButton[role="quiet"], QPushButton[role="close"] {background:transparent;
             border:1px solid transparent; color:#56574e; padding:4px 8px;}
         QPushButton[role="quiet"]:hover, QPushButton[role="close"]:hover {background:#eeede7; color:#20211e;}
+        QPushButton[role="disclosure"] {background:transparent; border:1px solid transparent; padding:3px 0;
+            color:#393a35; font-size:13px; font-weight:600;}
+        QPushButton[role="disclosure"]:hover {color:#171814;}
+        QPushButton[role="disclosure"]:focus {border-color:#6589ab;}
         QPushButton[role="close"] {font-family:'Segoe UI'; font-size:18px; padding:0; min-height:0;}
         QPushButton[role="nav"] {text-align:left; background:transparent; border:1px solid transparent;
             border-radius:8px; padding:8px 10px; color:#57574e;}
