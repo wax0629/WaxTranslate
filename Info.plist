@@ -5,6 +5,7 @@
 <key>CFBundleExecutable</key><string>waxtranlate</string>
 <key>CFBundleDisplayName</key><string>我靠翻译</string>
 <key>CFBundleName</key><string>WaxTranslate</string>
+<key>CFBundleIconFile</key><string>AppIcon.icns</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.2.3</string>
 <key>CFBundleVersion</key><string>5</string>
