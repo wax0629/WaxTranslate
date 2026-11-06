@@ -1,0 +1,28 @@
+name: Windows desktop regression
+
+on:
+  pull_request:
+    paths:
+      - 'windows/**'
+      - '.github/workflows/windows-desktop.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Windows development build
+        run: .\windows\setup.cmd
+      - name: Test desktop at 100% and 150% Qt scale
+        shell: pwsh
+        run: |
+          foreach ($scale in '1', '1.5') {
+            Write-Host "QT_SCALE_FACTOR=$scale"
+            $env:QT_SCALE_FACTOR = $scale
+            .\.venv\Scripts\python.exe windows\check.py --desktop -v
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
