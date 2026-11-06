@@ -24,7 +24,7 @@ struct LibraryView: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                Label("waxtranlate", systemImage: "character.book.closed.fill")
+                Label("我靠翻译", systemImage: "character.book.closed.fill")
                     .font(.system(size: 17, weight: .semibold)).lineLimit(1).foregroundStyle(accent).padding(.bottom, 24)
                 ForEach(Page.allCases) { p in
                     Button { page = p } label: {

@@ -27,7 +27,7 @@ enum ReaderError: LocalizedError {
     case permission, noText, noScreen
     var errorDescription: String? {
         switch self {
-        case .permission: return "请在系统设置的「屏幕与系统音频录制」中允许「waxtranlate」，然后重新打开应用。"
+        case .permission: return "请在系统设置的「屏幕与系统音频录制」中允许「我靠翻译」，然后重新打开应用。"
         case .noText: return "这里没有识别到文字。试着将光标移到词的中央，或使用区域翻译。"
         case .noScreen: return "没有找到光标所在的显示器。"
         }

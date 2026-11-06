@@ -3,12 +3,12 @@
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>local.luma.hovertranslate</string>
 <key>CFBundleExecutable</key><string>waxtranlate</string>
-<key>CFBundleDisplayName</key><string>waxtranlate</string>
-<key>CFBundleName</key><string>waxtranlate</string>
+<key>CFBundleDisplayName</key><string>我靠翻译</string>
+<key>CFBundleName</key><string>WaxTranslate</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.2.1</string>
-<key>CFBundleVersion</key><string>3</string>
+<key>CFBundleShortVersionString</key><string>0.2.2</string>
+<key>CFBundleVersion</key><string>4</string>
 <key>LSMinimumSystemVersion</key><string>15.2</string>
 <key>LSUIElement</key><true/>
-<key>NSScreenCaptureUsageDescription</key><string>waxtranlate按快捷键时读取光标附近或框选区域，让系统在本机识别文字。</string>
+<key>NSScreenCaptureUsageDescription</key><string>我靠翻译在你按快捷键时读取光标附近或框选区域，让系统在本机识别文字。</string>
 </dict></plist>

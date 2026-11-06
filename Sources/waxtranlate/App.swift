@@ -28,11 +28,11 @@ import AVFoundation
         }
         shortcutErrors = shortcuts.start()
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        status.button?.image = NSImage(systemSymbolName: "character.book.closed", accessibilityDescription: "waxtranlate")
-        status.button?.toolTip = "waxtranlate"
+        status.button?.image = NSImage(systemSymbolName: "character.book.closed", accessibilityDescription: "我靠翻译")
+        status.button?.toolTip = "我靠翻译"
         let menu = NSMenu()
-        for (title, action) in [("打开 waxtranlate", #selector(showLibrary)), ("区域翻译…", #selector(chooseArea)),
-                                 ("退出 waxtranlate", #selector(quit))] {
+        for (title, action) in [("打开我靠翻译", #selector(showLibrary)), ("区域翻译…", #selector(chooseArea)),
+                                 ("退出我靠翻译", #selector(quit))] {
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
             item.target = self
         }
@@ -53,7 +53,7 @@ import AVFoundation
             }, region: { [weak self] in self?.chooseArea() }, permission: { [weak self] in self?.openPermissionSettings() })
             let window = NSWindow(contentViewController: NSHostingController(rootView: view))
             window.styleMask = [.titled, .closable, .resizable, .miniaturizable]
-            window.title = "waxtranlate"
+            window.title = "我靠翻译"
             window.setContentSize(NSSize(width: 640, height: 405))
             window.center()
             window.isReleasedWhenClosed = false
