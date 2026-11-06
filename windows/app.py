@@ -2,15 +2,18 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from html import escape
 import json
+import sqlite3
 from pathlib import Path
 import sys
 
 from PySide6.QtCore import QPoint, QPointF, QProcess, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QMenu, QPushButton,
-                               QSystemTrayIcon, QTextBrowser, QVBoxLayout, QWidget)
+                               QPlainTextEdit, QSystemTrayIcon, QTabWidget, QTextBrowser, QVBoxLayout, QWidget)
 
 from gestures import LOOKUP_HINT, REGION_HINT
+from notebook import Notebook
+from library import Library
 from reader import Passage, recognize
 from translation import translate
 
@@ -32,22 +35,12 @@ def image_rect(rect, logical_size, image_size):
 
 
 def app_icon():
-    pixmap = QPixmap(64, 64)
-    pixmap.fill(Qt.transparent)
-    p = QPainter(pixmap)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setBrush(QColor("#23594c"))
-    p.setPen(Qt.NoPen)
-    p.drawRoundedRect(2, 2, 60, 60, 14, 14)
-    p.setFont(QFont("Microsoft YaHei UI", 29, QFont.DemiBold))
-    p.setPen(Qt.white)
-    p.drawText(pixmap.rect(), Qt.AlignCenter, "译")
-    p.end()
-    return QIcon(pixmap)
+    return QIcon(str(Path(__file__).with_name("waxtranslate.ico")))
 
 
 class Card(QWidget):
     dismissed = Signal()
+    save_requested = Signal()
 
     def __init__(self):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
@@ -68,15 +61,30 @@ class Card(QWidget):
         self.text.setFrameShape(QTextBrowser.NoFrame)
         self.text.setOpenLinks(False)
         layout.addWidget(self.text)
+        buttons = QHBoxLayout()
+        self.copy = QPushButton("复制译文")
+        self.save = QPushButton("收藏生词")
+        buttons.addWidget(self.copy)
+        buttons.addStretch()
+        buttons.addWidget(self.save)
+        layout.addLayout(buttons)
+        self.copy.clicked.connect(lambda: QApplication.clipboard().setText(self.translation))
+        self.save.clicked.connect(self.save_requested)
+        self.translation = ""
 
-    def present(self, caption, content, point):
+    def present(self, caption, content, point, translation="", can_save=False):
+        self.translation = translation
+        self.copy.setVisible(bool(translation))
+        self.save.setVisible(can_save)
+        self.save.setText("收藏生词")
+        self.save.setEnabled(True)
         self.caption.setText(caption)
         screen = QApplication.screenAt(point) or QApplication.primaryScreen()
         area = screen.availableGeometry()
         width = min(410, area.width())
         self.text.setHtml(content)
         self.text.document().setTextWidth(width - 60)
-        height = min(area.height(), max(106, min(400, int(self.text.document().size().height()) + 76)))
+        height = min(area.height(), max(106, min(400, int(self.text.document().size().height()) + (112 if translation else 76))))
         self.resize(width, height)
         x = max(area.left(), min(point.x() + 16, area.right() - width + 1))
         y = point.y() + 22
@@ -179,32 +187,58 @@ def analyze(image, point, passage):
 class Window(QWidget):
     finished = Signal(int, object, object)
 
-    def __init__(self):
+    def __init__(self, notebook=None):
         super().__init__()
         self.setWindowTitle("我靠翻译 · WaxTranslate")
         self.card = Card()
         self.card.dismissed.connect(self.invalidate)
+        self.card.save_requested.connect(self.save_word)
+        self.saved_result = None
+        self.notebook = notebook or Notebook()
         self.overlay = None
         self.ticket = 0
         self.pool = ThreadPoolExecutor(max_workers=1)
         self.pending = None
         self.finished.connect(self.show_result)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 22, 26, 22)
-        layout.setSpacing(12)
-        heading = QLabel("我靠翻译")
-        heading.setStyleSheet("font-size:25px; font-weight:650")
-        layout.addWidget(heading)
-        layout.addWidget(QLabel("指向英文，看它在这句话里的意思。"))
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(20, 16, 20, 16)
+        header = QHBoxLayout()
+        brand = QLabel()
+        brand.setPixmap(app_icon().pixmap(46, 46))
+        header.addWidget(brand)
+        title = QLabel("我靠翻译")
+        title.setStyleSheet("font-size:22px;font-weight:650")
+        header.addWidget(title)
+        header.addStretch()
+        header.addWidget(QLabel("英语 → 简体中文"))
+        outer.addLayout(header)
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs)
+        home = QWidget()
+        layout = QVBoxLayout(home)
+        layout.setContentsMargins(14, 15, 14, 12)
+        layout.setSpacing(10)
+        self.tabs.addTab(home, "翻译")
+        self.library = Library(self.notebook)
+        self.tabs.addTab(self.library, "生词本")
         for label, keys in [("悬停取词", LOOKUP_HINT), ("框选翻译", REGION_HINT)]:
             row = QHBoxLayout()
             row.addWidget(QLabel(label))
             row.addStretch()
             shortcut = QLabel(keys)
-            shortcut.setStyleSheet("color:#36584f; background:#e8eee8; padding:4px 8px")
+            shortcut.setStyleSheet("color:#36584f;background:#e8eee8;padding:4px 8px")
             row.addWidget(shortcut)
             layout.addLayout(row)
+        self.input = QPlainTextEdit()
+        self.input.setPlaceholderText("也可以在这里输入或粘贴英文…")
+        self.input.setAccessibleName("待翻译的英文")
+        layout.addWidget(self.input, 1)
         actions = QHBoxLayout()
+        self.submit_text = QPushButton("翻译文本")
+        self.submit_text.setEnabled(False)
+        self.input.textChanged.connect(lambda: self.submit_text.setEnabled(bool(self.input.toPlainText().strip())))
+        self.submit_text.clicked.connect(self.translate_text)
+        actions.addWidget(self.submit_text)
         for label, action in [("试译示例", self.demo), ("框选英文", lambda: self.begin(True))]:
             button = QPushButton(label)
             button.clicked.connect(action)
@@ -214,6 +248,7 @@ class Window(QWidget):
         self.tray.setToolTip(f"我靠翻译 · {LOOKUP_HINT} 取词")
         menu = QMenu(self)
         menu.addAction("打开我靠翻译", self.open_home)
+        menu.addAction("生词本", self.open_library)
         menu.addAction("框选翻译", lambda: self.begin(True))
         menu.addSeparator()
         menu.addAction("退出", QApplication.quit)
@@ -233,13 +268,36 @@ class Window(QWidget):
         self.gestures.finished.connect(lambda: self.gesture_failed("监听进程已退出"))
         self.gestures.start(str(Path(sys.executable).with_name("pythonw.exe")),
                             ["-u", str(Path(__file__).with_name("gestures.py").resolve())])
-        self.setMinimumWidth(320)
+        self.resize(480, 410)
         QApplication.instance().aboutToQuit.connect(self.shutdown)
 
     def open_home(self):
         self.showNormal()
         self.raise_()
         self.activateWindow()
+
+    def open_library(self):
+        self.tabs.setCurrentWidget(self.library)
+        self.open_home()
+
+    def translate_text(self):
+        text = self.input.toPlainText().strip()
+        if text:
+            self.invalidate()
+            self.submit(QCursor.pos(), passage=Passage(text))
+
+    def save_word(self):
+        if self.saved_result is None:
+            return
+        try:
+            self.notebook.save(*self.saved_result)
+        except (sqlite3.Error, OSError) as error:
+            self.card.caption.setText(f"收藏失败：{error}")
+            return
+        self.card.save.setText("已收藏")
+        self.card.save.setEnabled(False)
+        if self.library.isVisible():
+            self.library.refresh()
 
     def tray_clicked(self, reason):
         if reason == QSystemTrayIcon.Trigger:
@@ -297,6 +355,7 @@ class Window(QWidget):
 
     def invalidate(self):
         self.ticket += 1
+        self.saved_result = None
         if self.pending is not None:
             self.pending.cancel()
         self.card.hide()
@@ -386,7 +445,8 @@ class Window(QWidget):
         content += f"<p>{context}</p>"
         if sentence:
             content += f"<p>{plain(sentence)}</p>"
-        self.card.present(origin, content, point)
+        self.saved_result = (passage, (origin, gloss, sentence)) if passage.selection else None
+        self.card.present(origin, content, point, translation=sentence or gloss, can_save=bool(passage.selection))
 
     def closeEvent(self, event):
         if self.tray.isVisible():
@@ -407,7 +467,11 @@ class Window(QWidget):
 
 
 def main():
+    from instance import activation_event
     app = QApplication(sys.argv)
+    activation = activation_event(app)
+    if activation is None:
+        return 0
     app.setApplicationName("我靠翻译")
     app.setWindowIcon(app_icon())
     app.setQuitOnLastWindowClosed(False)
@@ -416,6 +480,7 @@ def main():
                       "QPushButton {background:#eaf0ea;border:1px solid #bdcbc0;border-radius:4px;padding:5px 12px} "
                       "QPushButton:hover {background:#dce8dc} QMenu::item:selected {background:#dce8dc}")
     window = Window()
+    activation.activated.connect(window.open_home)
     window.show()
     return app.exec()
 

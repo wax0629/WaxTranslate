@@ -1,20 +1,24 @@
 """Offline sentence translation and conservative word alignment."""
 
 from functools import lru_cache
+from pathlib import Path
 import re
 
 import ctranslate2
 import sentencepiece
 
-from install_model import MODEL
+from install_model import MODEL, PACKAGE
 
 
 @lru_cache(maxsize=1)
 def engine():
-    if not (MODEL / "model/model.bin").is_file():
+    bundled = Path(__file__).resolve().parent.parent / "models" / PACKAGE
+    model = bundled if bundled.is_dir() else MODEL
+    if not (model / "model/model.bin").is_file():
         raise ValueError("缺少英译中模型。请运行 windows\\setup.cmd 安装后重试。")
-    tokenizer = sentencepiece.SentencePieceProcessor(model_file=str(MODEL / "sentencepiece.model"))
-    translator = ctranslate2.Translator(str(MODEL / "model"), device="cpu", compute_type="int8",
+    # SentencePiece's Windows file API cannot open some non-ASCII paths.
+    tokenizer = sentencepiece.SentencePieceProcessor(model_proto=(model / "sentencepiece.model").read_bytes())
+    translator = ctranslate2.Translator(str(model / "model"), device="cpu", compute_type="int8",
                                         intra_threads=4)
     return tokenizer, translator
 
