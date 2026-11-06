@@ -8,9 +8,9 @@ from pathlib import Path
 import sys
 
 from PySide6.QtCore import QPoint, QPointF, QProcess, QRect, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QIcon, QKeySequence, QPainter, QPen, QShortcut
-from PySide6.QtWidgets import (QApplication, QButtonGroup, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton,
-                               QPlainTextEdit, QStackedWidget, QSystemTrayIcon, QTextBrowser, QVBoxLayout, QWidget)
+from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPen
+from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton,
+                               QStackedWidget, QStyle, QSystemTrayIcon, QTextBrowser, QVBoxLayout, QWidget)
 
 from gestures import LOOKUP_HINT, REGION_HINT
 from notebook import Notebook
@@ -18,6 +18,7 @@ from library import Library
 from reader import Passage, recognize
 from theme import APP_NAME, apply_theme, label, nav_icon
 from translation import translate
+from workspace import TextWorkspace
 
 
 def plain(text):
@@ -219,13 +220,13 @@ class Window(QWidget):
         self.pool = ThreadPoolExecutor(max_workers=1)
         self.pending = None
         self.finished.connect(self.show_result)
-        outer = QHBoxLayout(self)
+        self.compact = None
+        outer = self.shell = QBoxLayout(QBoxLayout.LeftToRight, self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-        sidebar = QFrame(objectName="sidebar")
-        sidebar.setFixedWidth(172)
+        sidebar = self.sidebar = QFrame(objectName="sidebar")
         outer.addWidget(sidebar)
-        rail = QVBoxLayout(sidebar)
+        rail = self.rail = QBoxLayout(QBoxLayout.TopToBottom, sidebar)
         rail.setContentsMargins(12, 24, 12, 17)
         rail.setSpacing(5)
         brand = QHBoxLayout()
@@ -250,7 +251,8 @@ class Window(QWidget):
         group.idClicked.connect(self.tabs.setCurrentIndex)
         self.tabs.currentChanged.connect(lambda index: group.button(index).setChecked(True))
         rail.addStretch()
-        rail.addWidget(label("本地英译中", "meta"))
+        self.engine_label = label("本地英译中", "meta")
+        rail.addWidget(self.engine_label)
 
         home = QWidget(objectName="home")
         layout = QVBoxLayout(home)
@@ -260,48 +262,38 @@ class Window(QWidget):
         self.library = Library(self.notebook)
         self.tabs.addWidget(self.library)
         layout.addWidget(label("文本翻译", "heading"))
-        editor = QFrame(objectName="editor")
-        box = QVBoxLayout(editor)
-        box.setContentsMargins(16, 13, 16, 12)
-        box.setSpacing(7)
-        box.addWidget(label("英语   →   简体中文", "meta"))
-        self.input = QPlainTextEdit(objectName="input")
-        self.input.setPlaceholderText("输入或粘贴英文…")
-        self.input.setAccessibleName("待翻译的英文")
-        self.input.setFocus()
-        box.addWidget(self.input, 1)
-        actions = QHBoxLayout()
-        example = QPushButton("试译示例")
+        self.workspace = TextWorkspace(self.pool)
+        layout.addWidget(self.workspace, 1)
+        quick = QHBoxLayout()
+        self.hint_button = QPushButton("屏幕翻译")
+        self.hint_button.setIconSize(QSize(11, 11))
+        self.hint_button.setProperty("role", "disclosure")
+        self.hint_button.setCheckable(True)
+        self.hint_button.setToolTip("显示或收起取词与框选手势")
+        quick.addWidget(self.hint_button)
+        quick.addStretch()
+        example = QPushButton("取词示例")
         example.setProperty("role", "quiet")
         example.clicked.connect(self.demo)
-        actions.addWidget(example)
-        actions.addStretch()
-        self.submit_text = QPushButton("翻译")
-        self.submit_text.setProperty("role", "primary")
-        self.submit_text.setToolTip("翻译文本 (Ctrl+Enter)")
-        self.submit_text.setEnabled(False)
-        self.input.textChanged.connect(lambda: self.submit_text.setEnabled(bool(self.input.toPlainText().strip())))
-        self.submit_text.clicked.connect(self.translate_text)
-        shortcut = QShortcut(QKeySequence("Ctrl+Return"), self.input)
-        shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        shortcut.activated.connect(self.translate_text)
-        actions.addWidget(self.submit_text)
-        box.addLayout(actions)
-        layout.addWidget(editor, 1)
-        quick = QHBoxLayout()
-        quick.addWidget(label("屏幕取词", "subhead"))
-        quick.addStretch()
+        quick.addWidget(example)
         region = QPushButton("开始框选")
         region.setProperty("role", "quiet")
         region.clicked.connect(lambda: self.begin(True))
         quick.addWidget(region)
         layout.addLayout(quick)
+        self.hints = QWidget()
+        hints = QVBoxLayout(self.hints)
+        hints.setContentsMargins(0, 0, 0, 0)
+        hints.setSpacing(7)
         for description, keys in (("指向单词", LOOKUP_HINT), ("拖选一段文字", REGION_HINT)):
             row = QHBoxLayout()
             row.addWidget(label(description, "meta"))
             row.addStretch()
             row.addWidget(label(keys, "key"))
-            layout.addLayout(row)
+            hints.addLayout(row)
+        layout.addWidget(self.hints)
+        self.hint_button.toggled.connect(self.show_hints)
+        self.hint_button.setChecked(True)
         self.tray = QSystemTrayIcon(QApplication.windowIcon(), self)
         self.tray.setToolTip(f"{APP_NAME} · {LOOKUP_HINT} 取词")
         menu = QMenu(self)
@@ -326,8 +318,37 @@ class Window(QWidget):
         self.gestures.finished.connect(lambda: self.gesture_failed("监听进程已退出"))
         self.gestures.start(str(Path(sys.executable).with_name("pythonw.exe")),
                             ["-u", str(Path(__file__).with_name("gestures.py").resolve())])
-        self.resize(720, 462)
+        area = QApplication.primaryScreen().availableGeometry()
+        self.resize(min(872, area.width() - 24), min(535, area.height() - 48))
+        self.workspace.input.setFocus()
         QApplication.instance().aboutToQuit.connect(self.shutdown)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        compact = event.size().width() < 700
+        if self.compact == compact:
+            return
+        self.compact = compact
+        self.shell.setDirection(QBoxLayout.TopToBottom if compact else QBoxLayout.LeftToRight)
+        self.rail.setDirection(QBoxLayout.LeftToRight if compact else QBoxLayout.TopToBottom)
+        self.sidebar.setMinimumSize(0, 0)
+        self.sidebar.setMaximumSize(16777215, 16777215)
+        if compact:
+            self.sidebar.setFixedHeight(56)
+            self.rail.setContentsMargins(13, 6, 13, 6)
+        else:
+            self.sidebar.setFixedWidth(172)
+            self.rail.setContentsMargins(12, 24, 12, 17)
+        self.engine_label.setVisible(not compact)
+        self.hint_button.setChecked(not compact)
+        self.sidebar.setProperty("compact", compact)
+        self.sidebar.style().unpolish(self.sidebar)
+        self.sidebar.style().polish(self.sidebar)
+
+    def show_hints(self, expanded):
+        self.hints.setVisible(expanded)
+        arrow = QStyle.SP_ArrowDown if expanded else QStyle.SP_ArrowRight
+        self.hint_button.setIcon(self.style().standardIcon(arrow))
 
     def open_home(self):
         self.showNormal()
@@ -339,12 +360,6 @@ class Window(QWidget):
         self.open_home()
         if self.library.review.isEnabled():
             self.library.review.setFocus()
-
-    def translate_text(self):
-        text = self.input.toPlainText().strip()
-        if text:
-            self.invalidate()
-            self.submit(QCursor.pos(), passage=Passage(text))
 
     def save_word(self):
         if self.saved_result is None:
@@ -525,6 +540,7 @@ class Window(QWidget):
             self.gestures.waitForFinished(2000)
         self.invalidate()
         self.tray.hide()
+        self.workspace.reset_result()
         self.pool.shutdown(wait=True, cancel_futures=True)
 
 

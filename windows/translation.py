@@ -1,5 +1,6 @@
 """Offline sentence translation and conservative word alignment."""
 
+from concurrent.futures import CancelledError
 from functools import lru_cache
 from pathlib import Path
 import re
@@ -8,6 +9,7 @@ import ctranslate2
 import sentencepiece
 
 from install_model import MODEL, PACKAGE
+from reader import Passage
 
 
 @lru_cache(maxsize=1)
@@ -86,3 +88,17 @@ def translate(passage):
     gloss = decoded(tokenizer, single.hypotheses[0])
     gloss = gloss.rstrip("。.!！")
     return "单词参考", gloss or passage.word, sentence
+
+
+def translate_text(text, stop):
+    # OCR line breaks may only be soft wraps. Preserve explicit paragraph
+    # breaks for the editable workspace without changing the OCR entry point.
+    if not re.search("[A-Za-z]", text):
+        raise ValueError("请输入英文原文。当前支持英文译为简体中文。")
+    paragraphs = re.split(r"(\n[ \t]*\n(?:[ \t]*\n)*)", text.strip())
+    result = []
+    for part in paragraphs:
+        if stop.is_set():
+            raise CancelledError()
+        result.append(translate(Passage(part))[1] if re.search("[A-Za-z]", part) else part)
+    return "".join(result)
