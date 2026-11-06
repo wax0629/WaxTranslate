@@ -41,6 +41,38 @@ def wait_until(predicate):
 
 
 class Checks(unittest.TestCase):
+    def test_words_on_each_side_of_slash(self):
+        for scale in (1, 1.5):
+            font = QFont("Segoe UI")
+            font.setPixelSize(28)
+            for pair in ("read/write", "input/output", "TCP/IP"):
+                left, right = pair.split("/")
+                text = f"Choose {pair} or {pair}."
+                image = QImage(int(680 * scale), int(70 * scale), QImage.Format_ARGB32)
+                image.setDevicePixelRatio(scale)
+                image.fill(Qt.white)
+                painter = QPainter(image)
+                painter.setFont(font)
+                painter.drawText(10, 48, text)
+                metrics = painter.fontMetrics()
+                painter.end()
+                start = text.rindex(pair)
+                for part, offset in ((left, start), ("/", start + len(left)), (right, start + len(left) + 1)):
+                    with self.subTest(scale=scale, pair=pair, part=part):
+                        x = 10 + metrics.horizontalAdvance(text[:offset]) + metrics.horizontalAdvance(part) / 2
+                        point = QPointF(x * scale, (48 - metrics.capHeight() / 2) * scale)
+                        if part == "/":
+                            with self.assertRaises(ValueError):
+                                asyncio.run(recognize(image, point))
+                        else:
+                            read = asyncio.run(recognize(image, point))
+                            self.assertEqual(read, Passage(text, (offset, offset + len(part))))
+
+        for token in ("read-only", "don't"):
+            word = Word(token, QRectF(10, 5, 120, 25))
+            read = passage_from_lines([[word]], word.rect.center())
+            self.assertEqual(read.word, token)
+
     def test_scaled_capture(self):
         logical, physical = QSize(520, 100), QSize(780, 150)
         image = QImage(physical, QImage.Format_ARGB32)

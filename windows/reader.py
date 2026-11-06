@@ -4,11 +4,14 @@ import re
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QFont, QFontMetricsF, QImage
 from winrt.windows.globalization import Language
 from winrt.windows.graphics.imaging import BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap
 from winrt.windows.media.ocr import OcrEngine
 from winrt.windows.storage.streams import DataWriter
+
+
+ENGLISH_WORD = re.compile(r"[A-Za-z0-9]+(?:[-’'][A-Za-z0-9]+)*")
 
 
 @dataclass
@@ -35,6 +38,23 @@ def line_rect(words):
     return rect
 
 
+def word_at_point(word, point):
+    if "/" not in word.text:
+        return ENGLISH_WORD.search(word.text)
+    # Windows supplies one ink box for e.g. "read/write", with no glyph boxes
+    # or source font. Scale proportional advances into that box before hit-testing.
+    font = QFont("Segoe UI")
+    font.setPixelSize(64)
+    metrics = QFontMetricsF(font)
+    position = (point.x() - word.rect.left()) / word.rect.width() * metrics.horizontalAdvance(word.text)
+    for match in ENGLISH_WORD.finditer(word.text):
+        left = metrics.horizontalAdvance(word.text[:match.start()])
+        right = metrics.horizontalAdvance(word.text[:match.end()])
+        if left <= position < right:
+            return match
+    return None
+
+
 def passage_from_lines(lines, point):
     if not lines:
         raise ValueError("未识别到英文。请重新框选清晰、可见的文字。")
@@ -46,8 +66,7 @@ def passage_from_lines(lines, point):
     if hit is None:
         raise ValueError("光标下没有识别到词。请指向字母，或按 Alt + Shift + R 框选。")
     anchor, column = hit
-    token = lines[anchor][column].text
-    match = re.search(r"[A-Za-z0-9]+(?:[-’'][A-Za-z0-9]+)*", token)
+    match = word_at_point(lines[anchor][column], point)
     if not match:
         raise ValueError("请指向一个英文词。")
     rects = [line_rect(line) for line in lines]
