@@ -111,19 +111,25 @@ class LanguageTests(unittest.TestCase):
                                    if p.begin < selected_start + len(word.encode()) and p.end > selected_start])
 
     def test_screen_word_and_region_with_installed_ocr(self):
+        font = QFont("Segoe UI")
+        font.setPixelSize(26)
+        metrics = QFontMetrics(font)
         for code, (text, word) in SAMPLES.items():
             with self.subTest(code=code):
-                font = QFont({"ja": "Yu Gothic", "ko": "Malgun Gothic"}.get(code, "Segoe UI"))
-                font.setPixelSize(26)
-                metrics = QFontMetrics(font)
-                image = QImage(metrics.horizontalAdvance(text) + 40, 90, QImage.Format_RGB32)
-                image.fill(0xffffffff)
-                painter = QPainter(image)
-                painter.setFont(font)
-                painter.drawText(10, 55, text)
-                painter.end()
-                hit = QPointF(10 + metrics.horizontalAdvance(text[:text.index(word)]) +
-                              metrics.horizontalAdvance(word) / 2, 55 - metrics.capHeight() / 2)
+                if code in ("ja", "ko"):
+                    # Rendered source glyphs stay the same on runners without CJK display fonts.
+                    image = QImage(str(Path(__file__).parent / "testdata" / f"ocr-{code}.png"))
+                    self.assertFalse(image.isNull())
+                    hit = QPointF(28 if code == "ja" else 56, 44)
+                else:
+                    image = QImage(metrics.horizontalAdvance(text) + 40, 90, QImage.Format_RGB32)
+                    image.fill(0xffffffff)
+                    painter = QPainter(image)
+                    painter.setFont(font)
+                    painter.drawText(10, 55, text)
+                    painter.end()
+                    hit = QPointF(10 + metrics.horizontalAdvance(text[:text.index(word)]) +
+                                  metrics.horizontalAdvance(word) / 2, 55 - metrics.capHeight() / 2)
                 installed = OcrEngine.try_create_from_language(Language(OCR_TAGS[code]))
                 if installed is None:
                     with self.assertRaisesRegex(ValueError, NAMES[code] + "安装文字识别"):
@@ -132,8 +138,8 @@ class LanguageTests(unittest.TestCase):
                         continue  # These scripts require their own system OCR.
                 for setting in (("", code) if installed else ("",)):
                     read, result, _, language, _ = analyze(image, hit, None, setting)
-                    self.assertEqual((read.word.casefold(), language), (word.casefold(), NAMES[code]))
-                    self.assertIn("猫", result[1])
+                    self.assertEqual((read.word.casefold(), language), (word.casefold(), NAMES[code]), (setting, read))
+                    self.assertIn("猫", result[1], (read, result))
                     _, region, _, _, _ = analyze(image, None, None, setting)
                     self.assertIn("猫", region[1])
 

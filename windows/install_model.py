@@ -1,6 +1,7 @@
 """Install the pinned offline models and English-Chinese dictionary."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 import csv
 from dataclasses import dataclass
@@ -201,8 +202,13 @@ def install_model(package, archive=None):
 
 
 def install(archive=None):
-    for code, package in MODELS.items():
-        install_model(package, archive if code == "en" else None)
+    # Each verified language package is published atomically to its own
+    # directory. Overlap a few downloads on first install of the nine models.
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        jobs = [pool.submit(install_model, package, archive if code == "en" else None)
+                for code, package in MODELS.items()]
+        for job in jobs:
+            job.result()
 
 
 if __name__ == "__main__":

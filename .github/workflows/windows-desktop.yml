@@ -7,6 +7,7 @@ on:
       - 'Assets/Brand/barrette.svg'
       - 'Assets/Editorial/river.jpg'
       - '.github/workflows/windows-desktop.yml'
+      - '.github/scripts/install-test-ocr.ps1'
 
 permissions:
   contents: read
@@ -14,7 +15,7 @@ permissions:
 jobs:
   desktop:
     runs-on: windows-2025
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - name: Install Windows development build
@@ -33,23 +34,9 @@ jobs:
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'new profile'
           & "$env:PORTABLE_APP\runtime\python.exe" windows\check_launcher.py "$env:PORTABLE_APP"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Enable Japanese and Korean OCR fixtures when available
+      - name: Install Japanese, Korean and Russian OCR on the test machine
         shell: pwsh
-        timeout-minutes: 3
-        continue-on-error: true
-        run: |
-          foreach ($tag in 'ja-JP', 'ko-KR') {
-            $name = "Language.OCR~~~$tag~0.0.1.0"
-            try {
-              $cap = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
-              if ($cap.State -eq 'NotPresent') {
-                Add-WindowsCapability -Online -Name $name -ErrorAction Stop | Out-Host
-              }
-              Get-WindowsCapability -Online -Name $name | Select-Object Name, State
-            } catch {
-              Write-Warning "$tag OCR unavailable on this runner. $_"
-            }
-          }
+        run: ./.github/scripts/install-test-ocr.ps1
       - name: Test packaged desktop at 100% and 150% Qt scale
         shell: pwsh
         run: |
