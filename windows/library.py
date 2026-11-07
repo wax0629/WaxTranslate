@@ -61,7 +61,7 @@ class WordDelegate(QStyledItemDelegate):
             painter.setBrush(Qt.NoBrush)
             painter.drawRoundedRect(bounds, 6, 6)
         word, _, gloss = index.data().partition("\n")
-        rows = ((word, QFont("Georgia"), 17, "#20392d"), (gloss, option.font, 12, "#55665d"))
+        rows = ((word, QFont("Spectral"), 18, "#20392d"), (gloss, option.font, 12, "#55665d"))
         y = bounds.y() + 4
         for value, font, pixels, color in rows:
             font.setPixelSize(pixels)

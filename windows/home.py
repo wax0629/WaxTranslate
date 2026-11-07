@@ -23,8 +23,8 @@ HOME_STYLE = """
         font-size:19px; font-weight:650;}
     QLabel#heroDescription {color:#d3e3d7; font-size:13px;}
     QFrame#sampleRule {background:#668476; max-height:1px; border:0;}
-    QLabel#homeExample, QPushButton#trialWord {font-family:Georgia, 'Times New Roman';
-        font-size:21px; color:#f7f3e7; background:transparent; border:0;}
+    QLabel#homeExample, QPushButton#trialWord {font-family:'Spectral','Georgia';
+        font-size:23px; color:#f7f3e7; background:transparent; border:0;}
     QPushButton#trialWord {color:#f9e7aa; background:#38594a; border:1px solid #64785a;
         border-bottom:2px solid #d9c582; border-radius:4px; padding:0 3px; min-height:0;}
     QPushButton#trialWord:hover {background:#496750; color:#fff4c4;}
@@ -41,7 +41,7 @@ HOME_STYLE = """
     QLabel#recordHeading {color:#213a30; font-size:17px; font-weight:650;}
     QFrame#homeMetrics {background:transparent; border:0; border-top:1px solid #d9ded2;}
     QFrame#metricDivider {background:#e3e3d9; border:0; min-width:1px; max-width:1px;}
-    QLabel#metricNumber {color:#223d30; font-family:Georgia,'Times New Roman'; font-size:38px;}
+    QLabel#metricNumber {color:#223d30; font-family:'Spectral','Georgia'; font-size:39px; font-weight:600;}
     QPushButton#gestureSettings:focus, QPushButton#homeRegion:focus {border-color:#346b58;}
     QPushButton#trialWord:focus, QPushButton#homeRead:focus {border:2px solid #fff2bb;}
 """

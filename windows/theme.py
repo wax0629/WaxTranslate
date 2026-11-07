@@ -1,8 +1,9 @@
 """Shared typography and quiet surfaces for the Windows reader."""
 from html import escape
+from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import QLabel
 
 APP_NAME = "WaxTranslate"
@@ -66,6 +67,9 @@ def nav_icon(book=False, *, settings=False, home=False):
 
 
 def apply_theme(app):
+    fonts = Path(__file__).with_name("fonts")
+    for filename in ("Spectral-Regular.ttf", "Spectral-SemiBold.ttf"):
+        QFontDatabase.addApplicationFont(str(fonts / filename))
     app.setFont(QFont("Microsoft YaHei UI", 10))
     palette = app.palette()
     for role, color in (
@@ -94,7 +98,7 @@ def apply_theme(app):
         QFrame#sidebar {background:#eeefe7; border:0; border-right:1px solid #d9ded1;}
         QFrame#sidebar[compact="true"] {border-right:0; border-bottom:1px solid #d9ded1;}
         QFrame#brandBadge {background:#fbfaf4; border:1px solid #d6dccf; border-radius:10px;}
-        QLabel[role="brand"] {color:#1c3629; font-family:'Georgia','Segoe UI'; font-size:17px; font-weight:600;}
+        QLabel[role="brand"] {color:#1c3629; font-family:'Spectral','Georgia'; font-size:19px; font-weight:600;}
         QLabel[role="engine"] {color:#5c6b61; font-size:11px;}
         QFrame#railRule {background:#d5dbcf; border:0; max-height:1px;}
         QPushButton[role="nav"] {text-align:left; background:transparent; color:#45564b;
@@ -140,13 +144,13 @@ def apply_theme(app):
             background:#fffefa; border:1px solid #d7ddcf; border-radius:14px;}
         QFrame#editor {background:#fffefa; border:0; border-radius:13px;}
         QFrame#translationPane {background:#eff3e9; border:0; border-radius:13px;}
-        QFrame#sheetDivider, QFrame#binding, QFrame#hairline {background:#dbe0d4; border:0;}
+        QFrame#binding, QFrame#hairline {background:#dbe0d4; border:0;}
         QFrame#hairline {min-height:1px; max-height:1px;}
-        QLabel[role="sourceLanguage"] {font:600 23px 'Georgia'; color:#253d2b;}
+        QLabel[role="sourceLanguage"] {font:600 24px 'Spectral','Georgia'; color:#253d2b;}
         QLabel[role="targetLanguage"] {font-size:18px; font-weight:600; color:#3c5846;}
         QPlainTextEdit#input, QPlainTextEdit#translation {background:transparent; border:0; padding:0;
             selection-background-color:#c9decd; selection-color:#193726;}
-        QPlainTextEdit#input {font-family:'Georgia','Microsoft YaHei UI'; font-size:18px; color:#213b2b;}
+        QPlainTextEdit#input {font-family:'Spectral','Georgia','Microsoft YaHei UI'; font-size:19px; color:#213b2b;}
         QPlainTextEdit#translation {font-size:16px; color:#314b3a;}
         QFrame#emptyBook {background:#eef2e8; border:1px solid #d5dfce; border-radius:14px;}
         QTextBrowser#entry {background:transparent; border:0; padding:8px 11px;
@@ -170,10 +174,10 @@ def plain(text):
 
 DOCUMENT_STYLE = """
     p {margin:0; font-family:'Microsoft YaHei UI'; color:#303a34;}
-    .word {font-family:'Georgia','Microsoft YaHei UI'; font-size:27px; font-weight:600; color:#1c3629; margin-bottom:3px;}
+    .word {font-family:'Spectral','Georgia','Microsoft YaHei UI'; font-size:28px; font-weight:600; color:#1c3629; margin-bottom:3px;}
     .details {font-size:12px; color:#53675b; margin-bottom:6px;}
     .gloss {font-size:17px; line-height:133%; color:#283e31; margin-bottom:4px;}
-    .source {font-family:'Georgia','Microsoft YaHei UI'; font-size:16px; line-height:128%; color:#46584d; margin-top:4px;}
+    .source {font-family:'Spectral','Georgia','Microsoft YaHei UI'; font-size:17px; line-height:128%; color:#46584d; margin-top:4px;}
     .hit {font-weight:600; color:#244b32; background-color:#e2ecda;}
     .translation {font-size:14px; line-height:130%; color:#29332e; margin-top:7px;}
     .message {font-size:14px; line-height:140%;}

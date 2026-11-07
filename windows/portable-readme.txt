@@ -21,3 +21,5 @@ WaxTranslate · Windows x64
 
 主动收藏的条目、复习进度和当天的查词次数保存在 %LOCALAPPDATA%\WaxTranslate\notebook.sqlite3。
 更新时退出旧版，解压新包到另一个目录即可。两个版本共用同一份生词本。
+
+英文字体 Spectral 由 Production Type 设计，使用 SIL Open Font License 1.1，许可随包保存在 windows\fonts\OFL.txt。
