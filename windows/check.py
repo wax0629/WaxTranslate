@@ -2,6 +2,7 @@
 
 import asyncio
 import ctypes
+from ctypes import wintypes
 import faulthandler
 import os
 import sys
@@ -482,21 +483,32 @@ class Checks(unittest.TestCase):
             self.assertIn("岸", window.card.text.toPlainText())
             # Real mouse presses. The inside action works; the first outside
             # click dismisses the card and still reaches the original window.
-            # A translucent window updates its native input surface when the
-            # new frame is presented, after the loading card has grown.
-            def copy_ready():
-                center = window.card.copy.mapToGlobal(window.card.copy.rect().center())
-                return QApplication.widgetAt(center) is window.card.copy
+            # A layered window publishes its input surface after painting.
+            # Also let the absolute mouse move reach the hardware input queue
+            # before pressing; mouse_event can return before that move arrives.
+            user.WindowFromPhysicalPoint.argtypes = (wintypes.POINT,)
+            user.WindowFromPhysicalPoint.restype = wintypes.HWND
+            user.GetAncestor.argtypes = (wintypes.HWND, wintypes.UINT)
+            user.GetAncestor.restype = wintypes.HWND
+            def native_target():
+                cursor = wintypes.POINT()
+                user.GetPhysicalCursorPos(ctypes.byref(cursor))
+                return user.GetAncestor(user.WindowFromPhysicalPoint(cursor), 2)
 
-            wait_until(copy_ready)
-            move_cursor(window.card.copy.mapToGlobal(window.card.copy.rect().center()))
+            button = window.card.copy
+            center = button.mapToGlobal(button.rect().center())
+            move_cursor(center)
+            wait_until(lambda: native_target() == int(window.card.winId())
+                       and QApplication.widgetAt(QCursor.pos()) is button)
             user.mouse_event(2, 0, 0, 0, 0)
+            wait_until(button.isDown)
             user.mouse_event(4, 0, 0, 0, 0)
             wait_until(lambda: window.card.copy.text() == "已复制")
             self.assertTrue(window.card.isVisible())
             outside = sample.mapToGlobal(QPoint(6, sample.height() // 2))
             self.assertFalse(window.card.geometry().contains(outside))
             move_cursor(outside)
+            wait_until(lambda: QApplication.widgetAt(QCursor.pos()) is sample and native_target() == int(sample.winId()))
             user.mouse_event(2, 0, 0, 0, 0)
             user.mouse_event(4, 0, 0, 0, 0)
             wait_until(lambda: not window.card.isVisible() and len(clicks) == 2)
@@ -523,8 +535,10 @@ class Checks(unittest.TestCase):
         except AssertionError as error:
             future = window.pending
             pos = QCursor.pos()
+            native = native_target() if "native_target" in locals() else None
             self.fail(f"{error}; recent gestures={gestures[-8:]}, ticket={window.ticket}, "
-                      f"cursor={pos.toTuple()}, widget={QApplication.widgetAt(pos)}, bounds={window.card.geometry()}, "
+                      f"cursor={pos.toTuple()}, widget={QApplication.widgetAt(pos)}, native target={native}, "
+                      f"card hwnd={int(window.card.winId())}, bounds={window.card.geometry()}, "
                       f"card=({window.card.isVisible()}, {window.card.caption.text()!r}), "
                       f"worker={future}, overlay={window.overlay is not None}")
         finally:
