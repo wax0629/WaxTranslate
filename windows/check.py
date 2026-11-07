@@ -22,11 +22,10 @@ from unittest.mock import patch
 from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QCursor, QFont, QFontDatabase, QFontMetrics, QImage, QMouseEvent, QPainter, QShortcut
 from PySide6.QtTest import QTest
-from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from app import Window, app_icon, image_point, image_rect
-from home import HOME_EXAMPLE
+from home import HOME_EXAMPLE, HOME_WORD
 from notebook import Notebook
 from popup import Card
 from reader import Passage, Word, context_excerpt, passage_from_lines, recognize
@@ -72,8 +71,17 @@ class Checks(unittest.TestCase):
                 wait_until(window.wordmark.isVisible)
                 self.assertTrue(QFontDatabase.hasFamily("Spectral"))
                 self.assertGreaterEqual(window.wordmark.width(), window.wordmark.fontMetrics().horizontalAdvance("WaxTranslate"))
-                self.assertFalse(window.home.hero.river.isNull())
+                self.assertFalse(window.home.hero.portrait.isNull())
                 self.assertFalse(window.home.hero.grab().isNull())
+                for width, height in ((1080, 675), (570, 485), (540, 610), (540, 800)):
+                    window.resize(width, height)
+                    QApplication.processEvents()
+                    hero = window.home.hero
+                    for control in (hero.demo, hero.meaning, hero.sentence, hero.trial, hero.keycap):
+                        self.assertTrue(hero.rect().contains(control.geometry()), (width, height, control.geometry()))
+                    self.assertGreaterEqual(hero.sentence.height(), hero.sentence.heightForWidth(hero.sentence.width()))
+                    self.assertLess(hero.sentence.geometry().bottom(), hero.trial.y())
+                    self.assertFalse(hero.trial.geometry().intersects(hero.keycap.geometry()))
                 window.resize(570, 485)
                 wait_until(lambda: window.compact is True and window.home.viewport().width() > window.width() - 32)
                 self.assertLessEqual(window.width(), 572)
@@ -151,7 +159,7 @@ class Checks(unittest.TestCase):
             try:
                 self.assertEqual(first.trigger.currentData(), "left")
                 first.trigger.setCurrentIndex(first.trigger.findData("off"))
-                self.assertIn("开始框选", first.home.region_hint.text())
+                self.assertIn("开始框选", first.home.region.toolTip())
             finally:
                 first.shutdown()
                 first.deleteLater()
@@ -179,15 +187,17 @@ class Checks(unittest.TestCase):
                 self.assertEqual(home.keycap.text(), "左 Ctrl")
                 wait_until(lambda: counts() == ("0", "0", "0"))
                 edge = home.demo.mapToGlobal(QPoint(-2, home.demo.height() // 2))
-                with patch.object(QApplication, "widgetAt", return_value=home.sample), \
+                with patch.object(QApplication, "widgetAt", return_value=home.hero), \
                         patch.object(window, "try_home_word") as try_word:
                     window.begin(False, edge)
                     try_word.assert_called_once()
                 window.workspace.input.setPlainText("An unfinished draft.")
-                home.demo.click()
+                home.hero.trial.setFocus()
+                QTest.keyClick(home.hero.trial, Qt.Key_Space)
                 wait_until(window.card.save.isVisible)
                 self.assertEqual(window.saved_result[0].text, HOME_EXAMPLE)
-                self.assertIn("岸", window.saved_result[1][1])
+                self.assertEqual(window.saved_result[0].word, HOME_WORD)
+                self.assertTrue(window.saved_result[1][1])
                 wait_until(lambda: counts() == ("1", "0", "0"))
                 window.card.save.click()
                 wait_until(lambda: counts() == ("1", "1", "1"))
@@ -201,9 +211,8 @@ class Checks(unittest.TestCase):
                 window.trigger.setCurrentIndex(window.trigger.findData("right"))
                 self.assertEqual(home.keycap.text(), "右 Ctrl")
                 window.trigger.setCurrentIndex(window.trigger.findData("off"))
-                self.assertTrue(home.keycap.isHidden())
-                self.assertTrue(home.reader.isVisible())
-                home.reader.click()
+                self.assertEqual(home.keycap.text(), "仅应用内")
+                home.read_tool.click()
                 self.assertIs(window.tabs.currentWidget(), window.reader_page)
                 self.assertEqual(window.workspace.input.toPlainText(), "An unfinished draft.")
                 window.tabs.setCurrentWidget(home)
@@ -636,7 +645,7 @@ class Checks(unittest.TestCase):
             book = Notebook(path)
             window = Window(notebook=book)
             self.assertFalse(app_icon().isNull())
-            self.assertTrue(window.findChild(QSvgWidget, "brandMark").renderer().isValid())
+            self.assertEqual(window.wordmark.text(), "WaxTranslate")
             try:
                 window.demo()
                 wait_until(lambda: window.card.save.isVisible())
@@ -981,7 +990,7 @@ class Checks(unittest.TestCase):
             self.assertTrue(window.card.save.isVisible(),
                             (window.card.text.toPlainText(), target, demo.mapToGlobal(demo.rect().center())))
             self.assertEqual(window.saved_result[0].text, HOME_EXAMPLE)
-            self.assertEqual(window.saved_result[0].word, "bank")
+            self.assertEqual(window.saved_result[0].word, HOME_WORD)
             wait_until(lambda: window.home.values[0].text() == "3")
             window.trigger.setCurrentIndex(window.trigger.findData("off"))
             wait_until(lambda: window.active_mode == "off")

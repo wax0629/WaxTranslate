@@ -20,7 +20,7 @@ def action_icon(bookmark):
     painter = QPainter(pix)
     painter.setRenderHint(QPainter.Antialiasing)
     painter.scale(3, 3)
-    painter.setPen(QPen(QColor("#f8f9f3" if bookmark else "#566a5c"), 1.4,
+    painter.setPen(QPen(QColor("#faf9f6" if bookmark else "#595955"), 1.4,
                         Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     if bookmark:
         path = QPainterPath()
@@ -45,26 +45,26 @@ def action_icon(bookmark):
 
 
 CARD_STYLE = """
-    QFrame#readingCard {background:#fffdf7; border:1px solid #c6cfc2; border-radius:9px;}
-    QWidget#resultMasthead {background:#eaf0e5; border-bottom:1px solid #d7dfd2;
+    QFrame#readingCard {background:#faf9f6; border:1px solid #bcbcb6; border-radius:9px;}
+    QWidget#resultMasthead {background:#f0efea; border-bottom:1px solid #d5d4ce;
         border-top-left-radius:8px; border-top-right-radius:8px;}
-    QWidget#resultActions {background:#f5f6ef; border-top:1px solid #e0e5d9;
+    QWidget#resultActions {background:#faf9f6; border-top:1px solid #e6e5df;
         border-bottom-left-radius:8px; border-bottom-right-radius:8px;}
-    QLabel#origin {background:transparent; color:#39513e; font:600 12px 'Microsoft YaHei UI';}
+    QLabel#origin {background:transparent; color:#363634; font:600 12px 'Microsoft YaHei UI';}
     QPushButton {font:12px 'Microsoft YaHei UI'; border:1px solid transparent; min-height:0;
         padding:5px 8px; border-radius:5px;}
-    QPushButton#bookmark {background:#2d4334; color:#fffef8;}
-    QPushButton#bookmark:hover {background:#405947;}
-    QPushButton#bookmark:pressed {background:#203025;}
-    QPushButton#bookmark:disabled {background:#e2e7dc; color:#5f6e60;}
-    QPushButton#copy, QPushButton#dismiss, QPushButton#expand {background:transparent; color:#455a4c;}
-    QPushButton#copy:hover, QPushButton#dismiss:hover, QPushButton#expand:hover {background:#dfe7d9; color:#28402e;}
+    QPushButton#bookmark {background:#161615; color:#fffefa;}
+    QPushButton#bookmark:hover {background:#363634;}
+    QPushButton#bookmark:pressed {background:#161615;}
+    QPushButton#bookmark:disabled {background:#e6e5df; color:#595955;}
+    QPushButton#copy, QPushButton#dismiss, QPushButton#expand {background:transparent; color:#363634;}
+    QPushButton#copy:hover, QPushButton#dismiss:hover, QPushButton#expand:hover {background:#e6e5df; color:#161615;}
     QPushButton#dismiss {font:17px 'Segoe UI'; padding:0; border-radius:10px;}
-    QPushButton:focus {border-color:#b04c32;}
+    QPushButton:focus {border-color:#555551;}
     QTextBrowser {background:transparent; border:0; padding:0;
-        selection-background-color:#d6e3d1; selection-color:#24372e;}
+        selection-background-color:#d5d4ce; selection-color:#161615;}
     QScrollBar:vertical {background:transparent; width:6px; margin:1px 0;}
-    QScrollBar::handle:vertical {background:#b9c4b4; border-radius:3px; min-height:22px;}
+    QScrollBar::handle:vertical {background:#bcbcb6; border-radius:3px; min-height:22px;}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {height:0;}
     QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {background:transparent;}
 """

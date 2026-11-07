@@ -23,14 +23,14 @@ class Switch(QCheckBox):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         if self.hasFocus():
-            painter.setPen(QPen(QColor("#a94a31"), 1.5))
+            painter.setPen(QPen(QColor("#555551"), 1.5))
             painter.drawRoundedRect(QRectF(1, 2, 46, 30), 15, 15)
         if not self.isEnabled():
-            fill, border = "#e1e4dd", "#d1d7ce"
+            fill, border = "#e6e5df", "#d5d4ce"
         elif self.isChecked():
-            fill, border = "#334c3b", "#334c3b"
+            fill, border = "#161615", "#161615"
         else:
-            fill, border = "#cad1c5", "#aab6a8"
+            fill, border = "#bcbcb6", "#90908a"
         painter.setBrush(QColor(fill))
         painter.setPen(QPen(QColor(border), 1))
         painter.drawRoundedRect(QRectF(4, 6, 40, 22), 11, 11)
@@ -51,7 +51,7 @@ class Choice(QComboBox):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor("#54695a"), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(QColor("#595955"), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         x, y = self.width() - 11, self.height() / 2
         painter.drawPolyline([QPointF(x - 3, y - 1.5), QPointF(x, y + 1.5), QPointF(x + 3, y - 1.5)])
 
@@ -87,7 +87,7 @@ class SectionMark(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor("#aa472f"), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(QColor("#161615"), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         painter.setBrush(Qt.NoBrush)
         if self.window_mark:
             painter.drawRoundedRect(QRectF(7.5, 9, 17, 14), 2, 2)

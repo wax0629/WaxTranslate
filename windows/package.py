@@ -55,7 +55,7 @@ def build(output, archive=None):
         for name in APP_FILES:
             shutil.copy2(SRC / name, root / "windows" / name)
         shutil.copytree(SRC / "fonts", root / "windows/fonts")
-        for asset in (Path("Assets/Brand/barrette.svg"), Path("Assets/Editorial/river.jpg")):
+        for asset in (Path("Assets/Brand/barrette.svg"), Path("Assets/Editorial/glance.png")):
             (root / asset.parent).mkdir(parents=True, exist_ok=True)
             shutil.copy2(SRC.parent / asset, root / asset)
         for package in MODELS.values():

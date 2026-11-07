@@ -9,12 +9,11 @@ import time
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QSettings, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QCursor, QDesktopServices, QIcon, QPainter, QPen
-from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QFrame, QHBoxLayout, QLayout,
                                QMenu, QPushButton, QSizePolicy, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 from notebook import Notebook
-from home import HOME_EXAMPLE, HomePage
+from home import HOME_EXAMPLE, HOME_WORD, HomePage
 from lookup import UNKNOWN, explain, reference_word, sentence_translation
 from online_terms import search_entities
 from popup import Card
@@ -174,45 +173,30 @@ class Window(QWidget):
         outer.addWidget(sidebar)
         rail = self.rail = QHBoxLayout(sidebar)
         rail.setSpacing(5)
-        lockup = self.brand_lockup = QWidget()
-        lockup.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-        brand = QHBoxLayout(lockup)
-        brand.setContentsMargins(0, 0, 0, 0)
-        brand.setSpacing(8)
-        badge = QFrame(objectName="brandBadge")
-        badge.setFixedSize(32, 32)
-        badge_layout = QVBoxLayout(badge)
-        badge_layout.setContentsMargins(4, 4, 4, 4)
-        avatar = QSvgWidget(str(Path(__file__).resolve().parents[1] / "Assets/Brand/barrette.svg"))
-        avatar.setObjectName("brandMark")
-        avatar.setAccessibleName(APP_NAME)
-        badge_layout.addWidget(avatar)
-        brand.addWidget(badge)
-        self.wordmark = label(APP_NAME + "<span style='color:#bd5036'>.</span>", "brand")
+        self.wordmark = label(APP_NAME, "brand")
         self.wordmark.setAccessibleName(APP_NAME)
-        self.wordmark.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        brand.addWidget(self.wordmark)
-        rail.addWidget(lockup)
-        rail.addStretch()
+        rail.addWidget(self.wordmark)
+        rail.addSpacing(24)
         self.tabs = QStackedWidget()
         outer.addWidget(self.tabs, 1)
         group = QButtonGroup(self)
         for index, name in enumerate(("首页", "阅读", "生词本", "设置")):
             if index == 3:
                 rail.addStretch()
-                self.engine_dot = QFrame(objectName="engineDot")
-                self.engine_dot.setFixedSize(6, 6)
-                rail.addWidget(self.engine_dot)
-                self.engine_label = label("本地翻译", "engine")
-                self.engine_label.setContentsMargins(0, 0, 15, 0)
-                rail.addWidget(self.engine_label)
-            nav = QPushButton(name)
+                divider = QFrame(objectName="navDivider")
+                divider.setFixedSize(1, 23)
+                rail.addWidget(divider)
+            nav = QPushButton("" if index == 3 else name)
+            nav.setAccessibleName(name)
             if index == 3:
-                nav.setIcon(ui_icon("settings"))
+                nav.setIcon(ui_icon("settings", "#191917"))
+                nav.setToolTip(name)
+                nav.setFixedWidth(45)
+            nav.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
             nav.setCheckable(True)
             nav.setProperty("role", "nav")
             nav.setCursor(Qt.PointingHandCursor)
-            nav.setIconSize(QSize(17, 17))
+            nav.setIconSize(QSize(23, 23))
             group.addButton(nav, index)
             rail.addWidget(nav)
         group.idClicked.connect(self.tabs.setCurrentIndex)
@@ -301,15 +285,13 @@ class Window(QWidget):
         if self.compact == compact:
             return
         self.compact = compact
-        self.wordmark.setVisible(not compact)
-        self.engine_dot.setVisible(not compact)
-        self.engine_label.setVisible(not compact)
-        self.sidebar.setFixedHeight(54 if compact else 64)
+        self.wordmark.setStyleSheet(f"font-size:{18 if compact else 27}px;")
+        self.sidebar.setFixedHeight(46 if compact else 50)
         if compact:
-            self.rail.setContentsMargins(16, 0, 16, 0)
+            self.rail.setContentsMargins(12, 0, 8, 0)
             self.reading_layout.setContentsMargins(18, 18, 18, 18)
         else:
-            self.rail.setContentsMargins(32, 0, 32, 0)
+            self.rail.setContentsMargins(24, 0, 15, 0)
             self.reading_layout.setContentsMargins(32, 24, 32, 24)
 
     def sync_tray_window(self):
@@ -542,9 +524,9 @@ class Window(QWidget):
 
     def try_home_word(self):
         self.invalidate()
-        start = HOME_EXAMPLE.index("bank")
+        start = HOME_EXAMPLE.index(HOME_WORD)
         self.submit(self.home.demo.mapToGlobal(self.home.demo.rect().center()),
-                    passage=Passage(HOME_EXAMPLE, (start, start + 4), source_code="en"))
+                    passage=Passage(HOME_EXAMPLE, (start, start + len(HOME_WORD)), source_code="en"))
 
     def demo(self):
         examples = {
