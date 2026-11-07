@@ -4,13 +4,18 @@ import asyncio
 import ctypes
 from ctypes import wintypes
 import faulthandler
+import io
+import json
 import os
 import sys
 import time
 import unittest
+import wave
+from types import SimpleNamespace
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Event
 from unittest.mock import patch
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QRectF, QSize, Qt
@@ -53,6 +58,201 @@ def wait_until(predicate):
 
 
 class Checks(unittest.TestCase):
+    def test_read_from_editor(self):
+        with TemporaryDirectory() as tmp, patch.object(QProcess, "start"):
+            window = Window(notebook=Notebook(Path(tmp) / "book.sqlite"))
+            ui = window.workspace
+            editor = ui.input
+            try:
+                window.resize(870, 530)
+                window.show()
+                window.activateWindow()
+                wait_until(ui.example.isVisible)
+                ui.example.click()
+                wait_until(window.card.save.isVisible)
+                self.assertEqual(window.saved_result[0], word_in(RIVER))
+                self.assertIn(MONEY, editor.toPlainText())
+                window.card.close()
+                source = "📖 Notes.\n\nThey record the first record, then\nreview the second record."
+                editor.setPlainText(source)
+                self.assertFalse(ui.example.isVisible())
+                word = editor.document().find("second record")
+                word.setPosition(word.selectionEnd() - 3)
+                editor.setTextCursor(word)
+                editor.setFocus()
+                point = editor.cursorRect().center()
+                QTest.mouseDClick(editor.viewport(), Qt.LeftButton, pos=point)
+                wait_until(window.card.save.isVisible)
+                expected = "They record the first record, then review the second record."
+                selected = Passage(expected, (expected.rindex("record"), len(expected) - 1))
+                self.assertEqual(window.saved_result[0], selected)
+                self.assertEqual(editor.textCursor().selectedText(), "record")
+                window.card.save.click()
+                self.assertEqual(window.notebook.entries()[0]["position"], selected.selection[0])
+                window.card.close()
+                editor.setTextCursor(editor.document().find("first"))
+                editor.setFocus()
+                window.activateWindow()
+                wait_until(lambda: window.isActiveWindow() and editor.hasFocus())
+                QTest.keyClick(editor, Qt.Key_Return, Qt.AltModifier)
+                wait_until(window.card.save.isVisible)
+                self.assertEqual(window.saved_result[0].word, "first")
+                editor.setPlainText("Use the read/write switch.")
+                self.assertFalse(window.card.isVisible())
+                editor.setTextCursor(editor.document().find("write"))
+                editor.lookup_cursor()
+                wait_until(window.card.save.isVisible)
+                self.assertEqual(window.saved_result[0].word, "write")
+            finally:
+                window.shutdown()
+                window.hide()
+                window.deleteLater()
+
+    def test_trigger_preference(self):
+        with TemporaryDirectory() as tmp, patch.object(QProcess, "start"):
+            book = Notebook(Path(tmp) / "words.sqlite")
+            first = Window(notebook=book)
+            try:
+                self.assertEqual(first.trigger.currentData(), "left")
+                first.trigger.setCurrentIndex(first.trigger.findData("off"))
+                self.assertIn("开始框选", first.region_hint.text())
+            finally:
+                first.shutdown()
+                first.deleteLater()
+            reopened = Window(notebook=book)
+            try:
+                self.assertEqual(reopened.trigger.currentData(), "off")
+                reopened.demo()
+                wait_until(reopened.card.save.isVisible)
+                self.assertEqual(reopened.saved_result[0], word_in(RIVER))
+            finally:
+                reopened.shutdown()
+                reopened.deleteLater()
+
+    def test_lookup_during_paragraph_translation(self):
+        translating, release = Event(), Event()
+
+        def long_translation(_text, _stop):
+            translating.set()
+            release.wait(10)
+            return "段落译文"
+
+        with patch.object(QProcess, "start"), patch("workspace.translate_text", side_effect=long_translation):
+            window = Window()
+            try:
+                window.workspace.input.setPlainText(RIVER)
+                window.workspace.translate_text()
+                self.assertTrue(translating.wait(3))
+                window.lookup_text(word_in(RIVER), QPoint(20, 20))
+                wait_until(lambda: window.saved_result is not None)
+                self.assertFalse(window.workspace.pending.done())
+                release.set()
+                wait_until(window.workspace.copy.isEnabled)
+                self.assertEqual(window.workspace.output.toPlainText(), "段落译文")
+            finally:
+                release.set()
+                window.shutdown()
+                window.deleteLater()
+
+    def test_speech_controls_and_review(self):
+        with TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            worker = folder / "test_voice.py"
+            log = folder / "last.json"
+            worker.write_text(
+                "import json, sys, time\nfrom pathlib import Path\n"
+                "text, slow = json.loads(sys.stdin.buffer.read())\n"
+                "Path(__file__).with_name('last.json').write_text(json.dumps([text,slow]))\n"
+                "if text == 'failure':\n"
+                "    sys.stdout.buffer.write('请检查声音输出设备'.encode('utf-8'))\n    sys.exit(1)\n"
+                "time.sleep(20)\n", encoding="utf-8")
+            with patch.object(QProcess, "start"):
+                window = Window(notebook=Notebook(folder / "words.sqlite"))
+            def played(expected):
+                wait_until(lambda: log.exists() and log.read_text() == json.dumps(expected))
+                log.unlink()
+            with patch("speech.WORKER", worker):
+                try:
+                    window.demo()
+                    wait_until(window.card.save.isVisible)
+                    card = window.card
+                    card.listen.click()
+                    played(["bank", False])
+                    self.assertEqual(card.listen.text(), "停止")
+                    card.listen.slow.trigger()
+                    played(["bank", True])
+                    self.assertIs(window.player.owner, card.listen)
+                    card.listen.read.trigger()
+                    played([RIVER, False])
+                    card.listen.click()
+                    self.assertIsNone(window.player.owner)
+                    card.listen.play("failure")
+                    wait_until(card.speech_error.isVisible)
+                    self.assertTrue(card.save.isEnabled())
+                    card.listen.slow_sentence.trigger()
+                    played([RIVER, True])
+                    self.assertFalse(card.speech_error.isVisible())
+                    card.save.click()
+                    card.close()
+                    self.assertIsNone(window.player.owner)
+                    window.open_library()
+                    library = window.library
+                    library.review.click()
+                    self.assertNotIn("河岸", library.detail.toPlainText())
+                    library.listen.read.trigger()
+                    played([RIVER, False])
+                    library.reveal.click()
+                    library.again.click()
+                    self.assertIsNone(window.player.owner)
+                    self.assertIn("本轮已复习 1 条", library.status.text())
+                    self.assertIn("下次复习", library.status.text())
+                    window.tabs.setCurrentIndex(0)
+                    self.assertIsNone(window.player.owner)
+                finally:
+                    window.shutdown()
+                    window.hide()
+                    window.deleteLater()
+
+    def test_local_english_voice(self):
+        from speech_worker import SpeechUnavailable, modern_voice_audio, synthesize
+
+        with patch("winrt.windows.media.speechsynthesis.SpeechSynthesizer",
+                   SimpleNamespace(all_voices=[SimpleNamespace(language="zh-CN")])):
+            with self.assertRaisesRegex(SpeechUnavailable, "添加英语声音"):
+                asyncio.run(modern_voice_audio("record", False))
+
+        durations = []
+        for slow in (False, True):
+            try:
+                wav = synthesize("They record a record.", slow)
+            except SpeechUnavailable as error:
+                self.assertIn("英语声音", str(error))
+                self.skipTest("No English system voice on this machine")
+            with wave.open(io.BytesIO(wav)) as clip:
+                self.assertGreater(clip.getframerate(), 8000)
+                durations.append(clip.getnframes() / clip.getframerate())
+                self.assertGreater(len(set(clip.readframes(clip.getnframes()))), 8)
+        self.assertGreater(durations[1], durations[0] * 1.15)
+
+    @unittest.skipUnless(DESKTOP, "exercise the real playback endpoint only on an isolated desktop")
+    def test_desktop_playback(self):
+        card = Card()
+        errors = []
+        card.listen.notice.connect(lambda text: errors.append(text) if text else None)
+        try:
+            card.show_result(word_in(RIVER), "句中释义", "岸", "河岸", QPoint(24, 24), language="英语", pos="名词")
+            card.listen.click()
+            wait_until(lambda: card.listen.player.owner is None)
+            if errors:
+                if "添加英语声音" in errors[-1]:
+                    self.skipTest("English voice unavailable: " + errors[-1])
+                self.assertEqual(ctypes.windll.winmm.waveOutGetNumDevs(), 0, errors[-1])
+                self.assertIn("声音输出设备", errors[-1])
+            print("No audio output endpoint; recovery message verified." if errors else "System playback completed.")
+        finally:
+            card.listen.player.shutdown()
+            card.close()
+
     def test_word_details_in_context(self):
         source = "They record a record."
         for start, expected in [(source.index("record"), "动词"), (source.rindex("record"), "名词")]:
@@ -484,7 +684,9 @@ class Checks(unittest.TestCase):
                 gestures.append((action, origin, end))
                 super().on_gesture(action, origin, end)
 
-        window = TestWindow()
+        profile = TemporaryDirectory()
+        self.addCleanup(profile.cleanup)
+        window = TestWindow(notebook=Notebook(Path(profile.name) / "words.sqlite"))
         clicks = []
 
         class Sample(QLabel):
@@ -592,6 +794,18 @@ class Checks(unittest.TestCase):
             user.mouse_event(4, 0, 0, 0, 0)
             wait_until(lambda: card.press_position is None)
             self.assertTrue(card.isVisible())
+            with patch.object(window.player, "play") as speak:
+                menu = card.listen.menu()
+                menu.popup(card.listen.mapToGlobal(card.listen.rect().bottomLeft()))
+                wait_until(menu.isVisible)
+                slow = menu.mapToGlobal(menu.actionGeometry(card.listen.slow).center())
+                move_cursor(slow)
+                wait_until(lambda: native_target() == int(menu.winId()))
+                user.mouse_event(2, 0, 0, 0, 0)
+                user.mouse_event(4, 0, 0, 0, 0)
+                wait_until(lambda: speak.called)
+                speak.assert_called_once_with(card.listen, "bank", True)
+                self.assertTrue(card.isVisible())
             button = window.card.copy
             center = button.mapToGlobal(button.rect().center())
             move_cursor(center)
@@ -624,6 +838,29 @@ class Checks(unittest.TestCase):
             self.assertEqual(window.card.caption.text(), "选区译文", window.card.text.toPlainText())
             self.assertIn("河岸", window.card.text.toPlainText())
             self.assertEqual(len(clicks), 2, "Capture drag reached the foreground window")
+            window.trigger.setCurrentIndex(window.trigger.findData("right"))
+            wait_until(lambda: window.active_mode == "right")
+            focus_sample()
+            move_cursor(point)
+            count = sum(action == "lookup" for action, _, _ in gestures)
+            key(ctrl, True)
+            key(ctrl, False)
+            right_ctrl = 0xA3
+            # Right Ctrl is an extended key. Preserve that bit on press and release.
+            user.keybd_event(right_ctrl, 0x1D, 1, 0)
+            user.keybd_event(right_ctrl, 0x1D, 3, 0)
+            wait_until(lambda: window.card.save.isVisible())
+            self.assertEqual(sum(action == "lookup" for action, _, _ in gestures), count + 1)
+            window.trigger.setCurrentIndex(window.trigger.findData("off"))
+            wait_until(lambda: window.active_mode == "off")
+            ticket = window.ticket
+            key(ctrl, True)
+            key(ctrl, False)
+            user.keybd_event(right_ctrl, 0x1D, 1, 0)
+            user.keybd_event(right_ctrl, 0x1D, 3, 0)
+            QTest.qWait(160)
+            self.assertEqual(window.ticket, ticket)
+            self.assertFalse(window.card.isVisible())
             window.demo()
             window.card.close()
             wait_until(lambda: window.pending.done())

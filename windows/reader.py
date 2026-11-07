@@ -31,6 +31,23 @@ class Passage:
         return self.text[slice(*self.selection)] if self.selection else ""
 
 
+def sentence_at(text, start, end):
+    """Keep the sentence and the exact selected occurrence across soft line wraps."""
+    left, right = 0, len(text)
+    for boundary in re.finditer(r"""[.!?]["”')]*\s+|\n[ \t]*\n""", text):
+        if boundary.group().startswith(".") and re.search(
+                r"\b(?:Fig|Eq|Dr|Prof|e\.g|i\.e)$", text[max(0, boundary.start() - 6):boundary.start()], re.I):
+            continue
+        if boundary.end() <= start:
+            left = boundary.end()
+        elif boundary.start() >= end:
+            right = boundary.end()
+            break
+    source = text[left:right].rstrip()
+    leading = len(source) - len(source.lstrip())
+    return Passage(source[leading:].replace("\n", " "), (start - left - leading, end - left - leading))
+
+
 def context_excerpt(passage):
     """Suggest a contiguous clause containing this occurrence for a second sense check."""
     text = passage.text
@@ -101,7 +118,7 @@ def passage_from_lines(lines, point):
     hit = next(((i, j) for i, line in enumerate(lines) for j, word in enumerate(line)
                 if word.rect.contains(point)), None)
     if hit is None:
-        raise ValueError("光标下没有识别到词。请指向字母，或按住左 Ctrl 并用鼠标左键拖动框选。")
+        raise ValueError("光标下没有识别到词。请指向单词中的字母，或点主窗口的「开始框选」。")
     anchor, column = hit
     match = word_at_point(lines[anchor][column], point)
     if not match:
@@ -138,11 +155,7 @@ def passage_from_lines(lines, point):
                 end = offset + match.end()
             pieces.append(word.text)
             offset += len(word.text) + 1
-    paragraph = " ".join(pieces)
-    boundaries = [m.end() for m in re.finditer(r'[.!?]["”\')]*\s+', paragraph)]
-    left = max((pos for pos in boundaries if pos <= start), default=0)
-    right = next((pos for pos in boundaries if pos >= end), len(paragraph))
-    return Passage(paragraph[left:right].rstrip(), (start - left, end - left))
+    return sentence_at(" ".join(pieces), start, end)
 
 
 async def recognize(image, point=None):

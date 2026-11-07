@@ -2,12 +2,78 @@
 from threading import Event
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeySequence, QShortcut, QTextOption
+from PySide6.QtGui import QKeySequence, QShortcut, QTextCursor, QTextLine, QTextOption
 from PySide6.QtWidgets import (QApplication, QBoxLayout, QFrame, QHBoxLayout, QPlainTextEdit,
                                QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
+from reader import WORD_TOKEN, sentence_at
 from theme import label
 from translation import translate_text
+
+
+def utf16_length(text):
+    return len(text.encode("utf-16-le")) // 2
+
+
+class ReadingEditor(QPlainTextEdit):
+    lookup_requested = Signal(object, object)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and event.modifiers() & ~Qt.KeypadModifier == Qt.AltModifier:
+            self.lookup_cursor()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        super().mouseDoubleClickEvent(event)
+        if event.button() == Qt.LeftButton:
+            self.lookup_point(event.position())
+
+    def lookup_point(self, point):
+        block = self.cursorForPosition(point.toPoint()).block()
+        local = point - self.blockBoundingGeometry(block).translated(self.contentOffset()).topLeft()
+        layout = block.layout()
+        for i in range(layout.lineCount()):
+            line = layout.lineAt(i)
+            if line.naturalTextRect().contains(local):
+                pos = block.position() + line.xToCursor(local.x(), QTextLine.CursorOnCharacter)
+                return self.lookup_at(pos)
+        return False
+
+    def lookup_cursor(self):
+        cursor = self.textCursor()
+        return self.lookup_at(cursor.selectionStart(), cursor.selectionEnd(), at_caret=True)
+
+    def lookup_at(self, pos, end=None, at_caret=False):
+        block = self.document().findBlock(pos)
+        if not block.isValid():
+            return False
+        value = block.text()
+        # Qt indexes UTF-16 units. Passage indexes Python characters, including
+        # when the paper contains a supplementary-plane symbol before the word.
+        relative = pos - block.position()
+        offset = len(value.encode("utf-16-le")[:relative * 2].decode("utf-16-le", errors="ignore"))
+        for word in WORD_TOKEN.finditer(value):
+            if not (word.start() <= offset < word.end() or at_caret and end == pos and offset == word.end()):
+                continue
+            if not any(char.isalpha() for char in word.group()):
+                return False
+            begin = block.position() + utf16_length(value[:word.start()])
+            finish = begin + utf16_length(word.group())
+            if end is not None and end != pos and (pos != begin or end != finish):
+                return False
+            cursor = QTextCursor(self.document())
+            cursor.setPosition(begin)
+            cursor.setPosition(finish, QTextCursor.KeepAnchor)
+            self.setTextCursor(cursor)
+            self.ensureCursorVisible()
+            text = self.toPlainText()
+            start = len(text.encode("utf-16-le")[:begin * 2].decode("utf-16-le"))
+            self.lookup_requested.emit(sentence_at(text, start, start + len(word.group())),
+                                       self.viewport().mapToGlobal(self.cursorRect().bottomRight()))
+            return True
+        return False
 
 
 class TextWorkspace(QWidget):
@@ -25,8 +91,8 @@ class TextWorkspace(QWidget):
         self.panes = QBoxLayout(QBoxLayout.LeftToRight)
         self.panes.setSpacing(10)
         layout.addLayout(self.panes, 1)
-        self.input = QPlainTextEdit(objectName="input")
-        self.input.setPlaceholderText("输入或粘贴英文…")
+        self.input = ReadingEditor(objectName="input")
+        self.input.setPlaceholderText("粘贴英文文章，双击单词查释义…")
         self.input.setAccessibleName("英文原文")
         self.output = QPlainTextEdit(objectName="translation")
         self.output.setAccessibleName("简体中文译文")
@@ -37,7 +103,21 @@ class TextWorkspace(QWidget):
             box = QVBoxLayout(frame)
             box.setContentsMargins(15, 12, 15, 10)
             box.setSpacing(9)
-            box.addWidget(label(name, "language"))
+            tools = QWidget()
+            tools.setFixedHeight(26)
+            header = QHBoxLayout(tools)
+            header.setContentsMargins(0, 0, 0, 0)
+            header.addWidget(label(name, "language"))
+            header.addStretch()
+            if editor is self.input:
+                self.example = QPushButton("试读示例")
+                self.example.setProperty("role", "sample")
+                self.example.setToolTip("打开一段示例，试试查词、听读和收藏")
+                self.lookup_hint = label("双击查词", "meta")
+                self.lookup_hint.setToolTip("也可将光标放在词上，按 Alt+Enter")
+                header.addWidget(self.example)
+                header.addWidget(self.lookup_hint)
+            box.addWidget(tools)
             editor.setTabChangesFocus(True)
             editor.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
             editor.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -90,7 +170,10 @@ class TextWorkspace(QWidget):
         self.copy.setText("复制译文")
         self.copy.setEnabled(False)
         self.set_busy(False)
-        self.submit.setEnabled(bool(self.input.toPlainText().strip()))
+        has_text = bool(self.input.toPlainText().strip())
+        self.submit.setEnabled(has_text)
+        self.example.setVisible(not has_text)
+        self.lookup_hint.setVisible(has_text)
 
     def set_busy(self, busy):
         self.submit.setText("取消" if busy else "翻译")

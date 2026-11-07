@@ -8,11 +8,10 @@ import sys
 from threading import Thread, get_native_id
 
 
-LOOKUP_HINT = "轻按左 Ctrl"
-REGION_HINT = "按住左 Ctrl，左键拖动"
+CTRL_KEYS = {"left": 0xA2, "right": 0xA3, "off": None}
 
 WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP = 0x200, 0x201, 0x202
-VK_LCONTROL, VK_ESCAPE = 0xA2, 0x1B
+VK_ESCAPE = 0x1B
 REPLAY_TAG = 0x57585452
 REPLAY_CLICK = 0x8001  # private message on the hook thread
 
@@ -56,8 +55,9 @@ user32.SendInput.argtypes = (wt.UINT, ctypes.POINTER(Input), ctypes.c_int)
 
 
 class CtrlGestures:
-    def __init__(self):
-        self.ctrl_down = False
+    def __init__(self, mode="left"):
+        self.mode = mode
+        self.held_ctrl = None
         self.armed = False
         self.origin = None
         self.dragging = False
@@ -87,7 +87,7 @@ class CtrlGestures:
                     self.events.put(("error", ctypes.get_last_error(), None))
                     return
                 self.handles.append(handle)
-            self.events.put(("ready", None, None))
+            self.events.put(("ready", self.mode, None))
             while user32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
                 if message.message == REPLAY_CLICK:
                     pair = (Input * 2)(Input(mouse=MouseInput(flags=2, extra=REPLAY_TAG)),
@@ -106,8 +106,11 @@ class CtrlGestures:
         # releases both hooks if the application exits unexpectedly.
         try:
             for line in sys.stdin.buffer:
-                ticket, hwnd = json.loads(line)
+                ticket, hwnd, mode = json.loads(line)
                 self.watched_card = (ticket, hwnd) if hwnd else None
+                if mode != self.mode and mode in CTRL_KEYS:
+                    self.mode = mode
+                    self.events.put(("mode", mode, None))
         finally:
             user32.PostThreadMessageW(self.thread_id, 0x12, 0, 0)  # WM_QUIT
 
@@ -130,28 +133,33 @@ class CtrlGestures:
         if code == 0:
             vk = wt.DWORD.from_address(payload).value
             down = message in (0x100, 0x104)  # WM_KEYDOWN / WM_SYSKEYDOWN
-            if vk == VK_LCONTROL:
-                if down and not self.ctrl_down:
-                    self.ctrl_down = True
+            wanted = CTRL_KEYS[self.mode]
+            if self.held_ctrl is not None and self.held_ctrl != wanted:
+                self.cancel()
+            if vk == self.held_ctrl or (self.held_ctrl is None and vk == wanted):
+                if down and self.held_ctrl is None:
+                    self.held_ctrl = vk
                     # Also reject chords whose other key/button went down first.
                     self.armed = not any(user32.GetAsyncKeyState(key) & 0x8000
-                                         for key in range(1, 255) if key not in (0x11, VK_LCONTROL))
+                                         for key in range(1, 255) if key not in (0x11, vk))
                 elif not down:
                     if self.armed and not self.owns_button:
                         point = wt.POINT()
                         if user32.GetCursorPos(ctypes.byref(point)):
                             self.events.put(("lookup", (point.x, point.y), None))
-                    self.ctrl_down = False
+                    self.held_ctrl = None
                     self.cancel()
             elif vk == VK_ESCAPE and (self.owns_escape or (down and self.owns_button)):
                 self.owns_escape = down
                 self.cancel()
                 return 1
-            elif down and self.ctrl_down:
+            elif down and self.held_ctrl is not None:
                 self.cancel()
         return user32.CallNextHookEx(None, code, message, payload)
 
     def mouse(self, code, message, payload):
+        if code == 0 and self.held_ctrl is not None and self.held_ctrl != CTRL_KEYS[self.mode]:
+            self.cancel()
         card = self.watched_card
         if code == 0 and message == WM_LBUTTONDOWN and card:
             ticket, hwnd = card
@@ -199,4 +207,4 @@ class CtrlGestures:
 
 
 if __name__ == "__main__":
-    CtrlGestures().listen()
+    CtrlGestures(sys.argv[1] if len(sys.argv) > 1 else "left").listen()

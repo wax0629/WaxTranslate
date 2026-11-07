@@ -1,4 +1,4 @@
-from html import escape
+from datetime import datetime, timedelta
 import sqlite3
 import time
 
@@ -7,17 +7,20 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
                                QPushButton, QTextBrowser, QVBoxLayout, QWidget)
 
-from theme import label, nav_icon
+from reader import Passage
+from speech import ListenButton
+from theme import DOCUMENT_STYLE, label, marked_source, nav_icon, plain, result_html
 
 
 class Library(QWidget):
-    def __init__(self, notebook):
+    def __init__(self, notebook, player):
         super().__init__()
         self.setObjectName("library")
         self.notebook = notebook
         self.rows = []
         self.testing = False
         self.revealed = False
+        self.session_count = 0
         layout = QVBoxLayout(self)
         layout.setContentsMargins(25, 22, 25, 20)
         layout.setSpacing(11)
@@ -25,6 +28,8 @@ class Library(QWidget):
         self.heading = label("生词本", "heading")
         header.addWidget(self.heading)
         header.addStretch()
+        self.listen = ListenButton(player)
+        header.addWidget(self.listen)
         self.status = label("", "meta")
         self.status.setWordWrap(True)
         self.review = QPushButton("开始复习")
@@ -32,6 +37,12 @@ class Library(QWidget):
         header.addWidget(self.review)
         layout.addLayout(header)
         layout.addWidget(self.status)
+        self.speech_error = QLabel()
+        self.speech_error.setProperty("role", "warning")
+        self.speech_error.setWordWrap(True)
+        self.speech_error.hide()
+        layout.addWidget(self.speech_error)
+        self.listen.notice.connect(self.show_speech_error)
         self.search = QLineEdit(objectName="search")
         self.search.setAccessibleName("搜索生词")
         self.search.setPlaceholderText("搜索单词、释义或原句")
@@ -68,6 +79,7 @@ class Library(QWidget):
         self.list.currentRowChanged.connect(self.display)
         content.addWidget(self.list, 1)
         self.detail = QTextBrowser(objectName="entry")
+        self.detail.document().setDefaultStyleSheet(DOCUMENT_STYLE)
         self.detail.setOpenLinks(False)
         content.addWidget(self.detail, 2)
         layout.addLayout(content, 1)
@@ -107,7 +119,14 @@ class Library(QWidget):
     def update_header(self):
         due = sum(row["due"] <= time.time() for row in self.rows)
         self.heading.setText("复习" if self.testing else "生词本")
-        self.status.setText(f"已收藏 {len(self.rows)} 条   ·   待复习 {due} 条" if self.rows else "")
+        status = f"已收藏 {len(self.rows)} 条   ·   待复习 {due} 条"
+        if self.rows and not due:
+            next_due = datetime.fromtimestamp(min(row["due"] for row in self.rows))
+            today = datetime.now().date()
+            day = {today: "今天", today + timedelta(days=1): "明天"}.get(next_due.date(), next_due.strftime("%m/%d"))
+            prefix = f"本轮已复习 {self.session_count} 条" if self.session_count else f"已收藏 {len(self.rows)} 条"
+            status = f"{prefix}   ·   下次复习 {day} {next_due:%H:%M}"
+        self.status.setText(status if self.rows else "")
         self.status.setVisible(bool(self.rows))
         self.review.setVisible(bool(self.rows))
         self.review.setText("结束复习" if self.testing else "开始复习")
@@ -168,6 +187,8 @@ class Library(QWidget):
 
     def display(self, *_):
         row = self.current()
+        self.speech_error.hide()
+        self.listen.set_content(row["word"] if row else "", row["context"] if row else "")
         self.empty.setVisible(not self.rows)
         self.search.setVisible(not self.testing and bool(self.rows))
         self.no_matches.setVisible(not self.testing and bool(self.rows) and not row)
@@ -181,17 +202,21 @@ class Library(QWidget):
             self.detail.clear()
             return
         pos, word, context = row["position"], row["word"], row["context"]
-        marked = escape(context[:pos]) + "<b>" + escape(word) + "</b>" + escape(context[pos + len(word):])
-        parts = [f"<p style='margin:4px 0 10px;font:bold 24pt Georgia;color:#272620'>{escape(word)}</p>",
-                 f"<p style='margin:6px 0;font-size:12pt;color:#494940'>{marked}</p>"]
+        passage = Passage(context, (pos, pos + len(word)))
         if not self.testing or self.revealed:
-            parts += [f"<p style='margin:14px 0 3px;color:#69695e;font-size:9pt'>{escape(row['source'])}</p>",
-                      f"<p style='margin:0 0 8px;font-size:14pt'><b>{escape(row['gloss'])}</b></p>",
-                      f"<p style='margin:0;color:#62625a'>{escape(row['translation'])}</p>"]
-        self.detail.setHtml("".join(parts))
+            content = result_html(passage, row["gloss"], row["translation"], row["source"])
+        else:
+            content = f"<p class='word'>{plain(word)}</p><p class='source'>{marked_source(passage)}</p>"
+        self.detail.setHtml(content)
+
+    def show_speech_error(self, message):
+        self.speech_error.setText(message)
+        self.speech_error.setVisible(bool(message))
 
     def toggle_review(self):
+        self.listen.stop()
         self.testing = not self.testing
+        self.session_count = 0
         self.refresh()
 
     def show_answer(self):
@@ -206,6 +231,8 @@ class Library(QWidget):
             except (OSError, sqlite3.Error) as error:
                 self.status.setText(f"复习进度保存失败：{error}")
                 return
+            self.listen.stop()
+            self.session_count += 1
             self.refresh()
 
     def delete(self):

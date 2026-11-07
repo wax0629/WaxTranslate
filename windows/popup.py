@@ -1,5 +1,4 @@
 """The compact reading card shared by word lookups and region translations."""
-from html import escape
 from math import ceil
 from pathlib import Path
 
@@ -9,11 +8,8 @@ from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout,
                                QLabel, QPushButton, QSizePolicy, QTextBrowser, QVBoxLayout, QWidget)
 
-from theme import APP_NAME
-
-
-def plain(text):
-    return escape(text).replace("\n", "<br>")
+from speech import ListenButton, SpeechPlayer
+from theme import APP_NAME, DOCUMENT_STYLE, plain, result_html
 
 
 def action_icon(bookmark):
@@ -67,40 +63,13 @@ CARD_STYLE = """
     QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {background:transparent;}
 """
 
-DOCUMENT_STYLE = """
-    p {margin:0; font-family:'Microsoft YaHei UI'; color:#303a34;}
-    .word {font-family:'Segoe UI'; font-size:26px; font-weight:600; color:#18261f; margin-bottom:3px;}
-    .details {font-size:12px; color:#53675b; margin-bottom:6px;}
-    .gloss {font-size:17px; line-height:133%; color:#283e31; margin-bottom:4px;}
-    .source {font-family:'Segoe UI'; font-size:15px; line-height:119%; color:#57615b; margin-top:4px;}
-    .hit {font-weight:600; color:#205943; background-color:#e2eee4;}
-    .translation {font-size:14px; line-height:130%; color:#29332e; margin-top:7px;}
-    .message {font-size:14px; line-height:140%;}
-"""
-
-
-def result_html(passage, gloss, sentence, details, prefix="", suffix=""):
-    source = plain(passage.text)
-    heading = ""
-    if passage.selection:
-        a, b = passage.selection
-        word = plain(passage.word)
-        heading = f"<p class='word'>{word}</p>"
-        source = plain(passage.text[:a]) + f"<span class='hit'>{word}</span>" + plain(passage.text[b:])
-    content = (heading + f"<p class='details'>{plain(details)}</p><p class='gloss'>{plain(gloss)}</p>"
-               + f"<hr style='background-color:#dfe5df'><p class='source'>{prefix}{source}{suffix}</p>")
-    if sentence:
-        content += f"<p class='translation'>{plain(sentence)}</p>"
-    return content
-
-
 class Card(QWidget):
     dismissed = Signal()
     presented = Signal()
     save_requested = Signal()
     dismiss_on_deactivate = True
 
-    def __init__(self):
+    def __init__(self, player=None):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.press_position = None
         self.user_placed = False
@@ -137,6 +106,8 @@ class Card(QWidget):
         self.caption.setWordWrap(True)
         self.caption.setTextFormat(Qt.PlainText)
         header.addWidget(self.caption, 1)
+        self.listen = ListenButton(player if player is not None else SpeechPlayer(self))
+        header.addWidget(self.listen)
         close = QPushButton("×", objectName="dismiss")
         close.setAccessibleName("关闭翻译结果")
         close.setFixedSize(26, 26)
@@ -144,6 +115,13 @@ class Card(QWidget):
         close.clicked.connect(self.close)
         header.addWidget(close, 0, Qt.AlignTop)
         body.addWidget(self.grip)
+        self.speech_error = QLabel()
+        self.speech_error.setWordWrap(True)
+        self.speech_error.setTextFormat(Qt.PlainText)
+        self.speech_error.setProperty("role", "warning")
+        self.speech_error.hide()
+        body.addWidget(self.speech_error)
+        self.listen.notice.connect(self.show_speech_error)
 
         self.text = QTextBrowser()
         self.text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
@@ -184,14 +162,17 @@ class Card(QWidget):
         self.copy.setText("已复制")
 
     def show_message(self, caption, message, point):
+        self.listen.set_content()
         self.present(caption, f"<p class='message'>{plain(message)}</p>", point)
 
     def show_original(self, language, original, point):
+        self.listen.set_content()
         content = ("<p class='message'>当前离线模型支持英语译为简体中文。</p>"
                    + f"<p class='source'>{plain(original)}</p>")
         self.present(f"{language}原文", content, point, original, copy_original=True)
 
     def show_result(self, passage, origin, gloss, sentence, point, excerpt=None, language="", pos=""):
+        self.listen.set_content(passage.word, passage.text)
         if passage.selection:
             details = (language or "按英语查词") + " · " + (pos or "词性待定")
         else:
@@ -207,6 +188,7 @@ class Card(QWidget):
         self.present(origin, short, point, translated, True, (full, sentence))
 
     def present(self, caption, content, point, translation="", can_save=False, full_context=None, copy_original=False):
+        self.speech_error.hide()
         self.anchor = point
         self.default_context = content, translation
         self.full_context = full_context
@@ -233,9 +215,19 @@ class Card(QWidget):
         copy_hint = "复制原文" if self.copy_original else "复制译文"
         self.copy.setAccessibleName(copy_hint)
         self.copy.setToolTip("复制语境译文" if self.full_context and not expanded else copy_hint)
-        point = self.anchor
         self.text.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.text.setHtml(content)
+        self.fit_content()
+        self.text.verticalScrollBar().setValue(0)
+
+    def show_speech_error(self, message):
+        self.speech_error.setText(message)
+        self.speech_error.setVisible(bool(message))
+        if self.isVisible():
+            self.fit_content()
+
+    def fit_content(self):
+        point = self.anchor
         screen = self.screen() if self.user_placed else QApplication.screenAt(point) or QApplication.primaryScreen()
         area = screen.availableGeometry()
         self.setScreen(screen)
@@ -256,7 +248,6 @@ class Card(QWidget):
         if not self.user_placed and position.y() + height > area.bottom() + 1:
             position.setY(point.y() - height - 4)
         self.move_within(position, area)
-        self.text.verticalScrollBar().setValue(0)
 
     def closeEvent(self, event):
         self.dismissed.emit()
