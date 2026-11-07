@@ -50,6 +50,9 @@ def build(output, archive=None):
         (root / "windows").mkdir()
         for name in APP_FILES:
             shutil.copy2(SRC / name, root / "windows" / name)
+        brand = Path("Assets/Brand/barrette.svg")
+        (root / brand.parent).mkdir(parents=True)
+        shutil.copy2(SRC.parent / brand, root / brand)
         for name in FILES:
             dest = root / "models" / PACKAGE / name
             dest.parent.mkdir(parents=True, exist_ok=True)

@@ -9,6 +9,7 @@ import sys
 
 from PySide6.QtCore import QPoint, QPointF, QProcess, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPen
+from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton,
                                QStackedWidget, QStyle, QSystemTrayIcon, QTextBrowser, QVBoxLayout, QWidget)
 
@@ -231,8 +232,10 @@ class Window(QWidget):
         rail.setSpacing(5)
         brand = QHBoxLayout()
         brand.setContentsMargins(2, 0, 0, 0)
-        avatar = QLabel()
-        avatar.setPixmap(app_icon().pixmap(31, 31))
+        avatar = QSvgWidget(str(Path(__file__).resolve().parents[1] / "Assets/Brand/barrette.svg"))
+        avatar.setObjectName("brandMark")
+        avatar.setAccessibleName(APP_NAME)
+        avatar.setFixedSize(31, 31)
         brand.addWidget(avatar)
         brand.addWidget(label(APP_NAME, "brand"))
         brand.addStretch()

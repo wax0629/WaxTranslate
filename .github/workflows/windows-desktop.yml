@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'windows/**'
+      - 'Assets/Brand/barrette.svg'
       - '.github/workflows/windows-desktop.yml'
 
 permissions:
