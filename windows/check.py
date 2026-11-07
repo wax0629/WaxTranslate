@@ -5,6 +5,7 @@ import ctypes
 from ctypes import wintypes
 import faulthandler
 import io
+import importlib.util
 import json
 import os
 import sys
@@ -840,8 +841,11 @@ class Checks(unittest.TestCase):
             self.assertEqual(len(clicks), 2, "Capture drag reached the foreground window")
             window.trigger.setCurrentIndex(window.trigger.findData("right"))
             wait_until(lambda: window.active_mode == "right")
+            sample.setText("MVP validates our product hypothesis.")
+            sample.repaint()
             focus_sample()
-            move_cursor(point)
+            # The actual pointer is outside the first glyph's left edge.
+            move_cursor(sample.mapToGlobal(QPoint(sample.margin() - 1, sample.height() // 2)))
             count = sum(action == "lookup" for action, _, _ in gestures)
             key(ctrl, True)
             key(ctrl, False)
@@ -850,6 +854,8 @@ class Checks(unittest.TestCase):
             user.keybd_event(right_ctrl, 0x1D, 1, 0)
             user.keybd_event(right_ctrl, 0x1D, 3, 0)
             wait_until(lambda: window.card.save.isVisible())
+            self.assertEqual(window.saved_result[0].word, "MVP")
+            self.assertIn("最小可行产品", window.saved_result[1][1])
             self.assertEqual(sum(action == "lookup" for action, _, _ in gestures), count + 1)
             window.trigger.setCurrentIndex(window.trigger.findData("off"))
             wait_until(lambda: window.active_mode == "off")
@@ -883,6 +889,17 @@ class Checks(unittest.TestCase):
                 key(ctrl, False)
             sample.close()
             QCursor.setPos(previous)
+
+
+def load_tests(loader, tests, pattern):
+    # Run the repository fixtures against the *packaged* application modules
+    # when invoked by the embedded interpreter on the independent runner.
+    for path in sorted(Path(__file__).parent.glob("test_*.py")):
+        spec = importlib.util.spec_from_file_location(path.stem, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        tests.addTests(loader.loadTestsFromModule(module))
+    return tests
 
 
 if __name__ == "__main__":
