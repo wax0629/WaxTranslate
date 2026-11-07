@@ -330,9 +330,10 @@ class Checks(unittest.TestCase):
                 super().mouseReleaseEvent(event)
 
         sample = Sample(RIVER)
-        sample.setFont(QFont("Segoe UI", 20))
         sample.setMargin(16)
-        sample.setStyleSheet("color:black;background:white")
+        # This window represents another app. Keep its OCR sample independent
+        # of WaxTranslate's application-wide font rules.
+        sample.setStyleSheet("font:20pt 'Segoe UI'; color:black; background:white;")
         sample.setWindowFlag(Qt.WindowStaysOnTopHint)
         sample.adjustSize()
         area = QApplication.primaryScreen().availableGeometry()
@@ -413,7 +414,8 @@ class Checks(unittest.TestCase):
             begin_drag()
             user.mouse_event(4, 0, 0, 0, 0)
             key(ctrl, False)
-            wait_until(lambda: window.card.caption.text() == "选区译文")
+            wait_until(lambda: window.card.caption.text() in ("选区译文", "需要处理"))
+            self.assertEqual(window.card.caption.text(), "选区译文", window.card.text.toPlainText())
             self.assertIn("河岸", window.card.text.toPlainText())
             self.assertEqual(len(clicks), 1, "Capture drag reached the foreground window")
             window.demo()
