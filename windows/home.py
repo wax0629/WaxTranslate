@@ -131,7 +131,7 @@ class HomePage(QWidget):
 
     def set_mode(self, mode):
         key = {"left": "左 Ctrl", "right": "右 Ctrl"}.get(mode)
-        hint = f"指向单词，轻按{key}查词；按住并拖选可翻译一段。" if key else "在阅读页双击单词查词，或点「框选翻译」翻译一段。"
+        hint = f"指向单词轻按{key}查词，按住拖选可翻译一段。" if key else "在「对照翻译」双击单词查词，或点「框选翻译」。"
         self.instructions.setText(hint)
         self.instructions.setAccessibleName(hint + " 点击更改取词键。")
 

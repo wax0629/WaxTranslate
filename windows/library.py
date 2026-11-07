@@ -142,7 +142,7 @@ class Library(QWidget):
         hint.setAlignment(Qt.AlignCenter)
         hint.setWordWrap(True)
         empty_layout.addWidget(hint)
-        read = QPushButton("打开阅读页")
+        read = QPushButton("打开对照翻译")
         read.setProperty("role", "primary")
         read.clicked.connect(self.reader_requested)
         empty_layout.addSpacing(3)

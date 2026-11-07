@@ -29,6 +29,11 @@ def ui_icon(name, color="#595955"):
                     path.lineTo(point)
         path.closeSubpath()
         path.addEllipse(QPointF(12, 12), 3, 3)
+    elif name == "history":
+        path.addEllipse(QPointF(12, 12), 8, 8)
+        path.moveTo(12, 7)
+        path.lineTo(12, 12)
+        path.lineTo(16, 14)
     elif name == "launch":
         path.moveTo(5, 19)
         path.lineTo(19, 5)
@@ -124,18 +129,18 @@ def apply_theme(app):
         QLabel[role="shortcut"] {color:#595955; background:#f0efea; border:1px solid #bcbcb6;
             border-radius:4px; padding:2px 5px; font:12px 'Consolas';}
 
-        QFrame#sidebar {background:rgba(250,249,246,205); border:0; border-bottom:1px solid rgba(30,30,27,95);}
-        QFrame#navDivider {background:#777772; border:0;}
+        QFrame#sidebar {background:rgba(248,247,243,198); border:0;}
+        QFrame#navDivider {background:rgba(68,67,59,72); border:0;}
         QPushButton[role="windowControl"] {background:transparent; border:0; border-radius:2px; padding:0;}
         QPushButton[role="windowControl"]:hover, QPushButton[role="windowControl"]:focus {background:#e7e6df;}
         QPushButton#closeWindow:hover {background:#e3c5c0;}
         QLabel[role="brand"] {color:#101010; font:italic 27px 'Archivo Black','Arial Black'; padding-right:4px;}
-        QPushButton[role="nav"] {color:#262624; background:transparent; border:0;
-            border-bottom:4px solid transparent; border-radius:0; padding:5px 10px 2px;
-            font-weight:500; font-size:16px; min-height:30px;}
-        QPushButton[role="nav"]:hover {background:#eeede9;}
-        QPushButton[role="nav"]:checked {color:#101010; font-weight:700; border-bottom-color:#151513;}
-        QPushButton[role="nav"]:focus {background:#eae9e4;}
+        QPushButton[role="nav"] {color:#45443f; background:rgba(249,248,244,146);
+            border:1px solid rgba(83,80,68,50); border-radius:8px; font-weight:500;}
+        QPushButton[role="nav"]:hover {background:#f6f5f0; border-color:#a6a498;}
+        QPushButton[role="nav"]:checked {color:#171714; background:#fffefa; border-color:#817e72; font-weight:600;}
+        QPushButton[role="nav"]:focus {border:1px dashed #37362f;}
+        QPushButton[role="nav"]:pressed {background:#e7e5dd;}
 
         QPushButton {color:#161615; background:#fffefa; border:1px solid #bcbcb6;
             border-radius:2px; padding:7px 13px; min-height:18px;}

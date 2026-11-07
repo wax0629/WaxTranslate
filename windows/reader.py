@@ -306,7 +306,7 @@ async def recognize(image, point=None, source_code=""):
         language = installed.get(code) or Language(OCR_TAGS[code])
         engine = OcrEngine.try_create_from_language(language)
         if engine is None:
-            raise ValueError(f"请在 Windows 设置 → 时间和语言 → 语言和区域中，为{NAMES[code]}安装文字识别，或在阅读页粘贴原文。")
+            raise ValueError(f"请在 Windows 设置 → 时间和语言 → 语言和区域中，为{NAMES[code]}安装文字识别，或在「对照翻译」粘贴原文。")
         return await read_passage(engine, image, point)
 
     if source_code:

@@ -65,7 +65,7 @@ def launch(command):
 def verify_frame(window):
     # This is the independent Windows runner's interactive desktop.
     user = ctypes.windll.user32
-    user.GetWindowRect.argtypes = (wt.HWND, ctypes.POINTER(wt.RECT))
+    user.GetWindowRect.argtypes = user.GetClientRect.argtypes = (wt.HWND, ctypes.POINTER(wt.RECT))
     user.ClientToScreen.argtypes = (wt.HWND, ctypes.POINTER(wt.POINT))
     user.SendMessageW.argtypes = (wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM)
     user.SetWindowPos.argtypes = (wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wt.UINT)
@@ -77,6 +77,14 @@ def verify_frame(window):
         rect = wt.RECT()
         assert user.GetWindowRect(window, ctypes.byref(rect))
         return rect
+
+    def borderless():
+        outer = bounds()
+        client = wt.RECT()
+        origin = wt.POINT()
+        assert user.GetClientRect(window, ctypes.byref(client)) and user.ClientToScreen(window, ctypes.byref(origin))
+        return ((origin.x, origin.y, origin.x + client.right, origin.y + client.bottom)
+                == (outer.left, outer.top, outer.right, outer.bottom))
 
     def location(x, y):
         return (y & 0xffff) << 16 | (x & 0xffff)
@@ -99,8 +107,13 @@ def verify_frame(window):
         first = bounds()
         origin = wt.POINT()
         assert user.ClientToScreen(window, ctypes.byref(origin))
-        # Only the native resize border should separate the client from each edge.
-        assert abs((origin.y - first.top) - (origin.x - first.left)) <= 2
+        wait_for(borderless, "all four client edges flush with the window bounds")
+        for fx, fy, expected in ((0, 0, 13), (.5, 0, 12), (1, 0, 14), (0, .5, 10),
+                                 (1, .5, 11), (0, 1, 16), (.5, 1, 15), (1, 1, 17)):
+            x = first.left + 2 + round(fx * (first.right - first.left - 5))
+            y = first.top + 2 + round(fy * (first.bottom - first.top - 5))
+            hit = user.SendMessageW(window, 0x84, 0, location(x, y))
+            assert hit == expected, (x, y, hit, expected)
         def small_corners():
             preference = wt.DWORD()
             assert dwm.DwmGetWindowAttribute(window, 33, ctypes.byref(preference), 4) == 0
@@ -121,6 +134,7 @@ def verify_frame(window):
         assert user.PostMessageW(window, 0x0112, 0xF120, 0)  # SC_RESTORE
         wait_for(lambda: not user.IsZoomed(window), "restoring ordinary window bounds")
         wait_for(small_corners, "small corners after restoring from maximized")
+        wait_for(borderless, "all four edges still borderless after restore")
     finally:
         user.SetCursorPos(old.x, old.y)
 
