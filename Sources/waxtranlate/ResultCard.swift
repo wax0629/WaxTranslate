@@ -12,7 +12,7 @@ struct ResultCard: View {
     private let source: Locale.Language
     private let target: Locale.Language
     private let dictionary: [String]
-    @State private var result: LookupResult?
+    @State private var translation: LookupResult?
     @State private var phase = Phase.checking
     @State private var configuration: TranslationSession.Configuration?
     @State private var copied = false
@@ -28,7 +28,15 @@ struct ResultCard: View {
         source = Locale.Language(identifier: language)
         target = Locale.Language(identifier: language.hasPrefix("zh") ? "en" : "zh-Hans")
         dictionary = CompactGloss.candidates(for: passage, language: language)
-        _result = State(initialValue: dictionary.first.map { LookupResult(meaning: $0, origin: .dictionary) })
+    }
+
+    private var result: LookupResult? {
+        switch phase {
+        case .done: return translation
+        case .download, .unsupported, .failed:
+            return dictionary.first.map { LookupResult(meaning: $0, origin: .dictionary) }
+        case .checking, .translating: return nil
+        }
     }
 
     private var hasSentence: Bool { !passage.context.isEmpty && passage.context != passage.text }
@@ -54,8 +62,8 @@ struct ResultCard: View {
                             Text(result.meaning).font(isRegion ? .body : .system(size: 17, weight: .medium))
                             if result.origin == .dictionary {
                                 Text("词典参考").font(.caption2).foregroundStyle(.secondary)
-                            } else if result.origin == .word && hasSentence {
-                                Text("单词参考").font(.caption2).foregroundStyle(.secondary)
+                            } else if result.origin == .standalone && hasSentence {
+                                Text(passage.isPhrase ? "短语参考" : "单词参考").font(.caption2).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -88,7 +96,7 @@ struct ResultCard: View {
                 } label: {
                     Label(notebook.contains(passage) ? "已加入生词本" : "加入生词本",
                           systemImage: notebook.contains(passage) ? "bookmark.fill" : "bookmark")
-                }.disabled(result == nil || notebook.contains(passage) || phase == .translating)
+                }.disabled(result == nil || notebook.contains(passage))
             }.buttonStyle(.plain).controlSize(.small).foregroundStyle(.secondary)
         }
         .padding(16).frame(width: 390, height: isRegion ? 276 : 246)
@@ -106,7 +114,7 @@ struct ResultCard: View {
                 try await session.prepareTranslation()
                 let translated = try await LookupTranslation.translate(passage, session: session, dictionary: dictionary)
                 try Task.checkCancellation()
-                result = translated
+                translation = translated
                 copied = false
                 phase = .done
             } catch {

@@ -17,35 +17,42 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
 
 @main @MainActor struct ReaderTests {
     static func main() async throws {
-        try testWordAtPointerAndRegion()
+        let ruledOut = try testHoverAndRegion("These results do not rule out infection.", expected: "rule out")
+        let ranOut = try testHoverAndRegion("The device ran out of memory before the test ended.", expected: "ran out of")
         try testSecondaryDisplayCoordinates()
         try testCaptureBand()
         try testWrappedOCRInTwoColumns()
         try testSentenceAtExactOccurrence()
+        try testPhraseAtExactOccurrence()
         try testConciseGloss()
-        try testSavingAndReview()
-        try await testInstalledTranslation()
-        print("Passed: capture geometry, OCR, wrapped sentence in two columns, exact token alignment, concise glosses, vocabulary migration and review.")
+        try testSavingAndReview(ruledOut)
+        try await testInstalledTranslation(ruledOut: ruledOut, ranOut: ranOut)
+        print("Passed: capture geometry, OCR, phrase selection, column and sentence boundaries, concise glosses, vocabulary migration and review.")
     }
 
-    static func testWordAtPointerAndRegion() throws {
-        let size = CGSize(width: 580, height: 90)
+    static func testHoverAndRegion(_ sentence: String, anchor: String = "out", expected: String) throws -> Passage {
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 32), .foregroundColor: NSColor.black]
+        let size = CGSize(width: ceil((sentence as NSString).size(withAttributes: attributes).width) + 60, height: 90)
         let image = NSImage(size: size)
         image.lockFocus()
         NSColor.white.setFill()
         CGRect(origin: .zero, size: size).fill()
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 40), .foregroundColor: NSColor.black]
         let origin = CGPoint(x: 25, y: 20)
-        ("Hello world" as NSString).draw(at: origin, withAttributes: attributes)
+        (sentence as NSString).draw(at: origin, withAttributes: attributes)
         image.unlockFocus()
         let bitmap = try require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
         let region = try Reader.recognize(image: bitmap, target: nil)
-        try expect(region.text == "Hello world")
-        let x = origin.x + ("Hello wo" as NSString).size(withAttributes: attributes).width
-        let hit = try Reader.recognize(image: bitmap, target: CGPoint(x: x/size.width, y: 40/size.height))
-        try expect(hit == Passage(text: "world", context: "Hello world"))
+        try expect(region.text == sentence && region.context.isEmpty && !region.isPhrase)
+        let range = try require(sentence.range(of: anchor))
+        let prefix = String(sentence[..<range.lowerBound]) as NSString
+        let x = origin.x + prefix.size(withAttributes: attributes).width + (anchor as NSString).size(withAttributes: attributes).width / 2
+        let hit = try Reader.recognize(image: bitmap, target: CGPoint(x: x / size.width, y: 38 / size.height))
+        try expect(hit.text == expected && hit.context == sentence && hit.isPhrase)
+        try expect(hit.anchor == NSRange(range, in: sentence))
+        try expect(hit.selection == (sentence as NSString).range(of: expected))
         let blank = try? Reader.recognize(image: bitmap, target: CGPoint(x: 0.95, y: 0.95))
         try expect(blank == nil)
+        return hit
     }
 
     static func testSecondaryDisplayCoordinates() throws {
@@ -104,6 +111,40 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try expect(try SentenceContext.passage(in: jp).context == "彼は川の近くにいる。")
     }
 
+    static func testPhraseAtExactOccurrence() throws {
+        let frame = CGRect(x: 20, y: 100, width: 280, height: 20)
+        func hover(_ sentence: String, _ word: String, last: Bool = false) throws -> Passage {
+            let hit = (sentence as NSString).range(of: word, options: last ? .backwards : [])
+            return try SentenceContext.passage(in: [TextLine(text: sentence, frame: frame, hit: hit)])
+        }
+
+        let repeated = "We walked out to the garage and ruled out a leak."
+        let first = try hover(repeated, "out")
+        try expect(first.text == "out" && !first.isPhrase)
+        let second = try hover(repeated, "out", last: true)
+        try expect(second.text == "ruled out" && second.anchor == (repeated as NSString).range(of: "out", options: .backwards))
+        let marked = try require(LookupTranslation.markedSentence(second))
+        let bold = try require(marked.runs.first { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true })
+        try expect(String(marked[bold.range].characters) == "ruled out")
+        try expect(try hover("We are looking up the number now.", "looking").text == "looking up")
+        try expect(try hover("We have run out of water.", "of").text == "run out of")
+        for sentence in [
+            "The rule, out of date for years, still applies.",
+            "Please carry the boxes out of the room.",
+            "Dans cet exemple français, les mots « rule out » sont une citation étrangère."
+        ] {
+            try expect(try hover(sentence, "out").text == "out")
+        }
+        try expect(try hover("She looked the address up in the directory.", "up").text == "up")
+
+        let line = TextLine(text: "These results rule", frame: frame, hit: NSRange(location: 14, length: 4))
+        let right = TextLine(text: "out of order", frame: frame.offsetBy(dx: 540, dy: -27), hit: nil)
+        try expect(try SentenceContext.passage(in: [line, right]).text == "rule")
+        let below = TextLine(text: "out a leak.", frame: frame.offsetBy(dx: 0, dy: -27), hit: nil)
+        let wrapped = try SentenceContext.passage(in: [right, line, below])
+        try expect(wrapped.text == "rule out" && wrapped.context == "These results rule out a leak.")
+    }
+
     static func testConciseGloss() throws {
         let raw = "novel | BrE test | A. noun ① (genre) 小说体 pinyin ② (book) 小说 novel B. adjective 新颖的 pinyin ‹idea›; 与众不同的 pinyin ▸ example 很长的例句"
         let glosses = CompactGloss.meanings(in: raw, partOfSpeech: "adjective")
@@ -117,9 +158,15 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try expect(LookupTranslation.alignedMeaning(in: AttributedString("一种测量压力") + adjective + AttributedString("方法。")) == "新")
         try expect(LookupTranslation.alignedMeaning(in: gloss) == nil)
         try expect(LookupTranslation.alignedMeaning(in: gloss + AttributedString("和") + gloss) == nil)
+        for (fragment, expected) in [("一下", nil), ("查一下", "查一下")] as [(String, String?)] {
+            var translated = AttributedString(fragment)
+            translated.inlinePresentationIntent = .stronglyEmphasized
+            let sentence = AttributedString("请") + translated + AttributedString("地址。")
+            try expect(LookupTranslation.alignedMeaning(in: sentence, isPhrase: true) == expected)
+        }
     }
 
-    static func testInstalledTranslation() async throws {
+    static func testInstalledTranslation(ruledOut: Passage, ranOut: Passage) async throws {
         let source = Locale.Language(identifier: "en")
         let target = Locale.Language(identifier: "zh-Hans")
         guard #available(macOS 26.4, *), await LanguageAvailability().status(from: source, to: target) == .installed else {
@@ -136,23 +183,51 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
             meanings.append(result.meaning)
             print(sentence, "→", result.meaning, "/", full)
         }
-        try expect(meanings[0] != meanings[1])
+        try expect(meanings[0].contains("岸") && meanings[1].contains("银行"))
+
+        for passage in [ruledOut, ranOut] {
+            let result = try await LookupTranslation.translate(passage, session: session, dictionary: CompactGloss.candidates(for: passage, language: "en"))
+            let full = try require(result.sentenceTranslation)
+            print("Vision →", passage.text, "→", result.meaning, "/", full)
+            try expect(result.origin == .sentence)
+            if passage == ruledOut {
+                try expect(result.meaning.contains("排除") && ["不", "未", "无", "非"].contains(where: full.contains))
+            } else {
+                try expect(["用完", "耗尽", "用尽"].contains(where: result.meaning.contains))
+            }
+        }
+
+        for (text, headword, meanings) in [
+            ("Please look up the address before you leave.", "look up", ["查"]),
+            ("Look up at the ceiling to see the stars.", "Look up", ["仰", "抬头", "向上"])
+        ] {
+            let hit = try testHoverAndRegion(text, anchor: "up", expected: headword)
+            let result = try await LookupTranslation.translate(hit, session: session, dictionary: [])
+            print("Vision →", hit.text, "→", result.meaning, "/", result.sentenceTranslation ?? "")
+            try expect(result.origin == .sentence && meanings.contains(where: result.meaning.contains))
+        }
+
+        // Force plain translation with a stale span. “结束” belongs to ended, not memory.
+        let unaligned = Passage(text: "memory", context: ranOut.context, selection: NSRange(location: 0, length: 3))
+        let reference = try await LookupTranslation.translate(unaligned, session: session, dictionary: ["结束"])
+        print("Unaligned memory →", reference.meaning, "/", reference.sentenceTranslation ?? "")
+        try expect(reference.origin == .standalone && reference.meaning != "结束" && reference.sentenceTranslation != nil)
     }
 
-    static func testSavingAndReview() throws {
+    static func testSavingAndReview(_ passage: Passage) throws {
         let suite = UUID().uuidString
         let defaults = try require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let book = Notebook(defaults: defaults)
-        let passage = Passage(text: "word", context: "a word")
-        book.save(passage, translation: "词", sentenceTranslation: "一个词")
-        book.save(passage, translation: "词", sentenceTranslation: "一个词")
+        book.save(passage, translation: "排除", sentenceTranslation: "这些结果并不排除感染。")
+        book.save(passage, translation: "排除", sentenceTranslation: "这些结果并不排除感染。")
         try expect(book.entries.count == 1)
         let id = try require(book.entries.first?.id)
         book.review(id, remembered: true)
         let loaded = Notebook(defaults: defaults)
-        try expect(loaded.entries.first?.streak == 1)
-        try expect(loaded.entries.first?.sentenceTranslation == "一个词")
+        let saved = try require(loaded.entries.first)
+        try expect(saved.streak == 1 && saved.source == "rule out" && saved.context == passage.context)
+        try expect(saved.displayMeaning == "排除" && saved.sentenceTranslation == "这些结果并不排除感染。")
         let due = try require(loaded.entries.first?.due)
         try expect(due > Date())
         loaded.remove(id)

@@ -7,13 +7,16 @@ struct Passage: Equatable {
     let text: String
     let context: String
 
-    let selection: NSRange?
+    let selection: NSRange?   // Headword in context, in UTF-16.
+    let anchor: NSRange?      // Token under the pointer, in the same context.
+    var isPhrase: Bool { selection != anchor }
 
-    init(text: String, context: String, selection: NSRange? = nil) {
+    init(text: String, context: String, selection: NSRange? = nil, anchor: NSRange? = nil) {
         self.text = text
         self.context = context
-        // OCR supplies the exact occurrence. Demo/manual passages can use a unique match.
+        // OCR supplies the exact occurrence. Demo/manual passages can infer it.
         self.selection = selection ?? context.range(of: text).map { NSRange($0, in: context) }
+        self.anchor = anchor ?? self.selection
     }
 
     var sourceLanguage: String {
