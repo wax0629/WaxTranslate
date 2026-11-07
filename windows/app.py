@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QFrame, QHBoxLayout, 
                                QMenu, QPushButton, QSizePolicy, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 from notebook import Notebook
-from home import HOME_EXAMPLE, HOME_WORD, HomePage
+from home import HomePage
 from lookup import UNKNOWN, explain, reference_word, sentence_translation
 from online_terms import search_entities
 from popup import Card
@@ -134,7 +134,7 @@ def online_meanings(word):
 class Window(QWidget):
     finished = Signal(int, object, object)
     online_finished = Signal(int, object)
-    stats_ready = Signal(object, object, object)
+    stats_ready = Signal(object)
 
     def __init__(self, notebook=None, login_startup=None):
         super().__init__()
@@ -204,9 +204,7 @@ class Window(QWidget):
 
         self.home = HomePage()
         self.tabs.addWidget(self.home)
-        self.home.demo_requested.connect(self.try_home_word)
         self.home.region_requested.connect(lambda: self.begin(True))
-        self.home.reader_requested.connect(self.open_reader)
         self.home.settings_requested.connect(self.open_gesture_settings)
         self.home.stats_requested.connect(self.refresh_home)
         self.stats_ready.connect(self.home.set_stats)
@@ -215,7 +213,6 @@ class Window(QWidget):
         layout.setSpacing(17)
         self.tabs.addWidget(self.reader_page)
         self.library = Library(self.notebook, self.player)
-        self.home.library_requested.connect(self.open_library)
         self.library.reader_requested.connect(self.open_reader)
         self.tabs.addWidget(self.library)
         self.preferences = SettingsPage()
@@ -333,20 +330,22 @@ class Window(QWidget):
         elif self.tabs.widget(index) is self.reader_page:
             self.workspace.input.setFocus()
 
-    def refresh_home(self, *, lookup_at=None):
+    def refresh_home(self, *, word="", language="", gloss="", lookup_at=None):
         visible = self.home.isVisible()
-        if not self.stopping and (lookup_at is not None or visible):
-            self.stats_pool.submit(self.update_home_stats, lookup_at, visible)
+        if not self.stopping and (word or visible):
+            self.stats_pool.submit(self.update_home_stats, visible, word, language, gloss, lookup_at)
 
-    def update_home_stats(self, lookup_at, visible):
+    def update_home_stats(self, visible, word, language, gloss, lookup_at):
         try:
             if lookup_at is not None:
-                self.notebook.record_lookup(lookup_at)
+                self.notebook.record_lookup(lookup_at, word=word, language=language, gloss=gloss)
+            elif word:
+                self.notebook.update_recent_gloss(word, language, gloss)
             if visible:
-                self.stats_ready.emit(*self.notebook.home_stats())
+                self.stats_ready.emit(self.notebook.dashboard())
         except (sqlite3.Error, OSError):
             if visible:
-                self.stats_ready.emit(None, None, None)
+                self.stats_ready.emit(None)
 
     def changeEvent(self, event):
         super().changeEvent(event)
@@ -522,12 +521,6 @@ class Window(QWidget):
             self.overlay.close()
             self.overlay = None
 
-    def try_home_word(self):
-        self.invalidate()
-        start = HOME_EXAMPLE.index(HOME_WORD)
-        self.submit(self.home.demo.mapToGlobal(self.home.demo.rect().center()),
-                    passage=Passage(HOME_EXAMPLE, (start, start + len(HOME_WORD)), source_code="en"))
-
     def demo(self):
         examples = {
             "ja": ("図書館で日本語の本を読みます。", "図書館"),
@@ -565,11 +558,6 @@ class Window(QWidget):
             point = QCursor.pos()
         editor = self.workspace.input
         under_pointer = QApplication.widgetAt(point) if not region else None
-        if under_pointer is not None and self.home.isAncestorOf(under_pointer) and self.home.demo.isVisible():
-            demo = self.home.demo
-            if demo.rect().adjusted(-3, -3, 3, 3).contains(demo.mapFromGlobal(point)):
-                self.try_home_word()
-                return
         if under_pointer is editor.viewport():
             if not editor.lookup_point(QPointF(editor.viewport().mapFromGlobal(point))):
                 self.invalidate()
@@ -649,7 +637,10 @@ class Window(QWidget):
         self.card.show_result(passage, *result, point, excerpt=excerpt, language=language, pos=pos,
                               can_save=not unknown, can_search=can_search)
         if passage.selection and any(c.isalpha() for c in passage.word):
-            self.refresh_home(lookup_at=time.time())
+            # Document definitions can quote the surrounding source verbatim.
+            gloss = result[0] if unknown or result[0] == "文中定义" else result[1]
+            self.refresh_home(word=passage.word, language=passage.source_code or "en", gloss=gloss,
+                              lookup_at=time.time())
         if unknown and self.auto_online.isChecked() and any(c.isascii() and c.isalpha() for c in passage.word):
             self.search_online()
 
@@ -681,6 +672,7 @@ class Window(QWidget):
             ids = [identity for identity, _ in matches]
             result = ("Wikidata · 同名参考" if len(ids) > 1 else "Wikidata · 百科参考", gloss, local_result[2])
             self.saved_result = passage, (result[0] + " · " + " / ".join(ids), gloss, result[2])
+            self.refresh_home(word=passage.word, language=passage.source_code or "en", gloss=gloss)
             self.card.show_result(passage, *result, point, language=language, pos=pos, references=ids)
         else:
             unknown = local_result[0] == UNKNOWN

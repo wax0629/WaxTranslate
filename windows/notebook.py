@@ -1,4 +1,4 @@
-"""User-selected vocabulary and the current local day's aggregate lookup count."""
+"""Saved vocabulary, lookup counts and a bounded list of recent words."""
 from contextlib import closing, contextmanager
 from datetime import date
 from pathlib import Path
@@ -7,12 +7,36 @@ import sqlite3
 import time
 
 INTERVALS = (1, 3, 7, 14, 30, 60)
+RECENT_LIMIT = 6
 
 ENTRIES_SCHEMA = """CREATE TABLE IF NOT EXISTS entries (
     id INTEGER PRIMARY KEY, word TEXT NOT NULL, context TEXT NOT NULL,
     position INTEGER NOT NULL, source TEXT NOT NULL, gloss TEXT NOT NULL,
     translation TEXT NOT NULL, due INTEGER NOT NULL, streak INTEGER NOT NULL DEFAULT 0,
     language TEXT NOT NULL DEFAULT 'en', UNIQUE(word, context, position, language))"""
+
+
+def prepare_dashboard(db):
+    # The singleton is also written by older portable builds sharing this notebook.
+    # Archive its count whenever either build replaces the day, including at first upgrade.
+    db.execute("""CREATE TABLE IF NOT EXISTS lookup_counter (
+        id INTEGER PRIMARY KEY CHECK (id = 1), day TEXT NOT NULL, total INTEGER NOT NULL)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS prior_lookup_days (
+        day TEXT PRIMARY KEY, total INTEGER NOT NULL)""")
+    db.execute("""CREATE TRIGGER IF NOT EXISTS archive_lookup_day BEFORE UPDATE OF day ON lookup_counter
+        WHEN OLD.day <> NEW.day BEGIN
+            INSERT INTO prior_lookup_days(day, total) VALUES(OLD.day, OLD.total)
+            ON CONFLICT(day) DO UPDATE SET total=prior_lookup_days.total+excluded.total;
+        END""")
+    db.execute("""CREATE TABLE IF NOT EXISTS recent_lookups (
+        id INTEGER PRIMARY KEY, word TEXT NOT NULL, language TEXT NOT NULL, gloss TEXT NOT NULL,
+        UNIQUE(word, language))""")
+    db.execute("CREATE INDEX IF NOT EXISTS entries_due ON entries(due)")
+
+
+def short_gloss(gloss):
+    lines = gloss.strip().splitlines()
+    return lines[0][:120] if lines else ""
 
 
 class Notebook:
@@ -35,43 +59,60 @@ class Notebook:
                     db.execute("DROP TABLE entries_english")
                     db.execute("CREATE INDEX entries_due ON entries(due)")
                 db.commit()
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='recent_lookups'").fetchone():
+                # Install the rollover trigger and history together before the next writer.
+                db.execute("BEGIN IMMEDIATE")
+                prepare_dashboard(db)
+                db.commit()
             yield db
 
-    def record_lookup(self, now=None):
-        """Count one completed word lookup without storing its text or occurrence."""
+    def record_lookup(self, now=None, *, word="", language="", gloss=""):
+        """Count one completion and keep only the most recent word/meaning pairs."""
         with self.connection() as db:
-            # Assign the local day after preceding writers, including at midnight.
             db.execute("BEGIN IMMEDIATE")
-            db.execute("""CREATE TABLE IF NOT EXISTS lookup_counter (
-                id INTEGER PRIMARY KEY CHECK (id = 1), day TEXT NOT NULL, total INTEGER NOT NULL)""")
-            # Subsequent dashboard refreshes can count the schedule directly,
-            # without scanning saved sentences or their translations.
-            db.execute("CREATE INDEX IF NOT EXISTS entries_due ON entries(due)")
             day = date.fromtimestamp(time.time() if now is None else now).isoformat()
             row = db.execute("""INSERT INTO lookup_counter(id, day, total) VALUES(1, ?, 1)
                                 ON CONFLICT(id) DO UPDATE SET day=excluded.day,
                                     total=CASE WHEN day=excluded.day THEN total+1 ELSE 1 END
                                 RETURNING total""", (day,)).fetchone()
-            return row["total"]
+            if word:
+                # A new rowid moves a repeated word to the front even with identical timestamps.
+                db.execute("INSERT OR REPLACE INTO recent_lookups(word, language, gloss) VALUES(?, ?, ?)",
+                           (word, language, short_gloss(gloss)))
+                db.execute("""DELETE FROM recent_lookups WHERE id NOT IN
+                              (SELECT id FROM recent_lookups ORDER BY id DESC LIMIT ?)""", (RECENT_LIMIT,))
+            prior = db.execute("SELECT total FROM prior_lookup_days WHERE day=?", (day,)).fetchone()
+            return row["total"] + (prior["total"] if prior else 0)
 
-    def home_stats(self, now=None):
-        """Return today's lookups, saved entries and entries currently due."""
+    def update_recent_gloss(self, word, language, gloss):
+        """A later dictionary response can fill in a visible word without recording a lookup."""
         if not self.path.exists():
-            return 0, 0, 0
+            return
+        with self.connection() as db:
+            db.execute("UPDATE recent_lookups SET gloss=? WHERE word=? AND language=?",
+                       (short_gloss(gloss), word, language))
+
+    def dashboard(self, now=None):
+        """Return lifetime/today counts, saved/due counts, and newest-first word/language/gloss rows."""
+        if not self.path.exists():
+            return 0, 0, 0, 0, []
         now = time.time() if now is None else now
         day = date.fromtimestamp(now).isoformat()
         with self.connection() as db:
-            # Read one snapshot if a save or a new lookup happens concurrently.
             db.execute("BEGIN")
+            total, today = db.execute("""WITH days AS (
+                SELECT day, total FROM prior_lookup_days UNION ALL SELECT day, total FROM lookup_counter)
+                SELECT COALESCE(sum(total), 0), COALESCE(sum(total) FILTER (WHERE day=?), 0) FROM days""",
+                                      (day,)).fetchone()
             saved, due = db.execute("""SELECT (SELECT count(*) FROM entries),
                                               (SELECT count(*) FROM entries WHERE due <= ?)""", (now,)).fetchone()
-            # Pre-dashboard notebooks may have vocabulary but no counter.
-            exists = db.execute("""SELECT 1 FROM sqlite_master
-                                   WHERE type='table' AND name='lookup_counter'""").fetchone()
-            if not exists:
-                return 0, saved, due
-            row = db.execute("SELECT total FROM lookup_counter WHERE id=1 AND day=?", (day,)).fetchone()
-            return (row["total"] if row else 0), saved, due
+            recent = [tuple(row) for row in db.execute(
+                "SELECT word, language, gloss FROM recent_lookups ORDER BY id DESC LIMIT ?", (RECENT_LIMIT,))]
+            return total, today, saved, due, recent
+
+    def home_stats(self, now=None):
+        """Return today's lookups, saved entries and entries currently due."""
+        return self.dashboard(now)[1:4]
 
     def save(self, passage, result):
         source, gloss, translation = result
