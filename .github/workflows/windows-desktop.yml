@@ -5,6 +5,7 @@ on:
     paths:
       - 'windows/**'
       - 'Assets/Brand/barrette.svg'
+      - 'Assets/Editorial/river.jpg'
       - '.github/workflows/windows-desktop.yml'
 
 permissions:
