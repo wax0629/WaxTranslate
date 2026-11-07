@@ -27,9 +27,9 @@ class NotebookCover(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.translate(8, 0)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#ced7c9"))
+        painter.setBrush(QColor("#d5d4ce"))
         painter.drawEllipse(QRectF(3, 65, 108, 11))
-        for direction, color in ((-1, "#f8f7ef"), (1, "#e6ebdf")):
+        for direction, color in ((-1, "#faf9f6"), (1, "#e6e5df")):
             painter.save()
             painter.translate(56, 0)
             painter.scale(direction, 1)
@@ -38,17 +38,17 @@ class NotebookCover(QWidget):
             page.lineTo(51, 59)
             page.cubicTo(31, 58, 15, 63, 0, 71)
             page.closeSubpath()
-            painter.setBrush(QColor("#354638"))
+            painter.setBrush(QColor("#161615"))
             painter.drawPath(page.translated(0, 3))
             painter.setBrush(QColor(color))
-            painter.setPen(QPen(QColor("#758675"), 1))
+            painter.setPen(QPen(QColor("#747470"), 1))
             painter.drawPath(page)
             for y in (28, 33, 38):
                 lines = QPainterPath(QPointF(12, y + 3))
                 lines.quadTo(25, y - 3, 38, y - 3)
                 painter.drawPath(lines)
             painter.restore()
-        painter.setBrush(QColor("#bd5036"))
+        painter.setBrush(QColor("#161615"))
         painter.drawPolygon(QPolygonF([QPointF(66, 20), QPointF(72, 17), QPointF(73, 39),
                                        QPointF(69, 36), QPointF(66, 41)]))
 
@@ -64,16 +64,16 @@ class WordDelegate(QStyledItemDelegate):
         selected = bool(option.state & QStyle.State_Selected)
         painter.setPen(Qt.NoPen)
         if selected or option.state & QStyle.State_MouseOver:
-            painter.setBrush(QColor("#e5ebe0" if selected else "#eff1eb"))
+            painter.setBrush(QColor("#e6e5df" if selected else "#f0efea"))
             painter.drawRoundedRect(bounds, 4, 4)
         if selected:
-            painter.fillRect(bounds.left(), bounds.top() + 10, 2, bounds.height() - 20, QColor("#b44e33"))
+            painter.fillRect(bounds.left(), bounds.top() + 10, 2, bounds.height() - 20, QColor("#161615"))
         if option.state & QStyle.State_HasFocus:
-            painter.setPen(QPen(QColor("#839481"), 1))
+            painter.setPen(QPen(QColor("#747470"), 1))
             painter.setBrush(Qt.NoBrush)
             painter.drawRoundedRect(bounds, 4, 4)
         word, _, gloss = index.data().partition("\n")
-        rows = ((word, QFont("Spectral"), 21, "#23382b"), (gloss, option.font, 12, "#58665b"))
+        rows = ((word, QFont("Spectral"), 21, "#161615"), (gloss, option.font, 12, "#595955"))
         y = bounds.y() + 4
         for value, font, pixels, color in rows:
             font.setPixelSize(pixels)
