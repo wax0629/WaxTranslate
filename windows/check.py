@@ -349,7 +349,9 @@ class Checks(unittest.TestCase):
             with self.subTest(source=source):
                 start = source.index(word)
                 passage = Passage(source, (start, start + len(word)))
-                full, (excerpt, sentence) = translate_lookup(passage)
+                full, short_result = translate_lookup(passage)
+                self.assertIsNotNone(short_result, (full, translate(context_excerpt(passage))))
+                excerpt, sentence = short_result
                 self.assertEqual(full, translate(passage))
                 self.assertIn(meaning, full[1])
                 self.assertEqual(excerpt.text, short)

@@ -16,6 +16,7 @@ from lookup import DICTIONARY, UNKNOWN, explain
 from notebook import Notebook
 from online_terms import search_entities
 from reader import Passage, sentence_at
+from translation import strip_attached_particle
 
 
 def selected(text, word):
@@ -33,6 +34,11 @@ def wait_for(predicate):
 
 
 class LookupTests(unittest.TestCase):
+    def test_particle_overlaps_bank_alignment(self):
+        self.assertEqual(strip_attached_particle("bank", "了银行"), "银行")
+        self.assertEqual(strip_attached_particle("know", "了解"), "了解")
+        self.assertEqual(strip_attached_particle("bank", "过安检"), "过安检")
+
     def test_real_lookup_sources(self):
         for text, word, expected in [
             ("I used ChatGPT to draft a reply.", "ChatGPT", "OpenAI"),
