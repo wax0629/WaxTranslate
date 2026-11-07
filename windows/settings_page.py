@@ -4,6 +4,7 @@ from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout,
                                QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
 
+from languages import NAMES
 from theme import label
 
 
@@ -173,6 +174,13 @@ class SettingsPage(QScrollArea):
         self.reading = PreferenceSection("取词与翻译")
         layout.addWidget(self.reading)
         reading = self.reading.options
+        self.source_language = Choice()
+        self.source_language.addItem("自动识别", "")
+        for code, name in NAMES.items():
+            self.source_language.addItem(name, code)
+        setting_row(reading, "原文语言", self.source_language,
+                    "应用于阅读、悬停和框选。短词难以判断时，可手动选择语言。")
+        reading.addWidget(QFrame(objectName="hairline"))
         self.trigger = Choice()
         for text, mode in (("轻按左 Ctrl", "left"), ("轻按右 Ctrl", "right"), ("仅应用内查词", "off")):
             self.trigger.addItem(text, mode)

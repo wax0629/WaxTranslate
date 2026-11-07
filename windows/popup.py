@@ -9,6 +9,7 @@ from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout,
                                QLabel, QPushButton, QSizePolicy, QTextBrowser, QVBoxLayout, QWidget)
 
+from languages import SUPPORTED
 from speech import ListenButton, SpeechPlayer
 from theme import APP_NAME, DOCUMENT_STYLE, plain, result_html
 
@@ -172,7 +173,7 @@ class Card(QWidget):
 
     def show_original(self, language, original, point):
         self.listen.set_content()
-        content = ("<p class='message'>当前离线模型支持英语译为简体中文。</p>"
+        content = (f"<p class='message'>支持从{SUPPORTED}译为简体中文。</p>"
                    + f"<p class='source'>{plain(original)}</p>")
         self.present(f"{language}原文", content, point, original, copy_original=True)
 
@@ -183,9 +184,11 @@ class Card(QWidget):
 
     def show_result(self, passage, origin, gloss, sentence, point, excerpt=None, language="", pos="",
                     can_save=True, can_search=False, references=(), web_search=False):
-        self.listen.set_content(passage.word, passage.text)
+        self.listen.set_content(passage.word, passage.text, passage.source_code or "en")
         if passage.selection:
-            details = (language or "按英语查词") + " · " + (pos or "词性待定")
+            details = language or "按英语查词"
+            if pos or passage.source_code in ("", "en"):
+                details += " · " + (pos or "词性待定")
         else:
             details = (language or "按英语翻译") + " → 简体中文"
         full = result_html(passage, gloss, sentence, details)

@@ -56,7 +56,7 @@ class HomeStatsTests(unittest.TestCase):
         self.assertEqual(self.book.home_stats(100), (0, 1, 1))
         self.assertEqual(self.book.entries()[0]["streak"], 2)
         self.book.record_lookup(100)
-        second = SimpleNamespace(word="bank", text="river bank", selection=(6, 10))
+        second = SimpleNamespace(word="bank", text="river bank", selection=(6, 10), source_code="en")
         with patch("notebook.time.time", return_value=100):
             self.book.save(second, ("词典", "岸", ""))
             self.book.save(second, ("词典", "河岸", ""))

@@ -24,7 +24,7 @@ from reader import Passage, recognize
 from settings_page import SettingsPage
 from startup import LoginStartup
 from theme import APP_NAME, apply_theme, label, nav_icon
-from translation import UnsupportedLanguage
+from languages import UnsupportedLanguage
 from workspace import TextWorkspace
 
 
@@ -55,7 +55,7 @@ class Selection(QWidget):
         self.from_ctrl = from_ctrl
         self.setAttribute(Qt.WA_ShowWithoutActivating, from_ctrl)
         self.setAttribute(Qt.WA_DeleteOnClose)
-        self.setWindowTitle("框选英文 · Esc 取消")
+        self.setWindowTitle("框选原文 · Esc 取消")
         self.setScreen(screen)
         self.setGeometry(screen.geometry())
         self.screenshot = screenshot
@@ -77,7 +77,7 @@ class Selection(QWidget):
         else:
             p.fillRect(16, 16, 234, 38, QColor("#193b33"))
             p.setPen(Qt.white)
-            p.drawText(QRect(16, 16, 234, 38), Qt.AlignCenter, "拖动框选英文  ·  Esc 取消")
+            p.drawText(QRect(16, 16, 234, 38), Qt.AlignCenter, "拖动框选原文  ·  Esc 取消")
         p.end()
 
     def mousePressEvent(self, event):
@@ -116,9 +116,10 @@ class Selection(QWidget):
             super().keyPressEvent(event)
 
 
-def analyze(image, point, passage):
+def analyze(image, point, passage, source_code=""):
     if passage is None:
-        passage = asyncio.run(recognize(image, point))
+        passage = asyncio.run(recognize(image, point, source_code))
+    passage.source_code = passage.source_code or source_code
     return passage, *explain(passage)
 
 
@@ -209,7 +210,7 @@ class Window(QWidget):
         self.rail_rule = QFrame(objectName="railRule")
         self.rail_rule.setFixedHeight(1)
         rail.addWidget(self.rail_rule)
-        self.engine_label = label("本地英译中", "engine")
+        self.engine_label = label("本地翻译", "engine")
         self.engine_label.setContentsMargins(10, 6, 0, 0)
         rail.addWidget(self.engine_label)
 
@@ -234,6 +235,7 @@ class Window(QWidget):
         self.trigger = self.preferences.trigger
         self.auto_online = self.preferences.auto_online
         for control, key, default in ((self.trigger, "gesture", "left"),
+                                      (self.preferences.source_language, "sourceLanguage", ""),
                                       (self.preferences.close_behavior, "closeBehavior", "tray")):
             control.setCurrentIndex(max(0, control.findData(self.settings.value(key, default))))
         self.auto_online.setChecked(self.settings.value("onlineTerms", True, type=bool))
@@ -247,6 +249,8 @@ class Window(QWidget):
         self.preferences.system_startup.clicked.connect(self.open_system_startup)
         layout.addWidget(label("阅读与翻译", "heading"))
         self.workspace = TextWorkspace(self.pool)
+        self.workspace.set_source_language(self.preferences.source_language.currentData())
+        self.preferences.source_language.currentIndexChanged.connect(self.change_language)
         self.workspace.input.lookup_requested.connect(self.lookup_text)
         self.workspace.input.textChanged.connect(self.editor_changed)
         self.workspace.example.clicked.connect(self.demo)
@@ -444,6 +448,12 @@ class Window(QWidget):
         key = {"left": "左 Ctrl", "right": "右 Ctrl"}.get(mode)
         self.tray.setToolTip(f"{APP_NAME} · " + (f"轻按{key}取词" if key else "仅应用内查词"))
 
+    def change_language(self):
+        code = self.preferences.source_language.currentData()
+        self.save_preference("sourceLanguage", code)
+        self.workspace.set_source_language(code)
+        self.invalidate()
+
     def change_trigger(self):
         self.save_preference("gesture", self.trigger.currentData())
         self.update_trigger_hints()
@@ -539,19 +549,24 @@ class Window(QWidget):
         self.invalidate()
         start = HOME_EXAMPLE.index("bank")
         self.submit(self.home.demo.mapToGlobal(self.home.demo.rect().center()),
-                    passage=Passage(HOME_EXAMPLE, (start, start + 4)))
+                    passage=Passage(HOME_EXAMPLE, (start, start + 4), source_code="en"))
 
     def demo(self):
-        text = "They sat on the river bank and watched the water."
+        examples = {
+            "fr": ("Le chat dort dans la maison de ma sœur.", "chat"),
+            "de": ("Die Katze schläft auf dem Sofa im Wohnzimmer.", "Katze"),
+            "es": ("El gato duerme en la casa de mi hermana.", "gato"),
+        }
+        text, word = examples.get(self.workspace.source_code, ("They sat on the river bank and watched the water.", "bank"))
         editor = self.workspace.input
         if not editor.toPlainText().strip():
-            editor.setPlainText(text + "\n\nShe deposited her paycheck at the bank.")
-            editor.setTextCursor(editor.document().find("bank"))
+            editor.setPlainText(text + "\n\nShe deposited her paycheck at the bank." if word == "bank" else text)
+            editor.setTextCursor(editor.document().find(word))
             editor.setFocus()
             editor.lookup_cursor()
             return
-        start = text.index("bank")
-        self.lookup_text(Passage(text, (start, start + 4)), QCursor.pos())
+        start = text.index(word)
+        self.lookup_text(Passage(text, (start, start + len(word))), QCursor.pos())
 
     def lookup_text(self, passage, point):
         self.invalidate()
@@ -624,8 +639,8 @@ class Window(QWidget):
 
     def submit(self, point, image=None, hit=None, passage=None):
         ticket = self.ticket
-        self.card.show_message("本机英译中", "正在读取并翻译…", point)
-        future = self.pool.submit(analyze, image, hit, passage)
+        self.card.show_message("本机翻译", "正在读取并翻译…", point)
+        future = self.pool.submit(analyze, image, hit, passage, self.workspace.source_code)
         self.pending = future
 
         def completed(job):
@@ -645,7 +660,7 @@ class Window(QWidget):
             self.card.show_message("需要处理", str(error), point)
             return
         unknown = result[0] == UNKNOWN
-        can_search = bool(passage.selection)
+        can_search = bool(passage.selection) and passage.source_code in ("", "en")
         self.search_context = (passage, result, point, language, pos) if can_search else None
         self.saved_result = (passage, result) if passage.selection and not unknown else None
         self.card.show_result(passage, *result, point, excerpt=excerpt, language=language, pos=pos,

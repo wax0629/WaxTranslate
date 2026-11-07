@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QApplication, QBoxLayout, QCheckBox, QFrame, QHBo
                                QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
 from reader import WORD_TOKEN, nearest_box, sentence_at
+from languages import NAMES
 from theme import label
 from translation import translate_text
 
@@ -156,6 +157,7 @@ class TextWorkspace(QWidget):
     def __init__(self, pool):
         super().__init__()
         self.pool = pool
+        self.source_code = ""
         self.pending = None
         self.stop = None
         self.completed.connect(self.show_result)
@@ -170,15 +172,15 @@ class TextWorkspace(QWidget):
         self.panes.setSpacing(0)
         spread.addLayout(self.panes, 1)
         self.input = ReadingEditor(objectName="input")
-        self.input.setPlaceholderText("在这里粘贴英文文章…")
-        self.input.setAccessibleName("英文原文")
+        self.input.setPlaceholderText("在这里粘贴英语、法语、德语或西班牙语原文…")
+        self.input.setAccessibleName("原文")
         self.output = QPlainTextEdit(objectName="translation")
         self.output.setAccessibleName("简体中文译文")
         self.output.setReadOnly(True)
         self.binding = QFrame(objectName="binding")
         self.binding.setMinimumSize(1, 1)
         self.headers = []
-        for name, editor, panel in (("English", self.input, "editor"),
+        for name, editor, panel in (("自动识别", self.input, "editor"),
                                     ("简体中文", self.output, "translationPane")):
             frame = QFrame(objectName=panel)
             box = QVBoxLayout(frame)
@@ -193,6 +195,8 @@ class TextWorkspace(QWidget):
             header.addWidget(language)
             header.addStretch()
             if editor is self.input:
+                self.source_label = language
+                language.setToolTip("可在设置中选择原文语言")
                 self.example = QPushButton("试读示例")
                 self.example.setProperty("role", "sample")
                 self.example.setToolTip("打开一段示例，试试查词、听读和收藏")
@@ -247,6 +251,11 @@ class TextWorkspace(QWidget):
         self.input.textChanged.connect(self.reset_result)
         self.reset_result()
         self.setFocusProxy(self.input)
+
+    def set_source_language(self, code):
+        self.source_code = code
+        self.source_label.setText(NAMES.get(code, "自动识别"))
+        self.reset_result()
 
     def set_single_click(self, checked):
         self.input.single_click = checked
@@ -316,7 +325,7 @@ class TextWorkspace(QWidget):
         self.set_busy(True)
         self.output.setPlaceholderText("正在本机翻译…")
         self.stop = Event()
-        self.pending = self.pool.submit(translate_text, text, self.stop)
+        self.pending = self.pool.submit(translate_text, text, self.stop, self.source_code)
         self.pending.add_done_callback(self.completed.emit)
 
     def show_result(self, job):

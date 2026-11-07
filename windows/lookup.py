@@ -4,7 +4,8 @@ import re
 from lexicon import lookup_info
 from reader import Passage
 from terminology import resolve_term
-from translation import UnsupportedLanguage, source_language, translate, translate_lookup
+from languages import NAMES, UnsupportedLanguage, detect_source
+from translation import translate, translate_lookup
 from word_details import part_of_speech
 
 
@@ -21,7 +22,7 @@ def reference_word(word):
 
 def sentence_translation(text):
     try:
-        return translate(Passage(text))[1]
+        return translate(Passage(text, source_code="en"))[1]
     except (ValueError, RuntimeError, OSError):
         return ""
 
@@ -45,8 +46,24 @@ def surrounding_script(text):
 
 
 def explain(passage):
+    # Determine the route before consulting English terminology, POS or ECDICT.
+    # Unsupported mixed-script text may still contain an English identifier.
+    try:
+        code = passage.source_code or detect_source(passage.text)
+        if not code and passage.context and passage.text != passage.context.strip():
+            code = detect_source(passage.context)
+    except UnsupportedLanguage as error:
+        if not passage.selection:
+            raise
+        unsupported = error
+        code = ""
+    else:
+        unsupported = None
+    passage.source_code = code
+    language = NAMES.get(code, "")
+    if code and code != "en":
+        return translate(passage), None, language, ""
     if not passage.selection:
-        language = source_language(passage.text)
         result, excerpt = translate_lookup(passage)
         return result, excerpt, language, ""
 
@@ -62,14 +79,12 @@ def explain(passage):
     start, end = passage.selection
     surrounding = passage.text[:start] + " " + passage.text[end:]
     english_context = True
-    try:
-        language = source_language(passage.text)
-    except UnsupportedLanguage as error:
-        cjk_context = error.language in ("中文", "繁体中文", "日语", "韩语")
+    if unsupported:
+        cjk_context = unsupported.language in ("中文", "繁体中文", "日语", "韩语")
         named = term and (term[0] == "文中定义" or term[2] not in ("缩写", "名称") or word.istitle())
         if not (word.isascii() and (identifier or cjk_context or named)):
-            raise
-        language = error.language + "语境"
+            raise unsupported
+        language = unsupported.language + "语境"
         english_context = False
     if not language and word.isascii():
         language = surrounding_script(surrounding)

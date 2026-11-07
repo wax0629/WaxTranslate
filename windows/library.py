@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QBoxLayout, QFrame, QHBoxLayout, QLabel, QLineEdi
                                QMessageBox, QPushButton, QStyle, QStyledItemDelegate, QTextBrowser, QVBoxLayout, QWidget)
 
 from reader import Passage
+from languages import NAMES
 from speech import ListenButton
 from theme import DOCUMENT_STYLE, label, marked_source, plain, result_html
 
@@ -283,7 +284,10 @@ class Library(QWidget):
     def display(self, *_):
         row = self.current()
         self.speech_error.hide()
-        self.listen.set_content(row["word"] if row else "", row["context"] if row else "")
+        if row:
+            self.listen.set_content(row["word"], row["context"], row["language"])
+        else:
+            self.listen.set_content()
         self.empty.setVisible(not self.rows)
         self.entries.setVisible(bool(row))
         self.search.setVisible(not self.testing and bool(self.rows))
@@ -300,7 +304,8 @@ class Library(QWidget):
         pos, word, context = row["position"], row["word"], row["context"]
         passage = Passage(context, (pos, pos + len(word)))
         if not self.testing or self.revealed:
-            content = result_html(passage, row["gloss"], row["translation"], row["source"])
+            details = f"{NAMES.get(row['language'], row['language'])} · {row['source']}"
+            content = result_html(passage, row["gloss"], row["translation"], details)
         else:
             content = f"<p class='word'>{plain(word)}</p><p class='source'>{marked_source(passage)}</p>"
         self.detail.setHtml(content)

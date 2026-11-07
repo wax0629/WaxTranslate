@@ -3,6 +3,7 @@
 import argparse
 from contextlib import closing
 import csv
+from dataclasses import dataclass
 import hashlib
 from http.client import IncompleteRead
 import os
@@ -16,22 +17,36 @@ import urllib.request
 import zipfile
 
 
-PACKAGE = "translate-en_zh-1_9"
-URL = f"https://argos-net.com/v1/{PACKAGE}.argosmodel"
-MIRROR = f"https://data.argosopentech.com/argospm/v1/{PACKAGE}.argosmodel"
-DIGEST = "433e7c4f034d87fbe2353161e05f18646d7999452f801a4e1f0378522b9850ab"
-MODEL = Path(os.environ["LOCALAPPDATA"]) / "WaxTranslate" / "models" / PACKAGE
-FILES = ("model/model.bin", "model/config.json", "model/shared_vocabulary.json",
-         "sentencepiece.model", "README.md", "metadata.json")
+MODEL_DIR = Path(os.environ["LOCALAPPDATA"]) / "WaxTranslate" / "models"
+
+
+@dataclass(frozen=True)
+class ModelPackage:
+    name: str
+    digest: str
+    archive_root: str = ""
+    files: tuple = ("model/model.bin", "model/config.json", "model/shared_vocabulary.json",
+                    "sentencepiece.model", "README.md", "metadata.json")
+
+
+MODELS = {
+    "en": ModelPackage("translate-en_zh-1_9", "433e7c4f034d87fbe2353161e05f18646d7999452f801a4e1f0378522b9850ab"),
+    "fr": ModelPackage("translate-fr_en-1_9", "3b3052fee6bb1e8e8e632a26a723eb2a2c7710dfe73ba61ffd9b83e85d4f14c1"),
+    "de": ModelPackage("translate-de_en-1_3", "becc2b0011f8249fcb89be9ecb75ba0d876b1fab93c28ee6ff0420936897d637"),
+    # The compact Spanish SentencePiece release uses CT2's legacy text vocabulary.
+    "es": ModelPackage("translate-es_en-1_0", "1b963aa0e0cb6e5ce874f0aa1a1949a19bc4d762e833532239a8834340f6b378",
+                       "es_en", ("model/model.bin", "model/shared_vocabulary.txt",
+                                 "sentencepiece.model", "README.md", "metadata.json")),
+}
 POS_PACKAGE = "averaged_perceptron_tagger_eng"
-POS_ARCHIVE = MODEL.parent / f"{POS_PACKAGE}.zip"
+POS_ARCHIVE = MODEL_DIR / f"{POS_PACKAGE}.zip"
 POS_SHA = "6025f530624335c67d6547d44757b357b4e79bae030a0383e9887a92c1718f0b"
 POS_URL = ("https://raw.githubusercontent.com/nltk/nltk_data/"
            f"304a3c5432dd2fe08ae8b436dc6eec54c3593445/packages/taggers/{POS_ARCHIVE.name}")
 ECDICT_REV = "39cfb9672c0906b63569e0453c2e6abfb9ab182a"
 ECDICT_URL = f"https://raw.githubusercontent.com/skywind3000/ECDICT/{ECDICT_REV}/ecdict.csv"
 ECDICT_SHA = "d1ecbdf9ee2b920afb6f430ca6b6bb9f559588cf0dff86e04bd255f9390843cc"
-LEXICON = MODEL.parent / f"ecdict-{ECDICT_REV[:8]}-v2.sqlite3"
+LEXICON = MODEL_DIR / f"ecdict-{ECDICT_REV[:8]}-v2.sqlite3"
 
 _LINES = re.compile(r"\\r\\n|\\n|\r?\n")
 _POS = re.compile(r"^(?:a|adj|adv|abbr|art|aux|conj|det|int|interj|n|num|p|pl|prep|pron|v|vi|vt)\.\s*", re.I)
@@ -140,44 +155,52 @@ def install_word_tags():
         os.replace(pending, POS_ARCHIVE)
 
 
-def install(archive=None):
-    if all((MODEL / name).is_file() for name in FILES):
+def install_model(package, archive=None):
+    model = MODEL_DIR / package.name
+    if all((model / name).is_file() for name in package.files):
         return
-    MODEL.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=MODEL.parent) as stage:
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=MODEL_DIR) as stage:
         if archive is None:
-            print("Downloading English -> Chinese model (67.5 MiB)...", flush=True)
+            print(f"Downloading {package.name}...", flush=True)
             archive = Path(stage) / "download.zip"
-            for url in (URL, MIRROR):
+            mirrors = ("https://argos-net.com/v1", "https://data.argosopentech.com/argospm/v1")
+            for base in mirrors:
+                url = f"{base}/{package.name}.argosmodel"
                 try:
                     with urllib.request.urlopen(url, timeout=90) as response, archive.open("wb") as output:
                         shutil.copyfileobj(response, output)
                     break
                 except (URLError, TimeoutError, IncompleteRead) as error:
-                    if url == MIRROR:
+                    if base == mirrors[-1]:
                         raise
                     print(f"Download failed ({error}); trying the Argos model archive.", flush=True)
         with open(archive, "rb") as source:
-            if hashlib.file_digest(source, "sha256").hexdigest() != DIGEST:
+            if hashlib.file_digest(source, "sha256").hexdigest() != package.digest:
                 raise ValueError("Model checksum mismatch. Please download the package again.")
-        extracted = Path(stage) / PACKAGE
+        extracted = Path(stage) / package.name
         with zipfile.ZipFile(archive) as bundle:
-            for name in FILES:
+            for name in package.files:
                 path = extracted / name
                 path.parent.mkdir(exist_ok=True, parents=True)
-                with bundle.open(f"{PACKAGE}/{name}") as source, path.open("wb") as output:
+                with bundle.open(f"{package.archive_root or package.name}/{name}") as source, path.open("wb") as output:
                     shutil.copyfileobj(source, output)
         try:
-            extracted.rename(MODEL)
+            extracted.rename(model)
         except FileExistsError:
-            if not all((MODEL / name).is_file() for name in FILES):
-                raise RuntimeError(f"Incomplete model at {MODEL}. Move that folder aside and retry.")
+            if not all((model / name).is_file() for name in package.files):
+                raise RuntimeError(f"Incomplete model at {model}. Move that folder aside and retry.")
+
+
+def install(archive=None):
+    for code, package in MODELS.items():
+        install_model(package, archive if code == "en" else None)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--archive", type=Path, help="install from an already downloaded .argosmodel")
+    parser.add_argument("--archive", type=Path, help="use an already downloaded English-Chinese .argosmodel")
     install(parser.parse_args().archive)
     install_word_tags()
     install_lexicon()
-    print(f"Model ready at {MODEL}")
+    print(f"Models ready at {MODEL_DIR}")

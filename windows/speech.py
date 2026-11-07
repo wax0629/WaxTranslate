@@ -20,7 +20,7 @@ class SpeechPlayer(QObject):
         self.process = None
         self.owner = None
 
-    def play(self, owner, text, slow=False):
+    def play(self, owner, text, slow=False, language="en"):
         self.stop()
         process = QProcess(self)
         self.process, self.owner = process, owner
@@ -28,7 +28,7 @@ class SpeechPlayer(QObject):
             if self.process is not process:
                 process.kill()
                 return
-            process.write(json.dumps((text, slow), ensure_ascii=False).encode("utf-8"))
+            process.write(json.dumps((text, slow, language), ensure_ascii=False).encode("utf-8"))
             process.closeWriteChannel()
 
         process.started.connect(send_utterance)
@@ -97,6 +97,7 @@ class ListenButton(QToolButton):
         super().__init__()
         self.player = player
         self.word = self.sentence = ""
+        self.language = "en"
         self.setObjectName("listen")
         self.setCursor(Qt.PointingHandCursor)
         self.setIconSize(QSize(16, 16))
@@ -121,10 +122,10 @@ class ListenButton(QToolButton):
         self.update_state()
         self.hide()
 
-    def set_content(self, word="", sentence=""):
-        if (word, sentence) != (self.word, self.sentence):
+    def set_content(self, word="", sentence="", language="en"):
+        if (word, sentence, language) != (self.word, self.sentence, self.language):
             self.stop()
-        self.word, self.sentence = word, sentence
+        self.word, self.sentence, self.language = word, sentence, language
         self.slow.setVisible(bool(word))
         self.read.setVisible(bool(word and sentence))
         self.slow_sentence.setVisible(bool(sentence))
@@ -148,7 +149,7 @@ class ListenButton(QToolButton):
     def play(self, text, slow=False):
         if text:
             self.notice.emit("")
-            self.player.play(self, text, slow)
+            self.player.play(self, text, slow, self.language)
 
     def stop(self):
         if self.player.owner is self:
