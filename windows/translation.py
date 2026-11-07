@@ -4,6 +4,7 @@ from concurrent.futures import CancelledError
 from functools import lru_cache
 from pathlib import Path
 import re
+from threading import Lock
 
 import ctranslate2
 import pycld2
@@ -40,8 +41,17 @@ def source_language(text):
     raise UnsupportedLanguage(languages.get(code, name.title()), text)
 
 
-@lru_cache(maxsize=1)
+_engine_lock = Lock()
+
+
 def engine():
+    # lru_cache alone allows two initializations on concurrent cold requests.
+    with _engine_lock:
+        return _load_engine()
+
+
+@lru_cache(maxsize=1)
+def _load_engine():
     bundled = Path(__file__).resolve().parent.parent / "models" / PACKAGE
     model = bundled if bundled.is_dir() else MODEL
     if not (model / "model/model.bin").is_file():

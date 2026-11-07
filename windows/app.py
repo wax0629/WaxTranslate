@@ -6,15 +6,15 @@ import sqlite3
 from pathlib import Path
 import sys
 
-from PySide6.QtCore import QPoint, QPointF, QProcess, QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QPointF, QProcess, QRect, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPen
 from PySide6.QtSvgWidgets import QSvgWidget
-from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QFrame, QHBoxLayout, QMenu, QPushButton,
+from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QComboBox, QFrame, QHBoxLayout, QMenu, QPushButton,
                                QStackedWidget, QStyle, QSystemTrayIcon, QVBoxLayout, QWidget)
 
-from gestures import LOOKUP_HINT, REGION_HINT
 from notebook import Notebook
 from popup import Card
+from speech import SpeechPlayer
 from library import Library
 from reader import Passage, recognize
 from theme import APP_NAME, apply_theme, label, nav_icon
@@ -127,15 +127,19 @@ class Window(QWidget):
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.setObjectName("desk")
-        self.card = Card()
+        self.player = SpeechPlayer(self)
+        self.card = Card(self.player)
         self.card.dismissed.connect(self.invalidate)
         self.card.presented.connect(self.watch_card)
         self.card.save_requested.connect(self.save_word)
         self.saved_result = None
+        self.reading_from_editor = False
         self.notebook = notebook or Notebook()
+        self.settings = QSettings(str(self.notebook.path.with_name("preferences.ini")), QSettings.IniFormat)
         self.overlay = None
         self.ticket = 0
-        self.pool = ThreadPoolExecutor(max_workers=1)
+        # A paragraph translation can continue while the reader looks up a word.
+        self.pool = ThreadPoolExecutor(max_workers=2)
         self.pending = None
         self.finished.connect(self.show_result)
         self.compact = None
@@ -179,10 +183,13 @@ class Window(QWidget):
         layout.setContentsMargins(27, 22, 27, 20)
         layout.setSpacing(12)
         self.tabs.addWidget(home)
-        self.library = Library(self.notebook)
+        self.library = Library(self.notebook, self.player)
         self.tabs.addWidget(self.library)
-        layout.addWidget(label("文本翻译", "heading"))
+        layout.addWidget(label("阅读与翻译", "heading"))
         self.workspace = TextWorkspace(self.pool)
+        self.workspace.input.lookup_requested.connect(self.lookup_text)
+        self.workspace.input.textChanged.connect(self.editor_changed)
+        self.workspace.example.clicked.connect(self.demo)
         layout.addWidget(self.workspace, 1)
         quick = QHBoxLayout()
         self.hint_button = QPushButton("屏幕翻译")
@@ -192,10 +199,6 @@ class Window(QWidget):
         self.hint_button.setToolTip("显示或收起取词与框选手势")
         quick.addWidget(self.hint_button)
         quick.addStretch()
-        example = QPushButton("取词示例")
-        example.setProperty("role", "quiet")
-        example.clicked.connect(self.demo)
-        quick.addWidget(example)
         region = QPushButton("开始框选")
         region.setProperty("role", "quiet")
         region.clicked.connect(lambda: self.begin(True))
@@ -205,17 +208,30 @@ class Window(QWidget):
         hints = QVBoxLayout(self.hints)
         hints.setContentsMargins(0, 0, 0, 0)
         hints.setSpacing(7)
-        for description, keys in (("指向单词", LOOKUP_HINT), ("拖选一段文字", REGION_HINT)):
-            row = QHBoxLayout()
-            row.addWidget(label(description, "meta"))
-            row.addStretch()
-            row.addWidget(label(keys, "key"))
-            hints.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(label("屏幕取词键", "meta"))
+        row.addStretch()
+        self.trigger = QComboBox()
+        self.trigger.setObjectName("trigger")
+        self.trigger.setAccessibleName("屏幕取词键")
+        self.trigger.setToolTip("与其他翻译软件冲突时，可更换按键或仅在应用内查词。")
+        for title, mode in (("轻按左 Ctrl", "left"), ("轻按右 Ctrl", "right"), ("仅应用内查词", "off")):
+            self.trigger.addItem(title, mode)
+        self.trigger.setCurrentIndex(max(0, self.trigger.findData(self.settings.value("gesture", "left"))))
+        row.addWidget(self.trigger)
+        hints.addLayout(row)
+        region_row = QHBoxLayout()
+        region_row.addWidget(label("拖选一段文字", "meta"))
+        region_row.addStretch()
+        self.region_hint = label("", "key")
+        region_row.addWidget(self.region_hint)
+        hints.addLayout(region_row)
         layout.addWidget(self.hints)
         self.hint_button.toggled.connect(self.show_hints)
         self.hint_button.setChecked(True)
         self.tray = QSystemTrayIcon(QApplication.windowIcon(), self)
-        self.tray.setToolTip(f"{APP_NAME} · {LOOKUP_HINT} 取词")
+        self.update_trigger_hints()
+        self.trigger.currentIndexChanged.connect(self.change_trigger)
         menu = QMenu(self)
         menu.addAction(f"打开 {APP_NAME}", self.open_home)
         menu.addAction("生词本", self.open_library)
@@ -231,13 +247,14 @@ class Window(QWidget):
         layout.addWidget(self.gesture_warning)
         self.gesture_warning.hide()
         self.gesture_ready = False
+        self.active_mode = None
         self.stopping = False
         self.gestures = QProcess(self)
         self.gestures.readyReadStandardOutput.connect(self.read_gestures)
         self.gestures.errorOccurred.connect(lambda error: self.gesture_failed(self.gestures.errorString()))
         self.gestures.finished.connect(lambda: self.gesture_failed("监听进程已退出"))
         self.gestures.start(str(Path(sys.executable).with_name("pythonw.exe")),
-                            ["-u", str(Path(__file__).with_name("gestures.py").resolve())])
+                            ["-u", str(Path(__file__).with_name("gestures.py").resolve()), self.trigger.currentData()])
         area = QApplication.primaryScreen().availableGeometry()
         self.resize(min(872, area.width() - 24), min(535, area.height() - 48))
         self.workspace.input.setFocus()
@@ -298,11 +315,26 @@ class Window(QWidget):
         if reason == QSystemTrayIcon.Trigger:
             self.open_home()
 
+    def update_trigger_hints(self):
+        mode = self.trigger.currentData()
+        key = {"left": "左 Ctrl", "right": "右 Ctrl"}.get(mode)
+        self.region_hint.setText(f"按住{key}，左键拖动" if key else "点「开始框选」")
+        self.tray.setToolTip(f"{APP_NAME} · " + (f"轻按{key}取词" if key else "仅应用内查词"))
+
+    def change_trigger(self):
+        self.settings.setValue("gesture", self.trigger.currentData())
+        self.settings.sync()
+        self.update_trigger_hints()
+        self.invalidate()
+        if self.settings.status() != QSettings.NoError:
+            self.gesture_warning.setText("按键已切换，本次设置未能写入本机。")
+            self.gesture_warning.show()
+
     def gesture_failed(self, reason):
         self.gesture_ready = False
         self.card.dismiss_on_deactivate = True
         if not self.stopping and self.gesture_warning.isHidden():
-            self.gesture_warning.setText(f"无法监听左 Ctrl（{reason}）。可点击「框选英文」。")
+            self.gesture_warning.setText(f"无法监听屏幕取词键（{reason}）。可双击原文查词或点「开始框选」。")
             self.gesture_warning.show()
             if self.overlay is not None and self.overlay.from_ctrl:
                 self.overlay.close()
@@ -312,8 +344,11 @@ class Window(QWidget):
             action, origin, end = json.loads(bytes(self.gestures.readLine()))
             if action == "ready":
                 self.gesture_ready = True
+                self.active_mode = origin
                 self.card.dismiss_on_deactivate = False
                 self.watch_card()
+            elif action == "mode":
+                self.active_mode = origin
             elif action == "error":
                 self.gesture_failed(f"Windows 错误 {origin}")
             else:
@@ -322,7 +357,7 @@ class Window(QWidget):
     def watch_card(self):
         if self.gesture_ready and not self.stopping:
             hwnd = int(self.card.winId()) if self.card.isVisible() else 0
-            self.gestures.write((json.dumps((self.ticket, hwnd)) + "\n").encode("ascii"))
+            self.gestures.write((json.dumps((self.ticket, hwnd, self.trigger.currentData())) + "\n").encode("ascii"))
 
     def on_gesture(self, action, origin, end):
         if action == "dismiss":
@@ -330,6 +365,8 @@ class Window(QWidget):
                 self.card.close()
             return
         if action in ("lookup", "start"):
+            if self.active_mode != self.trigger.currentData() or self.active_mode == "off":
+                return
             native = QPoint(*origin)
             # On Windows Qt keeps each screen's native origin but scales its size.
             for screen in QApplication.screens():
@@ -362,6 +399,7 @@ class Window(QWidget):
 
     def invalidate(self):
         self.ticket += 1
+        self.reading_from_editor = False
         self.saved_result = None
         if self.pending is not None:
             self.pending.cancel()
@@ -372,14 +410,35 @@ class Window(QWidget):
             self.overlay = None
 
     def demo(self):
-        self.invalidate()
         text = "They sat on the river bank and watched the water."
+        editor = self.workspace.input
+        if not editor.toPlainText().strip():
+            editor.setPlainText(text + "\n\nShe deposited her paycheck at the bank.")
+            editor.setTextCursor(editor.document().find("bank"))
+            editor.setFocus()
+            editor.lookup_cursor()
+            return
         start = text.index("bank")
-        self.submit(QCursor.pos(), passage=Passage(text, (start, start + 4)))
+        self.lookup_text(Passage(text, (start, start + 4)), QCursor.pos())
+
+    def lookup_text(self, passage, point):
+        self.invalidate()
+        self.reading_from_editor = True
+        self.submit(point, passage=passage)
+
+    def editor_changed(self):
+        if self.reading_from_editor:
+            self.invalidate()
 
     def begin(self, region, point=None):
         if point is None:
             point = QCursor.pos()
+        editor = self.workspace.input
+        if not region and QApplication.widgetAt(point) is editor.viewport():
+            if not editor.lookup_point(QPointF(editor.viewport().mapFromGlobal(point))):
+                self.invalidate()
+                self.card.show_message("原文查词", "请指向一个单词，或将光标放在词中按 Alt+Enter。", point)
+            return
         self.invalidate()
         ticket = self.ticket
         QTimer.singleShot(80, lambda: self.capture(ticket, point, region))
@@ -459,6 +518,7 @@ class Window(QWidget):
 
     def shutdown(self):
         self.stopping = True
+        self.player.shutdown()
         self.gestures.closeWriteChannel()
         if self.gestures.state() != QProcess.NotRunning and not self.gestures.waitForFinished(2000):
             self.gestures.kill()

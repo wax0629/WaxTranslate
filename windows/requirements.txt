@@ -3,6 +3,8 @@ ctranslate2==4.8.5
 sentencepiece==0.2.3
 protobuf==7.36.2
 pycld2==0.42
+comtypes==1.4.17
+winrt-Windows.Media.SpeechSynthesis==4!10.0.28000.2957
 winrt-Windows.Media.Ocr==4!10.0.28000.2957
 winrt-Windows.Graphics.Imaging==4!10.0.28000.2957
 winrt-Windows.Globalization==4!10.0.28000.2957

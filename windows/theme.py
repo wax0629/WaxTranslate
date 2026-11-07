@@ -1,4 +1,6 @@
 """Shared typography and quiet surfaces for the Windows reader."""
+from html import escape
+
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QLabel
@@ -67,6 +69,9 @@ def apply_theme(app):
         QLineEdit#search {background:white; color:#272722; border:1px solid #dedbd2;
             border-radius:7px; padding:6px 10px;}
         QLineEdit#search:focus {border-color:#6589ab;}
+        QComboBox#trigger {background:#f2f3ef; color:#3d5044; border:1px solid #dfe3db;
+            border-radius:6px; padding:3px 8px; font-size:12px;}
+        QComboBox#trigger:focus {border-color:#6b8d7d;}
         QListWidget#words {padding:4px; outline:0;}
         QListWidget#words::item {padding:6px; border-radius:5px;}
         QListWidget#words::item:selected {background:#efeee7; color:#242620;}
@@ -86,6 +91,10 @@ def apply_theme(app):
             color:#393a35; font-size:13px; font-weight:600;}
         QPushButton[role="disclosure"]:hover {color:#171814;}
         QPushButton[role="disclosure"]:focus {border-color:#6589ab;}
+        QPushButton[role="sample"] {background:#e7efe8; color:#315947; border:1px solid transparent;
+            border-radius:7px; padding:2px 8px; min-height:16px; font-size:12px;}
+        QPushButton[role="sample"]:hover {background:#dae8dd;}
+        QPushButton[role="sample"]:focus {border-color:#6d927b;}
         QPushButton[role="nav"] {text-align:left; background:transparent; border:1px solid transparent;
             border-radius:8px; padding:8px 10px; color:#57574e;}
         QPushButton[role="nav"]:hover {background:#e9e7df;}
@@ -97,3 +106,39 @@ def apply_theme(app):
         QMenu::item:selected {background:#eeede7;}
         QToolTip {background:#292b27; color:white; border:0; padding:4px;}
     """)
+
+
+def plain(text):
+    return escape(text).replace("\n", "<br>")
+
+
+DOCUMENT_STYLE = """
+    p {margin:0; font-family:'Microsoft YaHei UI'; color:#303a34;}
+    .word {font-family:'Segoe UI'; font-size:26px; font-weight:600; color:#18261f; margin-bottom:3px;}
+    .details {font-size:12px; color:#53675b; margin-bottom:6px;}
+    .gloss {font-size:17px; line-height:133%; color:#283e31; margin-bottom:4px;}
+    .source {font-family:'Segoe UI'; font-size:15px; line-height:119%; color:#57615b; margin-top:4px;}
+    .hit {font-weight:600; color:#205943; background-color:#e2eee4;}
+    .translation {font-size:14px; line-height:130%; color:#29332e; margin-top:7px;}
+    .message {font-size:14px; line-height:140%;}
+"""
+
+
+def marked_source(passage):
+    if not passage.selection:
+        return plain(passage.text)
+    a, b = passage.selection
+    return plain(passage.text[:a]) + f"<span class='hit'>{plain(passage.word)}</span>" + plain(passage.text[b:])
+
+
+def result_html(passage, gloss, sentence, details, prefix="", suffix=""):
+    source = marked_source(passage)
+    heading = ""
+    if passage.selection:
+        word = plain(passage.word)
+        heading = f"<p class='word'>{word}</p>"
+    content = (heading + f"<p class='details'>{plain(details)}</p><p class='gloss'>{plain(gloss)}</p>"
+               + f"<hr style='background-color:#dfe5df'><p class='source'>{prefix}{source}{suffix}</p>")
+    if sentence:
+        content += f"<p class='translation'>{plain(sentence)}</p>"
+    return content
