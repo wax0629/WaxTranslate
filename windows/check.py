@@ -482,6 +482,13 @@ class Checks(unittest.TestCase):
             self.assertIn("岸", window.card.text.toPlainText())
             # Real mouse presses. The inside action works; the first outside
             # click dismisses the card and still reaches the original window.
+            # A translucent window updates its native input surface when the
+            # new frame is presented, after the loading card has grown.
+            def copy_ready():
+                center = window.card.copy.mapToGlobal(window.card.copy.rect().center())
+                return QApplication.widgetAt(center) is window.card.copy
+
+            wait_until(copy_ready)
             move_cursor(window.card.copy.mapToGlobal(window.card.copy.rect().center()))
             user.mouse_event(2, 0, 0, 0, 0)
             user.mouse_event(4, 0, 0, 0, 0)
@@ -515,7 +522,9 @@ class Checks(unittest.TestCase):
             self.assertFalse(window.card.isVisible(), "A dismissed request reopened its card")
         except AssertionError as error:
             future = window.pending
+            pos = QCursor.pos()
             self.fail(f"{error}; recent gestures={gestures[-8:]}, ticket={window.ticket}, "
+                      f"cursor={pos.toTuple()}, widget={QApplication.widgetAt(pos)}, bounds={window.card.geometry()}, "
                       f"card=({window.card.isVisible()}, {window.card.caption.text()!r}), "
                       f"worker={future}, overlay={window.overlay is not None}")
         finally:

@@ -239,6 +239,12 @@ class Card(QWidget):
         self.dismissed.emit()
         super().closeEvent(event)
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and not self.shell.geometry().contains(event.position().toPoint()):
+            self.close()
+        else:
+            super().mousePressEvent(event)
+
     def event(self, event):
         if (event.type() == QEvent.WindowDeactivate and self.dismiss_on_deactivate
                 and self.isVisible() and QApplication.activePopupWidget() is None):

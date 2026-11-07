@@ -26,6 +26,9 @@ user32.UnhookWindowsHookEx.argtypes = (wt.HANDLE,)
 user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
 user32.GetAsyncKeyState.restype = ctypes.c_short
 user32.GetCursorPos.argtypes = (ctypes.POINTER(wt.POINT),)
+user32.SetThreadDpiAwarenessContext.argtypes = (wt.HANDLE,)
+user32.SetThreadDpiAwarenessContext.restype = wt.HANDLE
+user32.GetWindowRect.argtypes = (wt.HWND, ctypes.POINTER(wt.RECT))
 user32.WindowFromPhysicalPoint.argtypes = (wt.POINT,)
 user32.WindowFromPhysicalPoint.restype = wt.HWND
 user32.GetAncestor.argtypes = (wt.HWND, wt.UINT)
@@ -70,6 +73,8 @@ class CtrlGestures:
         # Windows drops slow hooks. Keep both Qt's event loop and the model's
         # Python GIL out of the listener, and do pipe I/O outside the callback.
         message = wt.MSG()
+        # Match low-level pointer coordinates when reading native window bounds.
+        user32.SetThreadDpiAwarenessContext(-4)  # PER_MONITOR_AWARE_V2
         self.thread_id = get_native_id()
         user32.PeekMessageW(ctypes.byref(message), None, 0, 0, 0)
         writer = Thread(target=self.write_events)
@@ -150,12 +155,15 @@ class CtrlGestures:
         card = self.watched_card
         if code == 0 and message == WM_LBUTTONDOWN and card:
             ticket, hwnd = card
-            target = user32.WindowFromPhysicalPoint(MouseEvent.from_address(payload).point)
-            # Native children and owned menus are part of the card. Observe
-            # the original press without intercepting or replaying it.
-            if (target != hwnd and user32.GetAncestor(target, 2) != hwnd
-                    and user32.GetAncestor(target, 3) != hwnd):  # GA_ROOT, GA_ROOTOWNER
-                self.events.put(("dismiss", ticket, None))
+            point = MouseEvent.from_address(payload).point
+            bounds = wt.RECT()
+            if user32.GetWindowRect(hwnd, ctypes.byref(bounds)) and not (
+                    bounds.left <= point.x < bounds.right and bounds.top <= point.y < bounds.bottom):
+                # An owned menu can extend beyond the card. Observe the press
+                # without intercepting or replaying it.
+                target = user32.WindowFromPhysicalPoint(point)
+                if user32.GetAncestor(target, 3) != hwnd:  # GA_ROOTOWNER
+                    self.events.put(("dismiss", ticket, None))
         if code == 0 and (self.armed or self.owns_button):
             event = MouseEvent.from_address(payload)
             if event.extra != REPLAY_TAG and self.handle_mouse(message, (event.point.x, event.point.y)):
