@@ -1,4 +1,4 @@
-"""Install the pinned English → Chinese Argos/OPUS-MT model for this user."""
+"""Install the pinned offline translation and English part-of-speech models."""
 
 import argparse
 import hashlib
@@ -19,6 +19,28 @@ DIGEST = "433e7c4f034d87fbe2353161e05f18646d7999452f801a4e1f0378522b9850ab"
 MODEL = Path(os.environ["LOCALAPPDATA"]) / "WaxTranslate" / "models" / PACKAGE
 FILES = ("model/model.bin", "model/config.json", "model/shared_vocabulary.json",
          "sentencepiece.model", "README.md", "metadata.json")
+POS_PACKAGE = "averaged_perceptron_tagger_eng"
+POS_ARCHIVE = MODEL.parent / f"{POS_PACKAGE}.zip"
+POS_SHA = "6025f530624335c67d6547d44757b357b4e79bae030a0383e9887a92c1718f0b"
+POS_URL = ("https://raw.githubusercontent.com/nltk/nltk_data/"
+           f"304a3c5432dd2fe08ae8b436dc6eec54c3593445/packages/taggers/{POS_ARCHIVE.name}")
+
+
+def install_word_tags():
+    if POS_ARCHIVE.is_file():
+        with POS_ARCHIVE.open("rb") as existing:
+            if hashlib.file_digest(existing, "sha256").hexdigest() == POS_SHA:
+                return
+    print("Downloading English part-of-speech model (1.5 MiB)...", flush=True)
+    POS_ARCHIVE.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=POS_ARCHIVE.parent) as stage:
+        pending = Path(stage) / POS_ARCHIVE.name
+        with urllib.request.urlopen(POS_URL, timeout=90) as response, pending.open("wb") as output:
+            shutil.copyfileobj(response, output)
+        with pending.open("rb") as source:
+            if hashlib.file_digest(source, "sha256").hexdigest() != POS_SHA:
+                raise ValueError("English part-of-speech model checksum mismatch.")
+        os.replace(pending, POS_ARCHIVE)
 
 
 def install(archive=None):
@@ -59,4 +81,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, help="install from an already downloaded .argosmodel")
     install(parser.parse_args().archive)
+    install_word_tags()
     print(f"Model ready at {MODEL}")

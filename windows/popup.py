@@ -70,6 +70,7 @@ CARD_STYLE = """
 DOCUMENT_STYLE = """
     p {margin:0; font-family:'Microsoft YaHei UI'; color:#303a34;}
     .word {font-family:'Segoe UI'; font-size:26px; font-weight:600; color:#18261f; margin-bottom:3px;}
+    .details {font-size:12px; color:#53675b; margin-bottom:6px;}
     .gloss {font-size:17px; line-height:133%; color:#283e31; margin-bottom:4px;}
     .source {font-family:'Segoe UI'; font-size:15px; line-height:119%; color:#57615b; margin-top:4px;}
     .hit {font-weight:600; color:#205943; background-color:#e2eee4;}
@@ -78,7 +79,7 @@ DOCUMENT_STYLE = """
 """
 
 
-def result_html(passage, gloss, sentence, prefix="", suffix=""):
+def result_html(passage, gloss, sentence, details, prefix="", suffix=""):
     source = plain(passage.text)
     heading = ""
     if passage.selection:
@@ -86,7 +87,7 @@ def result_html(passage, gloss, sentence, prefix="", suffix=""):
         word = plain(passage.word)
         heading = f"<p class='word'>{word}</p>"
         source = plain(passage.text[:a]) + f"<span class='hit'>{word}</span>" + plain(passage.text[b:])
-    content = (heading + f"<p class='gloss'>{plain(gloss)}</p>"
+    content = (heading + f"<p class='details'>{plain(details)}</p><p class='gloss'>{plain(gloss)}</p>"
                + f"<hr style='background-color:#dfe5df'><p class='source'>{prefix}{source}{suffix}</p>")
     if sentence:
         content += f"<p class='translation'>{plain(sentence)}</p>"
@@ -101,6 +102,8 @@ class Card(QWidget):
 
     def __init__(self):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.press_position = None
+        self.user_placed = False
         self.setWindowTitle(f"{APP_NAME} · 翻译结果")
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setStyleSheet(CARD_STYLE)
@@ -117,13 +120,20 @@ class Card(QWidget):
         body.setContentsMargins(19, 13, 19, 15)
         body.setSpacing(7)
 
-        header = QHBoxLayout()
+        self.grip = QWidget()
+        self.grip.setAccessibleName("移动翻译浮窗")
+        self.grip.setToolTip("按住这里拖动浮窗")
+        self.grip.setCursor(Qt.OpenHandCursor)
+        header = QHBoxLayout(self.grip)
+        header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(7)
         mark = QSvgWidget(str(Path(__file__).resolve().parents[1] / "Assets/Brand/barrette.svg"))
         mark.setFixedSize(24, 24)
         mark.setAccessibleName(APP_NAME)
+        mark.setAttribute(Qt.WA_TransparentForMouseEvents)
         header.addWidget(mark)
         self.caption = QLabel(objectName="origin")
+        self.caption.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.caption.setWordWrap(True)
         self.caption.setTextFormat(Qt.PlainText)
         header.addWidget(self.caption, 1)
@@ -133,7 +143,7 @@ class Card(QWidget):
         close.setToolTip("关闭 (Esc)")
         close.clicked.connect(self.close)
         header.addWidget(close, 0, Qt.AlignTop)
-        body.addLayout(header)
+        body.addWidget(self.grip)
 
         self.text = QTextBrowser()
         self.text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
@@ -164,6 +174,8 @@ class Card(QWidget):
         self.save.clicked.connect(self.save_requested)
         self.copy.clicked.connect(self.copy_translation)
         self.expand.clicked.connect(self.display_context)
+        for surface in (self.grip, self.shell, self.actions, self.text.viewport()):
+            surface.installEventFilter(self)
         QShortcut(Qt.Key_Escape, self, activated=self.close)
         self.translation = ""
 
@@ -174,21 +186,31 @@ class Card(QWidget):
     def show_message(self, caption, message, point):
         self.present(caption, f"<p class='message'>{plain(message)}</p>", point)
 
-    def show_result(self, passage, origin, gloss, sentence, point, excerpt=None):
-        full = result_html(passage, gloss, sentence)
+    def show_original(self, language, original, point):
+        content = ("<p class='message'>当前离线模型支持英语译为简体中文。</p>"
+                   + f"<p class='source'>{plain(original)}</p>")
+        self.present(f"{language}原文", content, point, original, copy_original=True)
+
+    def show_result(self, passage, origin, gloss, sentence, point, excerpt=None, language="", pos=""):
+        if passage.selection:
+            details = (language or "按英语查词") + " · " + (pos or "词性待定")
+        else:
+            details = (language or "按英语翻译") + " → 简体中文"
+        full = result_html(passage, gloss, sentence, details)
         if excerpt is None:
             self.present(origin, full, point, sentence or gloss, bool(passage.selection))
             return
         part, translated = excerpt
         start = passage.selection[0] - part.selection[0]
-        short = result_html(part, gloss, translated, "… " if start else "",
+        short = result_html(part, gloss, translated, details, "… " if start else "",
                             " …" if start + len(part.text) < len(passage.text) else "")
         self.present(origin, short, point, translated, True, (full, sentence))
 
-    def present(self, caption, content, point, translation="", can_save=False, full_context=None):
+    def present(self, caption, content, point, translation="", can_save=False, full_context=None, copy_original=False):
         self.anchor = point
         self.default_context = content, translation
         self.full_context = full_context
+        self.copy_original = copy_original
         self.caption.setText(caption)
         self.save.setText("收藏生词")
         self.save.setEnabled(True)
@@ -207,12 +229,14 @@ class Card(QWidget):
     def display_context(self, expanded):
         content, self.translation = self.full_context if expanded else self.default_context
         self.expand.setText("收起" if expanded else "查看全句")
-        self.copy.setText("复制")
-        self.copy.setToolTip("复制语境译文" if self.full_context and not expanded else "复制译文")
+        self.copy.setText("复制原文" if self.copy_original else "复制")
+        copy_hint = "复制原文" if self.copy_original else "复制译文"
+        self.copy.setAccessibleName(copy_hint)
+        self.copy.setToolTip("复制语境译文" if self.full_context and not expanded else copy_hint)
         point = self.anchor
         self.text.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.text.setHtml(content)
-        screen = QApplication.screenAt(point) or QApplication.primaryScreen()
+        screen = self.screen() if self.user_placed else QApplication.screenAt(point) or QApplication.primaryScreen()
         area = screen.availableGeometry()
         self.setScreen(screen)
         self.ensurePolished()
@@ -228,16 +252,47 @@ class Card(QWidget):
         height = min(area.height(), 440, chrome + ceil(document.size().height()) + 2)
         self.resize(width, height)
         self.text.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        x = max(area.left(), min(point.x() + 5, area.right() - width + 1))
-        y = point.y() + 14
-        if y + height > area.bottom() + 1:
-            y = max(area.top(), point.y() - height - 4)
-        self.move(QPoint(x, y))
+        position = self.pos() if self.user_placed else point + QPoint(5, 14)
+        if not self.user_placed and position.y() + height > area.bottom() + 1:
+            position.setY(point.y() - height - 4)
+        self.move_within(position, area)
         self.text.verticalScrollBar().setValue(0)
 
     def closeEvent(self, event):
         self.dismissed.emit()
         super().closeEvent(event)
+
+    def move_within(self, position, area):
+        self.move(max(area.left(), min(position.x(), area.right() - self.width() + 1)),
+                  max(area.top(), min(position.y(), area.bottom() - self.height() + 1)))
+
+    def eventFilter(self, surface, event):
+        kind = event.type()
+        if kind == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+            if surface is self.text.viewport():
+                point = event.position() + QPoint(0, self.text.verticalScrollBar().value())
+                if self.text.document().documentLayout().hitTest(point, Qt.ExactHit) >= 0:
+                    return False
+            self.press_position = event.globalPosition().toPoint()
+            self.grab_offset = self.press_position - self.pos()
+            self.dragging = False
+            return True
+        if kind == QEvent.MouseMove and self.press_position is not None and event.buttons() & Qt.LeftButton:
+            point = event.globalPosition().toPoint()
+            if self.dragging or (point - self.press_position).manhattanLength() >= QApplication.startDragDistance():
+                self.dragging = self.user_placed = True
+                screen = QApplication.screenAt(point) or self.screen()
+                self.move_within(point - self.grab_offset, screen.availableGeometry())
+            return True
+        if kind == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton and self.press_position is not None:
+            self.press_position = None
+            return True
+        return False
+
+    def hideEvent(self, event):
+        self.press_position = None
+        self.user_placed = False
+        super().hideEvent(event)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and not self.shell.geometry().contains(event.position().toPoint()):
