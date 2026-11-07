@@ -387,7 +387,7 @@ class Checks(unittest.TestCase):
         area = QApplication.primaryScreen().availableGeometry()
         point = area.topLeft() + QPoint(3, 4)
         try:
-            card.show_message("本机英译中", "正在读取并翻译…", point)
+            card.show_message("本机翻译", "正在读取并翻译…", point)
             QApplication.processEvents()
             start = card.pos()
             press = card.grip.mapToGlobal(card.grip.rect().center())
@@ -426,7 +426,7 @@ class Checks(unittest.TestCase):
             self.assertIn("an", card.text.textCursor().selectedText())
             self.assertEqual(card.pos(), start + delta)
             card.close()
-            card.show_message("本机英译中", "正在读取并翻译…", point)
+            card.show_message("本机翻译", "正在读取并翻译…", point)
             self.assertEqual(card.pos(), start)
         finally:
             card.close()
@@ -862,7 +862,7 @@ class Checks(unittest.TestCase):
             wait_until(lambda: window.ticket != previous_ticket)
             # Moving after the shortcut must not retarget the delayed capture.
             move_cursor(sample.mapToGlobal(QPoint(5, 5)))
-            wait_until(lambda: window.card.isVisible() and window.card.caption.text() not in ("", "本机英译中"))
+            wait_until(window.card.save.isVisible)
             self.assertEqual(window.card.caption.text(), "句中释义")
             self.assertIn("岸", window.card.text.toPlainText())
             self.assertFalse(window.isVisible(), "A background lookup opened the main window")
@@ -973,8 +973,7 @@ class Checks(unittest.TestCase):
             home_ticket = window.ticket
             user.keybd_event(right_ctrl, 0x1D, 1, 0)
             user.keybd_event(right_ctrl, 0x1D, 3, 0)
-            wait_until(lambda: window.ticket != home_ticket and window.card.isVisible()
-                       and window.card.caption.text() != "本机英译中")
+            wait_until(lambda: window.ticket != home_ticket and window.card.save.isVisible())
             self.assertTrue(window.card.save.isVisible(),
                             (window.card.text.toPlainText(), target, demo.mapToGlobal(demo.rect().center())))
             self.assertEqual(window.saved_result[0].text, HOME_EXAMPLE)
