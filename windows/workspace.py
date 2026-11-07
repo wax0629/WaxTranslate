@@ -273,8 +273,10 @@ class TextWorkspace(QWidget):
         horizontal = event.size().width() >= 600
         self.panes.setDirection(QBoxLayout.LeftToRight if horizontal else QBoxLayout.TopToBottom)
         if horizontal:
-            self.binding.setMaximumSize(1, 16777215)
+            self.binding.setMinimumSize(4, 1)
+            self.binding.setMaximumSize(4, 16777215)
         else:
+            self.binding.setMinimumSize(1, 1)
             self.binding.setMaximumSize(16777215, 1)
 
     def reset_result(self):

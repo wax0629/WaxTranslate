@@ -16,8 +16,8 @@ HOME_STYLE = """
     QPushButton#gestureSettings {background:transparent; color:#4e655a; border:1px solid #d6dfd3;
         border-radius:7px; padding:5px 11px; font-size:12px;}
     QPushButton#gestureSettings:hover {background:#eaf0e7; border-color:#8da590;}
-    QLabel#gestureHeadline {font-size:32px; color:#faf7eb; font-weight:650;}
-    QLabel#keyVerb {font-size:24px; color:#faf7eb; font-weight:600;}
+    QLabel#gestureHeadline {font-family:'SimSun','Microsoft YaHei UI'; font-size:37px; color:#faf7eb; font-weight:400;}
+    QLabel#keyVerb {font-size:20px; color:#edeede; font-weight:500;}
     QLabel#gestureKey {color:#253a2b; background:#f6ebbc; border:1px solid #faf4d4;
         border-bottom:3px solid #c8ba85; border-radius:7px; padding:0 9px 1px;
         font-size:19px; font-weight:650;}

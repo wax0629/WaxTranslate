@@ -142,10 +142,11 @@ def apply_theme(app):
         /* Reading sheets, vocabulary and preferences */
         QFrame#readingSheet, QFrame#entrySheet, QFrame#settingsGroup {
             background:#fffefa; border:1px solid #d7ddcf; border-radius:14px;}
-        QFrame#editor {background:#fffefa; border:0; border-radius:13px;}
-        QFrame#translationPane {background:#eff3e9; border:0; border-radius:13px;}
-        QFrame#binding, QFrame#hairline {background:#dbe0d4; border:0;}
-        QFrame#hairline {min-height:1px; max-height:1px;}
+        QFrame#editor {background:transparent; border:0;}
+        QFrame#translationPane {background:#eff3e9; border:0; border-top-right-radius:13px;}
+        QFrame#binding {border:0; background:qlineargradient(x1:0,y1:0,x2:1,y2:0,
+            stop:0 #e6e9df, stop:0.35 #cfd8c9, stop:1 #e9eee4);}
+        QFrame#hairline {background:#dbe0d4; border:0; min-height:1px; max-height:1px;}
         QLabel[role="sourceLanguage"] {font:600 24px 'Spectral','Georgia'; color:#253d2b;}
         QLabel[role="targetLanguage"] {font-size:18px; font-weight:600; color:#3c5846;}
         QPlainTextEdit#input, QPlainTextEdit#translation {background:transparent; border:0; padding:0;

@@ -1,6 +1,6 @@
 """Preferences for the Windows reader. The window owns persistence and system actions."""
 from PySide6.QtCore import QPointF, QRectF, QSignalBlocker, Qt
-from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout,
                                QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
 
@@ -25,17 +25,23 @@ class Switch(QCheckBox):
             painter.setPen(QPen(QColor("#587667"), 1.5))
             painter.drawRoundedRect(QRectF(1, 2, 46, 30), 15, 15)
         if not self.isEnabled():
-            fill, border = "#ecece7", "#d8d8d1"
+            top, bottom, border = "#edeee8", "#e2e5db", "#ced5c7"
         elif self.isChecked():
-            fill, border = "#28513f", "#28513f"
+            top, bottom, border = "#3c6250", "#284b3b", "#284b3b"
         else:
-            fill, border = "#dedfd8", "#c5c7be"
-        painter.setBrush(QColor(fill))
+            top, bottom, border = "#dfe4d9", "#cfd7c9", "#899b88"
+        track = QLinearGradient(0, 6, 0, 28)
+        track.setColorAt(0, QColor(top))
+        track.setColorAt(1, QColor(bottom))
+        painter.setBrush(track)
         painter.setPen(QPen(QColor(border), 1))
         painter.drawRoundedRect(QRectF(4, 6, 40, 22), 11, 11)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(Qt.white)
-        painter.drawEllipse(QRectF(25 if self.isChecked() else 7, 9, 16, 16))
+        thumb = QRectF(25 if self.isChecked() else 7, 9, 16, 16)
+        painter.setBrush(QColor(24, 46, 31, 38))
+        painter.drawEllipse(thumb.translated(0, 1))
+        painter.setBrush(QColor("#fffef7"))
+        painter.drawEllipse(thumb)
 
 
 class Choice(QComboBox):
