@@ -26,19 +26,19 @@ class NotebookCover(QWidget):
         painter.translate(52, 47)
         painter.rotate(-10)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#dbddce"))
+        painter.setBrush(QColor("#d9c9a8"))
         painter.drawRoundedRect(QRectF(-24, -29, 61, 72), 5, 5)
-        painter.setPen(QPen(QColor("#a29f87"), 1))
-        painter.setBrush(QColor("#fff9e5"))
+        painter.setPen(QPen(QColor("#968162"), 1))
+        painter.setBrush(QColor("#fff4d6"))
         painter.drawRoundedRect(QRectF(-29, -34, 60, 73), 4, 4)
         painter.drawLine(QPointF(-24, 35.5), QPointF(26, 35.5))
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#2e5244"))
+        painter.setBrush(QColor("#7d3c33"))
         painter.drawRoundedRect(QRectF(-31, -38, 62, 71), 4, 4)
-        painter.setPen(QPen(QColor("#6f8c71"), 1.3))
+        painter.setPen(QPen(QColor("#ad7b59"), 1.3))
         painter.drawLine(QPointF(-23, -36), QPointF(-23, 31))
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#c8a364"))
+        painter.setBrush(QColor("#d4ad6c"))
         painter.drawPolygon(QPolygonF([QPointF(9, -38), QPointF(18, -38),
                                        QPointF(18, -13), QPointF(13.5, -17), QPointF(9, -13)]))
 
@@ -54,14 +54,14 @@ class WordDelegate(QStyledItemDelegate):
         selected = bool(option.state & QStyle.State_Selected)
         painter.setPen(Qt.NoPen)
         if selected or option.state & QStyle.State_MouseOver:
-            painter.setBrush(QColor("#e1eae1" if selected else "#efefe8"))
+            painter.setBrush(QColor("#edd7b4" if selected else "#f0e4c9"))
             painter.drawRoundedRect(bounds, 6, 6)
         if option.state & QStyle.State_HasFocus:
-            painter.setPen(QPen(QColor("#628371"), 1))
+            painter.setPen(QPen(QColor("#925645"), 1))
             painter.setBrush(Qt.NoBrush)
             painter.drawRoundedRect(bounds, 6, 6)
         word, _, gloss = index.data().partition("\n")
-        rows = ((word, QFont("Spectral"), 18, "#20392d"), (gloss, option.font, 12, "#55665d"))
+        rows = ((word, QFont("Spectral"), 18, "#472e24"), (gloss, option.font, 12, "#685445"))
         y = bounds.y() + 4
         for value, font, pixels, color in rows:
             font.setPixelSize(pixels)
@@ -80,6 +80,7 @@ class Library(QWidget):
     def __init__(self, notebook, player):
         super().__init__()
         self.setObjectName("library")
+        self.setAttribute(Qt.WA_StyledBackground)
         self.notebook = notebook
         self.rows = []
         self.testing = False
