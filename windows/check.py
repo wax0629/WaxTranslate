@@ -71,7 +71,7 @@ class Checks(unittest.TestCase):
                 self.assertTrue(QFontDatabase.hasFamily("Spectral"))
                 self.assertGreaterEqual(window.wordmark.width(), window.wordmark.fontMetrics().horizontalAdvance("WaxTranslate"))
                 home = window.home
-                self.assertFalse(home.portrait.image.isNull())
+                self.assertFalse(window.backdrop.isNull())
                 for width, height in ((1080, 675), (570, 485), (540, 610), (540, 800)):
                     window.resize(width, height)
                     QApplication.processEvents()
@@ -80,6 +80,8 @@ class Checks(unittest.TestCase):
                         self.assertTrue(home.rect().contains(bounds), (width, height, bounds))
                     self.assertGreaterEqual(home.instructions.width(), home.instructions.sizeHint().width())
                     self.assertFalse(home.instructions.geometry().intersects(home.region.geometry()))
+                    if width > 900:
+                        self.assertLess(home.sheet.mapTo(home, home.sheet.rect().topRight()).x(), width * 0.65)
                 window.resize(570, 485)
                 self.assertLessEqual(window.width(), 572)
                 next(b for b in window.sidebar.findChildren(QPushButton) if b.text() == "阅读").click()

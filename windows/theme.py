@@ -111,8 +111,10 @@ def apply_theme(app):
     app.setPalette(palette)
     app.setStyleSheet("""
         QWidget {color:#161615; font-size:13px;}
-        QWidget#desk, QWidget#home, QWidget#readingPage, QWidget#library, QWidget#settingsSurface,
-        QScrollArea#settingsPage, QScrollArea#lookupHome {background:#faf9f6; border:0;}
+        QWidget#desk {background:#faf9f6; border:0;}
+        QWidget#home, QScrollArea#settingsPage {background:transparent; border:0;}
+        QWidget#readingPage, QWidget#library {background:rgba(250,249,246,168); border:0;}
+        QWidget#settingsSurface {background:rgba(250,249,246,191); border:0;}
         QLabel {background:transparent; border:0;}
         QLabel[role="heading"] {color:#161615; font-size:28px; font-weight:600;}
         QLabel[role="subhead"] {color:#161615; font-size:15px; font-weight:600;}
@@ -122,7 +124,7 @@ def apply_theme(app):
         QLabel[role="shortcut"] {color:#595955; background:#f0efea; border:1px solid #bcbcb6;
             border-radius:4px; padding:2px 5px; font:12px 'Consolas';}
 
-        QFrame#sidebar {background:#faf9f6; border:0; border-bottom:1px solid #131312;}
+        QFrame#sidebar {background:rgba(250,249,246,205); border:0; border-bottom:1px solid rgba(30,30,27,95);}
         QFrame#navDivider {background:#777772; border:0;}
         QPushButton[role="windowControl"] {background:transparent; border:0; border-radius:2px; padding:0;}
         QPushButton[role="windowControl"]:hover, QPushButton[role="windowControl"]:focus {background:#e7e6df;}
@@ -166,13 +168,13 @@ def apply_theme(app):
         QMenu::item:selected {background:#e6e5df; color:#161615;}
         QToolTip {background:#161615; color:#fffefa; border:0; padding:5px 8px;}
 
-        QFrame#readingSheet {background:#fffefa; border:1px solid #d5d4ce; border-radius:2px;}
+        QFrame#readingSheet {background:rgba(255,254,250,105); border:1px solid rgba(60,60,53,72); border-radius:4px;}
         QFrame#editor {background:transparent; border:0;}
-        QFrame#translationPane {background:#f0efea; border:0; border-top-right-radius:2px;}
+        QFrame#translationPane {background:rgba(237,236,230,68); border:0; border-top-right-radius:4px;}
         QFrame#binding {border:0; background:#d5d4ce;}
         QFrame#hairline {background:#d5d4ce; border:0; min-height:1px; max-height:1px;}
-        QFrame#entrySheet {background:#fffefa; border:1px solid #d5d4ce; border-radius:2px;}
-        QFrame#emptyBook {background:#f0efea; border:0; border-radius:2px;}
+        QFrame#entrySheet {background:rgba(255,254,250,110); border:1px solid rgba(60,60,53,72); border-radius:4px;}
+        QFrame#emptyBook {background:rgba(246,245,240,100); border:0; border-radius:4px;}
         QFrame#settingsGroup {background:transparent; border:0; border-top:1px solid #747470;}
         QLabel[role="paneTitle"] {font:600 17px 'Microsoft YaHei UI'; color:#161615;}
         QLabel[role="language"] {font-size:12px; color:#595955;}

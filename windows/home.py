@@ -1,25 +1,23 @@
 """Windows lookup dashboard."""
-from pathlib import Path
-
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFrame, QHeaderView, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
-    QStackedLayout, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QFrame, QHeaderView, QHBoxLayout, QLabel, QPushButton,
+    QSizePolicy, QSpacerItem, QStackedLayout, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from languages import NAMES
 from theme import ui_icon
 
 
-COVER = Path(__file__).resolve().parents[1] / "Assets/Editorial/glance.png"
 HOME_STYLE = """
-    QWidget#home {background:#faf9f6;}
+    QWidget#home {background:transparent;}
+    QFrame#recentSheet {background:rgba(253,252,248,197); border:1px solid rgba(66,65,57,66); border-radius:6px;}
     QLabel#totalLabel {color:#464641; font-size:15px; font-weight:500;}
     QLabel#totalValue {font:600 48px 'Segoe UI'; color:#151514;}
     QLabel#metricUnit {font-size:16px; color:#565650;}
     QLabel#activity {font-size:13px; color:#484842;}
-    QFrame#guideBar {background:#f2f1eb; border-top:1px solid #bdbcb5; border-bottom:1px solid #cecdc6;}
+    QFrame#guideBar {background:rgba(250,249,245,194); border:1px solid rgba(66,65,57,52); border-radius:4px;}
     QPushButton#useHint {background:transparent; color:#44443e; border:1px solid transparent;
         font-size:13px; text-align:left; padding:3px 0;}
     QPushButton#useHint:focus, QPushButton#useHint:hover {border-bottom:1px solid #565650;}
@@ -28,35 +26,14 @@ HOME_STYLE = """
     QPushButton#region:focus, QPushButton#region:hover {background:#e6e5de; border-color:#54544e;}
     QLabel#recentTitle {font-size:20px; font-weight:600;}
     QLabel#emptyHistory {color:#696962; font-size:14px;}
-    QTableWidget#recentWords {background:#faf9f6; border:0; outline:0;
+    QTableWidget#recentWords, QHeaderView {background:transparent; border:0; outline:0;
         selection-background-color:#e4e3dc; selection-color:#171715;}
-    QTableWidget#recentWords::item {border:0; border-bottom:1px solid #dddbd5; padding:0 6px;}
+    QTableWidget#recentWords::item {border:0; border-bottom:1px solid rgba(74,73,65,50); padding:0 4px;}
     QTableWidget#recentWords::item:focus {border:1px solid #76766d;}
-    QHeaderView::section {background:#faf9f6; color:#686861; font-size:12px; padding:3px 6px;
+    QHeaderView::section {background:transparent; color:#55554e; font-size:12px; padding:3px 4px;
         border:0; border-bottom:1px solid #a7a69e;}
-    QLabel#homeWarning {color:#862d21; padding:3px 14px;}
+    QLabel#homeWarning {background:rgba(250,249,246,220); color:#862d21; padding:3px 7px;}
 """
-
-
-class Portrait(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.image = QPixmap(str(COVER))
-        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
-
-    def paintEvent(self, event):
-        if self.image.isNull():
-            return
-        # Keep the eye in view as the dashboard banner changes proportions.
-        w, h = self.image.width(), self.image.height()
-        scale = max(self.width() / w, self.height() / h)
-        crop_w, crop_h = self.width() / scale, self.height() / scale
-        x = max(0, min(w - crop_w, w * 0.72 - crop_w * 0.54))
-        y = max(0, min(h - crop_h, h * 0.31 - crop_h * 0.46))
-        with QPainter(self) as painter:
-            painter.setRenderHint(QPainter.SmoothPixmapTransform)
-            painter.drawPixmap(QRectF(self.rect()), self.image, QRectF(x, y, crop_w, crop_h))
-            painter.fillRect(0, 0, 1, self.height(), QColor("#393933"))
 
 
 class HomePage(QWidget):
@@ -68,18 +45,17 @@ class HomePage(QWidget):
         super().__init__(parent, objectName="home")
         self.setAttribute(Qt.WA_StyledBackground)
         self.setStyleSheet(HOME_STYLE)
-        page = QVBoxLayout(self)
-        page.setContentsMargins(0, 0, 0, 0)
-        page.setSpacing(0)
-
-        self.banner = QWidget()
-        hero = QHBoxLayout(self.banner)
-        hero.setContentsMargins(0, 0, 0, 0)
-        hero.setSpacing(0)
-        metrics = QWidget()
-        self.summary = QVBoxLayout(metrics)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self.column = QWidget()
+        outer.addWidget(self.column)
+        outer.addStretch(1)
+        self.page = QVBoxLayout(self.column)
+        self.page.setSpacing(9)
+        self.summary = QVBoxLayout()
         self.summary.setSpacing(2)
-        self.summary.addStretch()
+        self.page.addLayout(self.summary)
         self.summary.addWidget(QLabel("累计查词", objectName="totalLabel"))
         amount = QHBoxLayout()
         amount.setSpacing(7)
@@ -93,12 +69,8 @@ class HomePage(QWidget):
         self.summary.addLayout(amount)
         self.activity = QLabel(objectName="activity")
         self.summary.addWidget(self.activity)
-        self.summary.addStretch()
-        hero.addWidget(metrics, 55)
-        self.portrait = Portrait()
-        hero.addWidget(self.portrait, 45)
-        page.addWidget(self.banner)
-
+        self.art_space = QSpacerItem(0, 3, QSizePolicy.Minimum, QSizePolicy.Fixed)
+        self.page.addSpacerItem(self.art_space)
         bar = QFrame(objectName="guideBar")
         self.tools = QHBoxLayout(bar)
         self.tools.setSpacing(8)
@@ -113,21 +85,23 @@ class HomePage(QWidget):
         self.region.setCursor(Qt.PointingHandCursor)
         self.region.clicked.connect(self.region_requested)
         self.tools.addWidget(self.region)
-        page.addWidget(bar)
+        self.page.addWidget(bar)
 
         self.warning = QLabel(objectName="homeWarning")
         self.warning.setWordWrap(True)
         self.warning.hide()
-        page.addWidget(self.warning)
-        self.history = QVBoxLayout()
+        self.page.addWidget(self.warning)
+        self.sheet = QFrame(objectName="recentSheet")
+        self.page.addWidget(self.sheet, 1)
+        self.page.addStretch()
+        self.history = QVBoxLayout(self.sheet)
         self.history.setSpacing(7)
         self.history.addWidget(QLabel("最近查词", objectName="recentTitle"))
         self.contents = QStackedLayout()
         self.history.addLayout(self.contents, 1)
-        page.addLayout(self.history, 1)
 
         self.empty = QLabel(objectName="emptyHistory")
-        self.empty.setAlignment(Qt.AlignCenter)
+        self.empty.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.contents.addWidget(self.empty)
         self.table = QTableWidget(0, 3, objectName="recentWords")
         self.table.setAccessibleName("最近查词，从新到旧")
@@ -137,6 +111,7 @@ class HomePage(QWidget):
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setWordWrap(False)
         self.table.setShowGrid(False)
+        self.table.viewport().setAutoFillBackground(False)
         self.table.setFrameShape(QFrame.NoFrame)
         self.table.verticalHeader().hide()
         self.table.verticalHeader().setDefaultSectionSize(39)
@@ -145,6 +120,7 @@ class HomePage(QWidget):
         header.setSectionResizeMode(QHeaderView.Fixed)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setHighlightSections(False)
+        header.viewport().setAutoFillBackground(False)
         self.contents.addWidget(self.table)
         self.rows = []
         self.refresh = QTimer(self, interval=30_000)
@@ -171,6 +147,7 @@ class HomePage(QWidget):
             self.activity.setText(f"今日 {today:,} 次     ·     已收藏 {saved:,}     ·     待复习 {due:,}")
             self.empty.setText("还没有查词记录")
         self.contents.setCurrentWidget(self.table if recent else self.empty)
+        self.sheet.setMaximumHeight(90 + len(recent) * self.table.verticalHeader().defaultSectionSize())
         if recent == self.rows:
             return
         self.rows = recent
@@ -184,7 +161,7 @@ class HomePage(QWidget):
                 font.setPixelSize((16, 14, 12)[column])
                 font.setWeight(QFont.DemiBold if column == 0 else QFont.Normal)
                 item.setFont(font)
-                item.setForeground(QColor(("#181816", "#363632", "#696962")[column]))
+                item.setForeground(QColor(("#181816", "#363632", "#484841")[column]))
                 self.table.setItem(row, column, item)
 
     def resizeEvent(self, event):
@@ -193,13 +170,18 @@ class HomePage(QWidget):
 
     def arrange(self):
         compact = self.width() < 720
-        margin = 18 if compact else 32
-        self.banner.setFixedHeight(130 if compact else 170)
-        self.summary.setContentsMargins(margin, 4, 8, 6)
-        self.tools.setContentsMargins(margin, 6, margin, 6)
-        self.history.setContentsMargins(margin, 14 if compact else 21, margin, 12)
-        self.table.setColumnWidth(0, max(106, min(242, self.width() // 4)))
-        self.table.setColumnWidth(2, 76 if compact else 96)
+        margin = 14 if compact else 30
+        width = min(self.width(), max(467, min(740, round(self.width() * 0.58))))
+        self.column.setFixedWidth(width)
+        # In a tall window leave the portrait visible above the history sheet.
+        gap = max(3, min(240, round((self.height() - self.width()) * 0.85))) if compact else 3
+        self.art_space.changeSize(0, gap, QSizePolicy.Minimum, QSizePolicy.Fixed)
+        self.page.invalidate()
+        self.page.setContentsMargins(margin, 14 if compact else 26, 6, 14)
+        self.tools.setContentsMargins(9, 4, 6, 4)
+        self.history.setContentsMargins(14, 10, 14, 9)
+        self.table.setColumnWidth(0, max(96, min(158, width // 4)))
+        self.table.setColumnWidth(2, 62 if compact else 72)
 
     def showEvent(self, event):
         super().showEvent(event)

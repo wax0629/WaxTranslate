@@ -7,8 +7,8 @@ from pathlib import Path
 import sys
 import time
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QSettings, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QCursor, QDesktopServices, QIcon, QPainter, QPen
+from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QRectF, QSettings, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QCursor, QDesktopServices, QIcon, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QFrame, QHBoxLayout, QLayout,
                                QMenu, QPushButton, QSizePolicy, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
 
@@ -141,6 +141,7 @@ class Window(QWidget):
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.setObjectName("desk")
+        self.backdrop = QPixmap(str(Path(__file__).resolve().parents[1] / "Assets/Editorial/glance.png"))
         self.setAttribute(Qt.WA_StyledBackground)
         self.player = SpeechPlayer(self)
         self.card = Card(self.player)
@@ -296,6 +297,26 @@ class Window(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.arrange_shell(event.size().width() < 740)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.backdrop.isNull():
+            return
+        w, h = self.backdrop.width(), self.backdrop.height()
+        scale = max(self.width() / w, self.height() / h)
+        crop_w, crop_h = self.width() / scale, self.height() / scale
+        x = max(0, min(w - crop_w, w * 0.72 - crop_w * 0.78))
+        y = max(0, min(h - crop_h, h * 0.32 - crop_h * 0.34))
+        with QPainter(self) as painter:
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            painter.drawPixmap(QRectF(self.rect()), self.backdrop, QRectF(x, y, crop_w, crop_h))
+            # Keep the unboxed statistics legible when a portrait-shaped window crops the ink.
+            wash = QLinearGradient(0, 0, self.width(), 0)
+            wash.setColorAt(0, QColor(250, 249, 246, 230))
+            compact = self.width() < 720
+            wash.setColorAt(0.49 if compact else 0.37, QColor(250, 249, 246, 202 if compact else 110))
+            wash.setColorAt(0.70, QColor(250, 249, 246, 0))
+            painter.fillRect(self.rect(), wash)
 
     def arrange_shell(self, compact):
         if self.compact == compact:
