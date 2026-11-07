@@ -60,6 +60,33 @@ def wait_until(predicate):
 
 
 class Checks(unittest.TestCase):
+    def test_shell_reflows_on_first_show_and_resize(self):
+        with TemporaryDirectory() as tmp, patch.object(QProcess, "start"):
+            window = Window(Notebook(Path(tmp) / "book.sqlite"))
+            try:
+                window.resize(570, 485)
+                window.show()
+                wait_until(lambda: window.compact is True)
+                self.assertLessEqual(window.width(), 572)
+                window.resize(872, 535)
+                wait_until(window.wordmark.isVisible)
+                self.assertGreaterEqual(window.wordmark.width(), window.wordmark.fontMetrics().horizontalAdvance("WaxTranslate"))
+                self.assertFalse(window.home.hero.grab().isNull())
+                window.resize(570, 485)
+                wait_until(lambda: window.compact is True)
+                self.assertLessEqual(window.width(), 572)
+                self.assertEqual(window.home.horizontalScrollBar().maximum(), 0)
+                window.open_library()
+                read = next(button for button in window.library.empty.findChildren(QPushButton)
+                            if button.text() == "打开阅读页")
+                read.setFocus()
+                QTest.keyClick(read, Qt.Key_Space)
+                self.assertIs(window.tabs.currentWidget(), window.reader_page)
+            finally:
+                window.shutdown()
+                window.hide()
+                window.deleteLater()
+
     def test_read_from_editor(self):
         with TemporaryDirectory() as tmp, patch.object(QProcess, "start"):
             window = Window(notebook=Notebook(Path(tmp) / "book.sqlite"))
@@ -833,6 +860,8 @@ class Checks(unittest.TestCase):
             wait_until(lambda: window.card.isVisible() and window.card.caption.text() not in ("", "本机英译中"))
             self.assertEqual(window.card.caption.text(), "句中释义")
             self.assertIn("岸", window.card.text.toPlainText())
+            self.assertFalse(window.isVisible(), "A background lookup opened the main window")
+            self.assertEqual(window.card.windowType(), Qt.Tool)
             # Real mouse presses. The inside action works; the first outside
             # click dismisses the card and still reaches the original window.
             # A layered window publishes its input surface after painting.

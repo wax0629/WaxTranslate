@@ -2,7 +2,7 @@
 from html import escape
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import QLabel
 
 APP_NAME = "WaxTranslate"
@@ -15,12 +15,7 @@ def label(text, role):
 
 
 def nav_icon(book=False, *, settings=False, home=False):
-    pix = QPixmap(48, 48)
-    pix.fill(Qt.transparent)
-    p = QPainter(pix)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.scale(2, 2)
-    p.setPen(QPen(QColor("#55534b"), 1.55, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    path = QPainterPath()
     if home:
         path = QPainterPath(QPointF(3, 10.5))
         path.lineTo(12, 3.5)
@@ -33,12 +28,13 @@ def nav_icon(book=False, *, settings=False, home=False):
         path.lineTo(14, 20)
         path.lineTo(18.5, 20)
         path.lineTo(18.5, 9)
-        p.drawPath(path)
     elif settings:
         for y, x in ((6, 9), (12, 15), (18, 10)):
-            p.drawLine(QPointF(3.5, y), QPointF(x - 2, y))
-            p.drawLine(QPointF(x + 2, y), QPointF(20.5, y))
-            p.drawEllipse(QPointF(x, y), 2, 2)
+            path.moveTo(3.5, y)
+            path.lineTo(x - 2, y)
+            path.moveTo(x + 2, y)
+            path.lineTo(20.5, y)
+            path.addEllipse(QPointF(x, y), 2, 2)
     elif book:
         path = QPainterPath()
         path.moveTo(12, 6)
@@ -49,95 +45,122 @@ def nav_icon(book=False, *, settings=False, home=False):
         path.lineTo(20.5, 5.5)
         path.quadTo(16, 3, 12, 6)
         path.lineTo(12, 19)
-        p.drawPath(path)
     else:
-        p.drawRoundedRect(QRectF(3.5, 4.5, 17, 15), 3, 3)
-        for y, end in ((9, 16.5), (13.5, 13)):
-            p.drawLine(QPointF(7.5, y), QPointF(end, y))
-    p.end()
-    pix.setDevicePixelRatio(2)
-    return QIcon(pix)
+        path.addRoundedRect(QRectF(4.5, 2.75, 15, 18.5), 2.5, 2.5)
+        for y, end in ((8, 15.5), (12, 15.5), (16, 12)):
+            path.moveTo(8.5, y)
+            path.lineTo(end, y)
+    icon = QIcon()
+    for state, color in ((QIcon.Off, "#56645d"), (QIcon.On, "#fffdf5")):
+        pix = QPixmap(72, 72)
+        pix.fill(Qt.transparent)
+        painter = QPainter(pix)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.scale(3, 3)
+        painter.setPen(QPen(QColor(color), 1.65, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.drawPath(path)
+        painter.end()
+        pix.setDevicePixelRatio(3)
+        icon.addPixmap(pix, QIcon.Normal, state)
+    return icon
 
 
 def apply_theme(app):
     app.setFont(QFont("Microsoft YaHei UI", 10))
+    palette = app.palette()
+    for role, color in (
+        (QPalette.Window, "#f9f8f3"), (QPalette.WindowText, "#172d25"),
+        (QPalette.Base, "#fffefa"), (QPalette.Text, "#263b32"),
+        (QPalette.Button, "#f6f6ef"), (QPalette.ButtonText, "#284336"),
+        (QPalette.Highlight, "#c8dccc"), (QPalette.HighlightedText, "#173b29"),
+        (QPalette.PlaceholderText, "#68746b"), (QPalette.Link, "#315f49"),
+    ):
+        palette.setColor(role, QColor(color))
+    app.setPalette(palette)
     app.setStyleSheet("""
-        QWidget {color:#272722; font-size:13px;}
-        QWidget#desk, QWidget#home, QWidget#readingPage, QWidget#library, QWidget#settingsSurface, QScrollArea#settingsPage,
-        QScrollArea#lookupHome {
-            background:#fbfaf7;}
-        QFrame#gesturePanel {background:#eaf1eb; border:1px solid #d8e3d9; border-radius:14px;}
-        QLabel[role="homeSection"] {color:#4c6758; font-weight:600; font-size:13px;}
-        QLabel[role="gestureHeadline"] {color:#20392c; font-weight:650; font-size:27px;}
-        QLabel[role="gestureKey"] {background:#fff; color:#284a36; border:1px solid #b5c9ba;
-            border-bottom:3px solid #b5c9ba; border-radius:7px; font-size:21px; font-weight:600; padding:0 9px;}
-        QLabel[role="gestureDescription"] {color:#46594c; font-size:14px;}
-        QFrame#gestureSample {background:#fcfdfb; border:1px solid #d6e1d7; border-radius:8px;}
-        QLabel[role="exampleText"], QPushButton#sampleWord {font-family:'Segoe UI'; font-size:17px; color:#334137;}
-        QPushButton#sampleWord {background:#dceadf; color:#204f36; font-weight:600; min-height:0;
-            border-radius:4px; border:1px solid transparent; padding:0 3px;}
-        QPushButton#sampleWord:hover {background:#cddfd1;}
-        QPushButton#sampleWord:focus {border-color:#587a61;}
-        QFrame#homeStats {background:#fff; border:1px solid #e2dfd6; border-radius:11px;}
-        QFrame#metricDivider {background:#e6e3da; border:0; min-width:1px; max-width:1px;}
-        QLabel[role="metricValue"] {font-family:'Segoe UI'; font-size:26px; font-weight:600; color:#293d30;}
-        QFrame#settingsGroup {background:#fff; border:1px solid #e2dfd6; border-radius:12px;}
-        QFrame#settingsGroup QFrame#hairline {min-height:1px;}
-        QFrame#sidebar {background:#f0eee7; border:0; border-right:1px solid #e3e0d8;}
-        QFrame#sidebar[compact="true"] {border-right:0; border-bottom:1px solid #e3e0d8;}
+        QWidget {color:#23382e; font-size:13px;}
+        QWidget#desk, QWidget#home, QWidget#readingPage, QWidget#library, QWidget#settingsSurface,
+        QScrollArea#settingsPage, QScrollArea#lookupHome {background:#f9f8f3;}
         QLabel {background:transparent; border:0;}
-        QLabel[role="brand"] {font-family:'Segoe UI'; font-weight:650; font-size:18px;}
-        QLabel[role="heading"] {font-size:24px; font-weight:650;}
-        QLabel[role="subhead"] {font-size:14px; font-weight:600;}
-        QLabel[role="settingsSection"] {color:#536459; font-size:12px; font-weight:600;}
-        QLabel[role="meta"] {color:#69685f; font-size:12px;}
-        QLabel[role="language"] {color:#58594f; font-size:12px; font-weight:600;}
-        QLabel[role="warning"] {color:#963f26;}
-        QFrame#translationPane, QFrame#editor, QTextBrowser#entry, QListWidget#words {
-            background:white; border:1px solid #e2dfd6; border-radius:12px;}
-        QFrame#translationPane {background:#f4f4ed;}
-        QFrame#hairline {background:#e6e3da; border:0; max-height:1px;}
-        QPlainTextEdit#input, QPlainTextEdit#translation {background:transparent; border:0; padding:0;
-            selection-background-color:#d8e6f6; selection-color:#202128;}
-        QPlainTextEdit#input {font-family:'Segoe UI','Microsoft YaHei UI'; font-size:16px;}
-        QPlainTextEdit#translation {font-size:16px;}
-        QTextBrowser#entry {padding:10px 14px;}
-        QLineEdit#search {background:white; color:#272722; border:1px solid #dedbd2;
-            border-radius:7px; padding:6px 10px;}
-        QLineEdit#search:focus {border-color:#6589ab;}
-        QComboBox#settingsChoice {background:#f2f3ef; color:#3d5044; border:1px solid #dfe3db;
-            border-radius:6px; padding:3px 8px; font-size:12px; min-height:22px;}
-        QComboBox#settingsChoice:focus {border-color:#6b8d7d;}
-        QComboBox#settingsChoice::drop-down {border:0; width:20px;}
-        QListWidget#words {padding:4px; outline:0;}
-        QListWidget#words::item {padding:6px; border-radius:5px;}
-        QListWidget#words::item:selected {background:#efeee7; color:#242620;}
-        QPushButton {color:#35362f; background:#fff; border:1px solid #d8d7ce;
+        QLabel[role="heading"] {color:#172d25; font-size:27px; font-weight:600;}
+        QLabel[role="subhead"] {color:#20392c; font-size:15px; font-weight:600;}
+        QLabel[role="meta"] {color:#5f6e62; font-size:12px;}
+        QLabel[role="warning"] {color:#923f24; font-size:13px;}
+        QLabel[role="settingsSection"] {color:#546858; font-size:13px; font-weight:600;}
+        QLabel[role="shortcut"] {color:#526357; background:#eef1e9; border:1px solid #d5ded2;
+            border-radius:4px; padding:2px 5px; font-family:'Segoe UI'; font-size:11px;}
+
+        /* Navigation shares the paper surface. The selected destination carries the ink. */
+        QFrame#sidebar {background:#eeefe7; border:0; border-right:1px solid #d9ded1;}
+        QFrame#sidebar[compact="true"] {border-right:0; border-bottom:1px solid #d9ded1;}
+        QFrame#brandBadge {background:#fbfaf4; border:1px solid #d6dccf; border-radius:10px;}
+        QLabel[role="brand"] {color:#1c3629; font-family:'Georgia','Segoe UI'; font-size:17px; font-weight:600;}
+        QLabel[role="engine"] {color:#5c6b61; font-size:11px;}
+        QFrame#railRule {background:#d5dbcf; border:0; max-height:1px;}
+        QPushButton[role="nav"] {text-align:left; background:transparent; color:#45564b;
+            border:1px solid transparent; border-radius:8px; padding:9px 12px; min-height:18px; font-size:14px;}
+        QPushButton[role="nav"]:hover {background:#e0e6da; color:#193b2a;}
+        QPushButton[role="nav"]:checked {background:#294c3b; border-color:#294c3b; color:#fffdf5; font-weight:600;}
+        QPushButton[role="nav"]:checked:hover {background:#315642;}
+        QPushButton[role="nav"]:focus {border-color:#7d967f;}
+
+        /* Controls */
+        QPushButton {color:#284234; background:#fffefa; border:1px solid #cdd6c9;
             border-radius:7px; padding:6px 12px; min-height:18px;}
-        QPushButton:hover {background:#f5f4ef; border-color:#b9b7af;}
-        QPushButton:pressed {background:#eae8e0;}
-        QPushButton:focus {border-color:#5073a0;}
-        QPushButton:disabled {background:#f3f2ee; color:#77766e; border-color:#e5e3db;}
-        QPushButton[role="primary"] {background:#292b27; color:white; border-color:#292b27; font-weight:600;}
-        QPushButton[role="primary"]:hover {background:#45473f;}
-        QPushButton[role="primary"]:disabled {color:#77756e; background:#eeede7; border-color:#e5e3db;}
-        QPushButton[role="quiet"] {background:transparent;
-            border:1px solid transparent; color:#56574e; padding:4px 8px;}
-        QPushButton[role="quiet"]:hover {background:#eeede7; color:#20211e;}
-        QPushButton[role="sample"] {background:#e7efe8; color:#315947; border:1px solid transparent;
-            border-radius:7px; padding:2px 8px; min-height:16px; font-size:12px;}
-        QPushButton[role="sample"]:hover {background:#dae8dd;}
-        QPushButton[role="sample"]:focus {border-color:#6d927b;}
-        QPushButton[role="nav"] {text-align:left; background:transparent; border:1px solid transparent;
-            border-radius:8px; padding:8px 10px; color:#57574e;}
-        QPushButton[role="nav"]:hover {background:#e9e7df;}
-        QPushButton[role="nav"]:checked {background:white; border-color:#dedbd1; color:#20211d; font-weight:600;}
-        QPushButton[role="nav"]:focus, QPushButton[role="quiet"]:focus,
-        QPushButton[role="primary"]:focus {border-color:#6589ab;}
-        QMenu {background:white; color:#262821; border:1px solid #dedbd2; padding:4px;}
-        QMenu::item {padding:6px 18px;}
-        QMenu::item:selected {background:#eeede7;}
-        QToolTip {background:#292b27; color:white; border:0; padding:4px;}
+        QPushButton:hover {background:#edf2e9; border-color:#95ac97;}
+        QPushButton:pressed {background:#dde8d9; border-color:#718f75;}
+        QPushButton:focus, QCheckBox:focus {border-color:#527c63;}
+        QPushButton:disabled {color:#737d73; background:#f0f1eb; border-color:#dfe4d9;}
+        QPushButton[role="primary"] {background:#274b38; color:#fffefa; border-color:#274b38; font-weight:600;}
+        QPushButton[role="primary"]:hover {background:#365e45; border-color:#365e45;}
+        QPushButton[role="primary"]:pressed {background:#183a2a;}
+        QPushButton[role="primary"]:disabled {background:#ebeee6; border-color:#d8dfd2; color:#697969;}
+        QPushButton[role="quiet"] {background:transparent; color:#47604e; border:1px solid transparent; padding:4px 8px;}
+        QPushButton[role="quiet"]:hover {background:#e7ede2; color:#21432f;}
+        QPushButton[role="sample"] {background:#e7eee2; color:#2a5036; border:1px solid #d2decf;
+            border-radius:6px; padding:3px 8px; min-height:16px; font-size:12px;}
+        QPushButton[role="sample"]:hover {background:#dbe8d7;}
+        QPushButton[role="sample"]:focus, QPushButton[role="quiet"]:focus {border-color:#6c9174;}
+        QPushButton[role="primary"]:focus {border-color:#cca76c;}
+        QLineEdit#search {background:#fffefa; color:#263b32; border:1px solid #d3dace;
+            border-radius:8px; padding:8px 12px; selection-background-color:#d8e7d7;}
+        QLineEdit#search:focus, QComboBox#settingsChoice:focus {border-color:#65876d;}
+        QComboBox#settingsChoice {background:#f4f6ee; color:#2c4c37; border:1px solid #d2dbcb;
+            border-radius:7px; padding:4px 9px; font-size:13px; min-height:23px;}
+        QComboBox#settingsChoice::drop-down {border:0; width:20px;}
+        QComboBox#settingsChoice QAbstractItemView {background:#fffefa; border:1px solid #ced7c9;
+            selection-background-color:#dce9d9; selection-color:#1d3526;}
+        QMenu {background:#fffefa; color:#263b32; border:1px solid #d2d9cc; padding:4px;}
+        QMenu::item {padding:6px 18px; border-radius:4px;}
+        QMenu::item:selected {background:#e4ecdf; color:#1d3b28;}
+        QToolTip {background:#203a2d; color:#fffdf5; border:0; padding:5px 7px;}
+
+        /* Reading sheets, vocabulary and preferences */
+        QFrame#readingSheet, QFrame#entrySheet, QFrame#settingsGroup {
+            background:#fffefa; border:1px solid #d7ddcf; border-radius:14px;}
+        QFrame#editor {background:#fffefa; border:0; border-radius:13px;}
+        QFrame#translationPane {background:#eff3e9; border:0; border-radius:13px;}
+        QFrame#sheetDivider, QFrame#binding, QFrame#hairline {background:#dbe0d4; border:0;}
+        QFrame#hairline {min-height:1px; max-height:1px;}
+        QLabel[role="sourceLanguage"] {font:600 23px 'Georgia'; color:#253d2b;}
+        QLabel[role="targetLanguage"] {font-size:18px; font-weight:600; color:#3c5846;}
+        QPlainTextEdit#input, QPlainTextEdit#translation {background:transparent; border:0; padding:0;
+            selection-background-color:#c9decd; selection-color:#193726;}
+        QPlainTextEdit#input {font-family:'Georgia','Microsoft YaHei UI'; font-size:18px; color:#213b2b;}
+        QPlainTextEdit#translation {font-size:16px; color:#314b3a;}
+        QFrame#emptyBook {background:#eef2e8; border:1px solid #d5dfce; border-radius:14px;}
+        QTextBrowser#entry {background:transparent; border:0; padding:8px 11px;
+            selection-background-color:#d7e6d8; selection-color:#193726;}
+        QListWidget#words {background:#fffefa; border:1px solid #d7ddcf; border-radius:10px;
+            padding:3px; outline:0;}
+        QListWidget#words::item {padding:6px; border-radius:5px;}
+        QListWidget#words::item:selected {background:#e1ebdd; color:#1d3727;}
+        QListWidget#words:focus {border-color:#809c85;}
+        QScrollBar:vertical {background:transparent; width:9px; margin:2px 1px;}
+        QScrollBar::handle:vertical {background:#becbbb; min-height:24px; border-radius:3px;}
+        QScrollBar::handle:vertical:hover {background:#95aa94;}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {height:0;}
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {background:transparent;}
     """)
 
 
@@ -147,11 +170,11 @@ def plain(text):
 
 DOCUMENT_STYLE = """
     p {margin:0; font-family:'Microsoft YaHei UI'; color:#303a34;}
-    .word {font-family:'Segoe UI'; font-size:26px; font-weight:600; color:#18261f; margin-bottom:3px;}
+    .word {font-family:'Georgia','Microsoft YaHei UI'; font-size:27px; font-weight:600; color:#1c3629; margin-bottom:3px;}
     .details {font-size:12px; color:#53675b; margin-bottom:6px;}
     .gloss {font-size:17px; line-height:133%; color:#283e31; margin-bottom:4px;}
-    .source {font-family:'Segoe UI'; font-size:15px; line-height:119%; color:#57615b; margin-top:4px;}
-    .hit {font-weight:600; color:#205943; background-color:#e2eee4;}
+    .source {font-family:'Georgia','Microsoft YaHei UI'; font-size:16px; line-height:128%; color:#46584d; margin-top:4px;}
+    .hit {font-weight:600; color:#244b32; background-color:#e2ecda;}
     .translation {font-size:14px; line-height:130%; color:#29332e; margin-top:7px;}
     .message {font-size:14px; line-height:140%;}
 """
