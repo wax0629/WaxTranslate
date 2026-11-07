@@ -514,9 +514,11 @@ class Window(QWidget):
             point = QCursor.pos()
         editor = self.workspace.input
         under_pointer = QApplication.widgetAt(point) if not region else None
-        if under_pointer is self.home.demo:
-            self.try_home_word()
-            return
+        if under_pointer is not None and self.home.isAncestorOf(under_pointer) and self.home.demo.isVisible():
+            demo = self.home.demo
+            if demo.rect().adjusted(-3, -3, 3, 3).contains(demo.mapFromGlobal(point)):
+                self.try_home_word()
+                return
         if under_pointer is editor.viewport():
             if not editor.lookup_point(QPointF(editor.viewport().mapFromGlobal(point))):
                 self.invalidate()

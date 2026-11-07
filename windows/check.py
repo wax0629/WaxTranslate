@@ -145,6 +145,11 @@ class Checks(unittest.TestCase):
                 self.assertTrue(home.demo.isVisible())
                 self.assertEqual(home.keycap.text(), "左 Ctrl")
                 wait_until(lambda: counts() == ("0", "0", "0"))
+                edge = home.demo.mapToGlobal(QPoint(-2, home.demo.height() // 2))
+                with patch.object(QApplication, "widgetAt", return_value=home.sample), \
+                        patch.object(window, "try_home_word") as try_word:
+                    window.begin(False, edge)
+                    try_word.assert_called_once()
                 window.workspace.input.setPlainText("An unfinished draft.")
                 home.demo.click()
                 wait_until(window.card.save.isVisible)
@@ -921,13 +926,23 @@ class Checks(unittest.TestCase):
             window.card.close()
             sample.hide()
             window.open_home()
-            wait_until(window.home.demo.isVisible)
+            self.assertTrue(QTest.qWaitForWindowExposed(window))
+            wait_until(lambda: window.isActiveWindow() and window.home.values[0].text() == "2")
             demo = window.home.demo
-            move_cursor(demo.mapToGlobal(demo.rect().center()))
-            wait_until(lambda: QApplication.widgetAt(QCursor.pos()) is demo)
+            # On first show Win32 positions the top-level window and Qt switches
+            # to the compact rail on small/high-DPI desktops. Aim at the actual
+            # painted word after that layout settles, as a reader would.
+            QTest.qWait(180)
+            target = demo.mapToGlobal(demo.rect().center())
+            move_cursor(target)
+            wait_until(lambda: native_target() == int(window.winId()) and QApplication.widgetAt(QCursor.pos()) is demo)
+            home_ticket = window.ticket
             user.keybd_event(right_ctrl, 0x1D, 1, 0)
             user.keybd_event(right_ctrl, 0x1D, 3, 0)
-            wait_until(window.card.save.isVisible)
+            wait_until(lambda: window.ticket != home_ticket and window.card.isVisible()
+                       and window.card.caption.text() != "本机英译中")
+            self.assertTrue(window.card.save.isVisible(),
+                            (window.card.text.toPlainText(), target, demo.mapToGlobal(demo.rect().center())))
             self.assertEqual(window.saved_result[0].text, HOME_EXAMPLE)
             self.assertEqual(window.saved_result[0].word, "bank")
             wait_until(lambda: window.home.values[0].text() == "3")
@@ -957,6 +972,8 @@ class Checks(unittest.TestCase):
                       f"worker={future}, overlay={window.overlay is not None}")
         finally:
             window.shutdown()
+            window.hide()
+            window.deleteLater()
             if user.GetAsyncKeyState(1) & 0x8000:
                 user.mouse_event(4, 0, 0, 0, 0)
             if user.GetAsyncKeyState(ctrl) & 0x8000:
