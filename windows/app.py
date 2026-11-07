@@ -9,17 +9,18 @@ import sys
 from PySide6.QtCore import QPoint, QPointF, QProcess, QRect, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPen
 from PySide6.QtSvgWidgets import QSvgWidget
-from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QComboBox, QFrame, QHBoxLayout, QMenu, QPushButton,
-                               QStackedWidget, QStyle, QSystemTrayIcon, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QCheckBox, QComboBox, QFrame, QHBoxLayout,
+                               QMenu, QPushButton, QStackedWidget, QStyle, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 from notebook import Notebook
+from lookup import UNKNOWN, explain, reference_word, sentence_translation
+from online_terms import search_entities
 from popup import Card
 from speech import SpeechPlayer
 from library import Library
 from reader import Passage, recognize
 from theme import APP_NAME, apply_theme, label, nav_icon
-from translation import UnsupportedLanguage, source_language, translate_lookup
-from word_details import part_of_speech
+from translation import UnsupportedLanguage
 from workspace import TextWorkspace
 
 
@@ -114,14 +115,21 @@ class Selection(QWidget):
 def analyze(image, point, passage):
     if passage is None:
         passage = asyncio.run(recognize(image, point))
-    language = source_language(passage.text)
-    result, excerpt = translate_lookup(passage)
-    pos = part_of_speech(passage) if passage.selection else ""
-    return passage, result, excerpt, language, pos
+    return passage, *explain(passage)
+
+
+def online_meanings(word):
+    entries = []
+    for identity, description, language in search_entities(reference_word(word)):
+        if language == "en":
+            description = sentence_translation(description).rstrip("。") or description
+        entries.append((identity, description))
+    return entries
 
 
 class Window(QWidget):
     finished = Signal(int, object, object)
+    online_finished = Signal(int, object)
 
     def __init__(self, notebook=None):
         super().__init__()
@@ -132,6 +140,11 @@ class Window(QWidget):
         self.card.dismissed.connect(self.invalidate)
         self.card.presented.connect(self.watch_card)
         self.card.save_requested.connect(self.save_word)
+        self.card.online.clicked.connect(self.search_online)
+        self.online_finished.connect(self.show_online)
+        self.search_context = None
+        self.online_job = None
+        self.online_pool = ThreadPoolExecutor(max_workers=2)
         self.saved_result = None
         self.reading_from_editor = False
         self.notebook = notebook or Notebook()
@@ -226,6 +239,10 @@ class Window(QWidget):
         self.region_hint = label("", "key")
         region_row.addWidget(self.region_hint)
         hints.addLayout(region_row)
+        self.auto_online = QCheckBox("未收录词自动查 Wikidata（仅发送词条）")
+        self.auto_online.setChecked(self.settings.value("onlineTerms", False, type=bool))
+        self.auto_online.toggled.connect(lambda checked: self.settings.setValue("onlineTerms", checked))
+        hints.addWidget(self.auto_online)
         layout.addWidget(self.hints)
         self.hint_button.toggled.connect(self.show_hints)
         self.hint_button.setChecked(True)
@@ -399,6 +416,10 @@ class Window(QWidget):
 
     def invalidate(self):
         self.ticket += 1
+        self.search_context = None
+        if self.online_job is not None:
+            self.online_job.cancel()
+            self.online_job = None
         self.reading_from_editor = False
         self.saved_result = None
         if self.pending is not None:
@@ -506,8 +527,50 @@ class Window(QWidget):
         except Exception as error:
             self.card.show_message("需要处理", str(error), point)
             return
-        self.saved_result = (passage, result) if passage.selection else None
-        self.card.show_result(passage, *result, point, excerpt=excerpt, language=language, pos=pos)
+        unknown = result[0] == UNKNOWN
+        can_search = bool(passage.selection)
+        self.search_context = (passage, result, point, language, pos) if can_search else None
+        self.saved_result = (passage, result) if passage.selection and not unknown else None
+        self.card.show_result(passage, *result, point, excerpt=excerpt, language=language, pos=pos,
+                              can_save=not unknown, can_search=can_search)
+        if unknown and self.auto_online.isChecked():
+            self.search_online()
+
+    def search_online(self):
+        if not self.search_context or self.online_job is not None:
+            return
+        ticket = self.ticket
+        self.card.online.setText("查询中…")
+        self.card.online.setEnabled(False)
+        future = self.online_pool.submit(online_meanings, self.search_context[0].word)
+        self.online_job = future
+        future.add_done_callback(lambda job: self.online_finished.emit(ticket, job) if not job.cancelled() else None)
+
+    def show_online(self, ticket, job):
+        if ticket != self.ticket or self.search_context is None or job is not self.online_job:
+            return
+        passage, local_result, point, language, pos = self.search_context
+        self.online_job = None
+        try:
+            matches = job.result()
+        except Exception:
+            matches = []
+            message = "百科暂时无法连接，可稍后重试。"
+        else:
+            message = "百科也没有找到同名且有说明的条目。"
+        if matches:
+            gloss = "\n".join((f"{i}. " if len(matches) > 1 else "") + desc
+                              for i, (_, desc) in enumerate(matches, 1))
+            ids = [identity for identity, _ in matches]
+            result = ("Wikidata · 同名参考" if len(ids) > 1 else "Wikidata · 百科参考", gloss, local_result[2])
+            self.saved_result = passage, (result[0] + " · " + " / ".join(ids), gloss, result[2])
+            self.card.show_result(passage, *result, point, language=language, pos=pos, references=ids)
+        else:
+            unknown = local_result[0] == UNKNOWN
+            gloss = message if unknown else local_result[1] + "\n" + message
+            self.card.show_result(passage, local_result[0], gloss, local_result[2], point,
+                                  language=language, pos=pos, can_save=not unknown, can_search=True, web_search=True)
+            self.card.online.setText("再查一次")
 
     def closeEvent(self, event):
         if self.tray.isVisible():
@@ -527,6 +590,7 @@ class Window(QWidget):
         self.tray.hide()
         self.workspace.reset_result()
         self.pool.shutdown(wait=True, cancel_futures=True)
+        self.online_pool.shutdown(wait=False, cancel_futures=True)
 
 
 def main():

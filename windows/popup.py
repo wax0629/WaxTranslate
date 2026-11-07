@@ -1,9 +1,10 @@
 """The compact reading card shared by word lookups and region translations."""
 from math import ceil
 from pathlib import Path
+from urllib.parse import urlencode
 
 from PySide6.QtCore import QEvent, QPoint, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QShortcut
+from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPainterPath, QPen, QPixmap, QShortcut
 from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout,
                                QLabel, QPushButton, QSizePolicy, QTextBrowser, QVBoxLayout, QWidget)
@@ -127,6 +128,7 @@ class Card(QWidget):
         self.text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         self.text.setFrameShape(QFrame.NoFrame)
         self.text.setOpenLinks(False)
+        self.text.anchorClicked.connect(self.open_reference)
         self.text.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.text.document().setDocumentMargin(0)
         self.text.document().setDefaultStyleSheet(DOCUMENT_STYLE)
@@ -136,17 +138,20 @@ class Card(QWidget):
         footer = QHBoxLayout(self.actions)
         footer.setContentsMargins(0, 4, 0, 0)
         self.save = QPushButton(action_icon(True), "收藏生词", objectName="bookmark")
+        self.online = QPushButton("查百科", objectName="expand")
+        self.online.setToolTip("仅将这个词发给 Wikidata，在卡片内查看可能的含义")
         self.expand = QPushButton("查看全句", objectName="expand")
         self.expand.setCheckable(True)
         self.copy = QPushButton(action_icon(False), "复制", objectName="copy")
         self.copy.setAccessibleName("复制译文")
         self.copy.setToolTip("复制译文")
         footer.addWidget(self.save)
+        footer.addWidget(self.online)
         footer.addStretch()
         footer.addWidget(self.expand)
         footer.addWidget(self.copy)
         body.addWidget(self.actions)
-        for button in (self.save, self.expand, self.copy, close):
+        for button in (self.save, self.online, self.expand, self.copy, close):
             button.setCursor(Qt.PointingHandCursor)
             button.setIconSize(QSize(15, 15))
         self.save.clicked.connect(self.save_requested)
@@ -171,23 +176,39 @@ class Card(QWidget):
                    + f"<p class='source'>{plain(original)}</p>")
         self.present(f"{language}原文", content, point, original, copy_original=True)
 
-    def show_result(self, passage, origin, gloss, sentence, point, excerpt=None, language="", pos=""):
+    def open_reference(self, url):
+        if url.scheme() == "https" and url.host() in ("www.wikidata.org", "www.bing.com"):
+            if not QDesktopServices.openUrl(url):
+                self.show_speech_error("系统未能打开浏览器。")
+
+    def show_result(self, passage, origin, gloss, sentence, point, excerpt=None, language="", pos="",
+                    can_save=True, can_search=False, references=(), web_search=False):
         self.listen.set_content(passage.word, passage.text)
         if passage.selection:
             details = (language or "按英语查词") + " · " + (pos or "词性待定")
         else:
             details = (language or "按英语翻译") + " → 简体中文"
         full = result_html(passage, gloss, sentence, details)
+        links = [f'<a href="https://www.wikidata.org/wiki/{entity}">条目 {i}</a>'
+                 for i, entity in enumerate(references, 1)]
+        if web_search:
+            url = "https://www.bing.com/search?" + urlencode({"q": passage.word + " 意思"})
+            links.append(f'<a href="{plain(url)}">在浏览器中搜索这个词</a>')
+        if links:
+            full += "<p class='details'>" + "　".join(links) + "</p>"
         if excerpt is None:
-            self.present(origin, full, point, sentence or gloss, bool(passage.selection))
+            original_only = not can_save and not sentence
+            self.present(origin, full, point, (sentence or passage.word) if original_only else sentence or gloss,
+                         bool(passage.selection) and can_save, copy_original=original_only, can_search=can_search)
             return
         part, translated = excerpt
         start = passage.selection[0] - part.selection[0]
         short = result_html(part, gloss, translated, details, "… " if start else "",
                             " …" if start + len(part.text) < len(passage.text) else "")
-        self.present(origin, short, point, translated, True, (full, sentence))
+        self.present(origin, short, point, translated, True, (full, sentence), can_search=can_search)
 
-    def present(self, caption, content, point, translation="", can_save=False, full_context=None, copy_original=False):
+    def present(self, caption, content, point, translation="", can_save=False, full_context=None, copy_original=False,
+                can_search=False):
         self.speech_error.hide()
         self.anchor = point
         self.default_context = content, translation
@@ -197,6 +218,9 @@ class Card(QWidget):
         self.save.setText("收藏生词")
         self.save.setEnabled(True)
         self.save.setVisible(can_save)
+        self.online.setText("查百科")
+        self.online.setEnabled(True)
+        self.online.setVisible(can_search)
         self.expand.setChecked(False)
         self.expand.setVisible(full_context is not None)
         self.actions.setVisible(bool(translation))

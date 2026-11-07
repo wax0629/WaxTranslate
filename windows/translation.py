@@ -11,6 +11,7 @@ import pycld2
 import sentencepiece
 
 from install_model import MODEL, PACKAGE
+from lexicon import lookup_entry
 from reader import Passage, context_excerpt
 
 
@@ -92,6 +93,16 @@ def aligned_gloss(output, selected_tokens, source_length, tokenizer):
     return gloss if gloss and len(gloss) <= 24 and gloss != full else ""
 
 
+def strip_attached_particle(word, gloss):
+    # Some int8 backends pull the preceding verb's aspect marker into a noun
+    # alignment (e.g. 存入[了银行]). Trim only to an entire dictionary sense.
+    if len(gloss) >= 3 and gloss.startswith(("了", "着", "过")):
+        senses = re.findall(r"[\u3400-\u9fff]+", lookup_entry(word))
+        if gloss not in senses and gloss[1:] in senses:
+            return gloss[1:]
+    return gloss
+
+
 def translate(passage):
     tokenizer, translator = engine()
     source = passage.text
@@ -121,7 +132,7 @@ def translate(passage):
         selected = [i for i, part in enumerate(tokens.pieces) if part.begin < end and part.end > start]
         gloss = aligned_gloss(outputs[0], selected, len(pieces), tokenizer)
         if gloss:
-            return "句中释义", gloss, sentence
+            return "句中释义", strip_attached_particle(passage.word, gloss), sentence
     single = translator.translate_batch([tokenizer.encode(passage.word, out_type=str)], beam_size=4)[0]
     gloss = decoded(tokenizer, single.hypotheses[0])
     gloss = gloss.rstrip("。.!！")

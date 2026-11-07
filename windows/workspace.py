@@ -1,12 +1,12 @@
 """In-window translation for typed or pasted text."""
 from threading import Event
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut, QTextCursor, QTextLine, QTextOption
-from PySide6.QtWidgets import (QApplication, QBoxLayout, QFrame, QHBoxLayout, QPlainTextEdit,
+from PySide6.QtWidgets import (QApplication, QBoxLayout, QCheckBox, QFrame, QHBoxLayout, QPlainTextEdit,
                                QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
-from reader import WORD_TOKEN, sentence_at
+from reader import WORD_TOKEN, nearest_box, sentence_at
 from theme import label
 from translation import translate_text
 
@@ -17,6 +17,38 @@ def utf16_length(text):
 
 class ReadingEditor(QPlainTextEdit):
     lookup_requested = Signal(object, object)
+    article_pasted = Signal()
+
+    def __init__(self, parent=None, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.single_click = False
+        self.press_position = None
+
+    def insertFromMimeData(self, source):
+        first_paste = self.document().isEmpty() and source.hasText() and source.text().strip()
+        super().insertFromMimeData(source)
+        if first_paste and not self.document().isEmpty():
+            self.article_pasted.emit()
+
+    def mousePressEvent(self, event):
+        self.press_position = None
+        if self.single_click and event.button() == Qt.LeftButton and event.modifiers() == Qt.NoModifier:
+            self.press_position = event.position()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (self.press_position is not None and
+                (event.position() - self.press_position).manhattanLength() >= QApplication.startDragDistance()):
+            self.press_position = None
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        press, self.press_position = self.press_position, None
+        super().mouseReleaseEvent(event)
+        if (press is not None and event.button() == Qt.LeftButton and event.modifiers() == Qt.NoModifier
+                and (event.position() - press).manhattanLength() < QApplication.startDragDistance()
+                and not self.textCursor().hasSelection()):
+            self.lookup_point(event.position())
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key_Return, Qt.Key_Enter) and event.modifiers() & ~Qt.KeypadModifier == Qt.AltModifier:
@@ -26,20 +58,62 @@ class ReadingEditor(QPlainTextEdit):
         super().keyPressEvent(event)
 
     def mouseDoubleClickEvent(self, event):
+        self.press_position = None
         super().mouseDoubleClickEvent(event)
         if event.button() == Qt.LeftButton:
             self.lookup_point(event.position())
 
     def lookup_point(self, point):
-        block = self.cursorForPosition(point.toPoint()).block()
-        local = point - self.blockBoundingGeometry(block).translated(self.contentOffset()).topLeft()
-        layout = block.layout()
-        for i in range(layout.lineCount()):
-            line = layout.lineAt(i)
-            if line.naturalTextRect().contains(local):
-                pos = block.position() + line.xToCursor(local.x(), QTextLine.CursorOnCharacter)
-                return self.lookup_at(pos)
-        return False
+        if not self.viewport().rect().contains(point.toPoint()):
+            return False
+        current = self.cursorForPosition(point.toPoint()).block()
+        boxes = []
+        for block in (current, current.previous(), current.next()):
+            if not block.isValid() or not block.isVisible():
+                continue
+            origin = self.blockBoundingGeometry(block).translated(self.contentOffset()).topLeft()
+            local = point - origin
+            layout = block.layout()
+            for i in range(layout.lineCount()):
+                line = layout.lineAt(i)
+                rect = line.naturalTextRect()
+                if not rect.adjusted(-line.height(), -line.height(), line.height(), line.height()).contains(local):
+                    continue
+                if rect.contains(local):
+                    index = line.xToCursor(local.x(), QTextLine.CursorOnCharacter)
+                    if index < line.textStart() + line.textLength():
+                        if self.lookup_at(block.position() + index):
+                            return True
+                        # A deliberate hit on a slash, punctuation or a number
+                        # does not select an adjacent token.
+                        char = block.text().encode("utf-16-le")[index * 2:(index + 1) * 2]
+                        if not char.decode("utf-16-le", errors="ignore").isspace():
+                            return False
+                boxes.extend(self.nearby_words(block, line, local.x(), origin))
+        hit = nearest_box(point, boxes)
+        return self.lookup_at(hit) if hit is not None else False
+
+    @staticmethod
+    def nearby_words(block, line, x, origin):
+        # Text positions returned by Qt are UTF-16 units. Limit geometry
+        # work to words near the pointer on this visual (possibly wrapped) line.
+        low, high = sorted((line.xToCursor(x - line.height()), line.xToCursor(x + line.height())))
+        value = block.text()
+        previous = units = 0
+        for match in WORD_TOKEN.finditer(value):
+            start = units + utf16_length(value[previous:match.start()])
+            units = start + utf16_length(match.group())
+            previous = match.end()
+            if units < low or not any(c.isalpha() for c in match.group()):
+                continue
+            if start > high:
+                break
+            left = max(start, line.textStart())
+            right = min(units, line.textStart() + line.textLength())
+            if right <= left:
+                continue
+            a, b = sorted((line.cursorToX(left)[0], line.cursorToX(right)[0]))
+            yield block.position() + start, QRectF(a, line.y(), b - a, line.height()).translated(origin)
 
     def lookup_cursor(self):
         cursor = self.textCursor()
@@ -92,7 +166,7 @@ class TextWorkspace(QWidget):
         self.panes.setSpacing(10)
         layout.addLayout(self.panes, 1)
         self.input = ReadingEditor(objectName="input")
-        self.input.setPlaceholderText("粘贴英文文章，双击单词查释义…")
+        self.input.setPlaceholderText("粘贴英文文章，点一下单词查释义…")
         self.input.setAccessibleName("英文原文")
         self.output = QPlainTextEdit(objectName="translation")
         self.output.setAccessibleName("简体中文译文")
@@ -113,8 +187,13 @@ class TextWorkspace(QWidget):
                 self.example = QPushButton("试读示例")
                 self.example.setProperty("role", "sample")
                 self.example.setToolTip("打开一段示例，试试查词、听读和收藏")
-                self.lookup_hint = label("双击查词", "meta")
-                self.lookup_hint.setToolTip("也可将光标放在词上，按 Alt+Enter")
+                self.lookup_hint = QCheckBox("单击查词")
+                self.lookup_hint.setToolTip("开启后单击查词，拖动仍可选字。关闭后可双击查词或按 Alt+Enter。")
+                self.lookup_hint.toggled.connect(self.set_single_click)
+                self.lookup_hint.clicked.connect(self.keep_reading_preference)
+                self.user_chose_mode = False
+                self.input.article_pasted.connect(self.start_reading)
+                self.example.clicked.connect(self.start_reading)
                 header.addWidget(self.example)
                 header.addWidget(self.lookup_hint)
             box.addWidget(tools)
@@ -152,6 +231,16 @@ class TextWorkspace(QWidget):
         self.input.textChanged.connect(self.reset_result)
         self.reset_result()
         self.setFocusProxy(self.input)
+
+    def set_single_click(self, checked):
+        self.input.single_click = checked
+
+    def keep_reading_preference(self):
+        self.user_chose_mode = True
+
+    def start_reading(self):
+        if not self.user_chose_mode:
+            self.lookup_hint.setChecked(True)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

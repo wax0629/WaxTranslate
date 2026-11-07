@@ -10,14 +10,14 @@ from tempfile import TemporaryDirectory
 import urllib.request
 import zipfile
 
-from install_model import FILES, MODEL, PACKAGE, POS_ARCHIVE, install, install_word_tags
+from install_model import FILES, LEXICON, MODEL, PACKAGE, POS_ARCHIVE, install, install_lexicon, install_word_tags
 
 SRC = Path(__file__).resolve().parent
 PYTHON_ZIP = "python-3.12.10-embed-amd64.zip"
 PYTHON_SHA = "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
 APP_FILES = ("app.py", "gestures.py", "library.py", "notebook.py", "popup.py", "reader.py", "translation.py",
              "instance.py", "theme.py", "workspace.py", "word_details.py", "install_model.py", "speech.py",
-             "speech_worker.py", "waxtranslate.ico")
+             "speech_worker.py", "lexicon.py", "lookup.py", "online_terms.py", "terminology.py", "waxtranslate.ico")
 
 
 def build(output, archive=None):
@@ -25,6 +25,7 @@ def build(output, archive=None):
         raise SystemExit("Build with 64-bit Python 3.12 on Windows.")
     install()
     install_word_tags()
+    install_lexicon()
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=output.parent) as temp:
@@ -61,6 +62,8 @@ def build(output, archive=None):
             shutil.copy2(MODEL / name, dest)
         shutil.copy2(POS_ARCHIVE, root / "models" / POS_ARCHIVE.name)
         shutil.copy2(SRC / "licenses/english-pos.txt", root / "models/english-pos-LICENSE.txt")
+        shutil.copy2(LEXICON, root / "models" / LEXICON.name)
+        shutil.copy2(SRC / "licenses/ecdict.txt", root / "models/ecdict-LICENSE.txt")
         compiler = Path(os.environ["WINDIR"]) / "Microsoft.NET/Framework64/v4.0.30319/csc.exe"
         subprocess.run([str(compiler), "/nologo", "/target:winexe", "/platform:x64", "/optimize+",
                         "/r:System.Windows.Forms.dll", "/codepage:65001", "/win32icon:" + str(SRC / "waxtranslate.ico"),

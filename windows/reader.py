@@ -1,7 +1,8 @@
 """Read English text in physical image pixels with the Windows OCR engine."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from math import hypot
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QFont, QFontMetricsF, QImage
@@ -11,7 +12,14 @@ from winrt.windows.media.ocr import OcrEngine
 from winrt.windows.storage.streams import DataWriter
 
 
-WORD_TOKEN = re.compile(r"[^\W_]+(?:[-’'][^\W_]+)*")
+# Keep a Latin identifier selectable in mixed text such as “看懂ChatGPT的输出”.
+# Periods and underscores inside an identifier belong to it; surrounding
+# punctuation and a slash separating alternatives do not.
+CJK = "\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af"
+ALNUM = rf"[^\W_{CJK}]"
+WORD_TOKEN = re.compile(rf"(?i:\.net)(?:[0-9]+)?(?![A-Za-z_])|"
+                        rf"[cC](?:\+\+(?:[0-9]+)?|#)|[fF]#|"
+                        rf"{ALNUM}+(?:[-‐‑’'_.]{ALNUM}+)*|[{CJK}]+")
 
 
 @dataclass
@@ -25,6 +33,10 @@ class Passage:
     text: str
     # Half-open character range in text. A region has no selected word.
     selection: tuple[int, int] | None = None
+    # Reading evidence available at lookup time. Only the selected sentence
+    # and its offset are part of a saved passage's identity.
+    context: str = field(default="", compare=False, repr=False)
+    context_offset: int | None = field(default=None, compare=False, repr=False)
 
     @property
     def word(self):
@@ -45,7 +57,9 @@ def sentence_at(text, start, end):
             break
     source = text[left:right].rstrip()
     leading = len(source) - len(source.lstrip())
-    return Passage(source[leading:].replace("\n", " "), (start - left - leading, end - left - leading))
+    context_start = max(0, start - 4000)
+    return Passage(source[leading:].replace("\n", " "), (start - left - leading, end - left - leading),
+                   text[context_start:end + 4000], start - context_start)
 
 
 def context_excerpt(passage):
@@ -92,16 +106,49 @@ def line_rect(words):
     return rect
 
 
+def nearest_box(point, boxes):
+    """Prefer a direct hit; accept a small miss only with a clear nearest target.
+
+    All distances use the boxes' coordinate system (OCR pixels or Qt layout
+    units). Scaling the text and pointer together preserves the decision.
+    """
+    candidates = []
+    for key, rect in boxes:
+        height = rect.height()
+        if height <= 0 or rect.width() <= 0:
+            continue
+        dx = max(rect.left() - point.x(), point.x() - rect.right(), 0)
+        dy = max(rect.top() - point.y(), point.y() - rect.bottom(), 0)
+        distance = hypot(dx, dy)
+        if distance == 0:
+            return key
+        tolerance, tie_margin = 0.42 * height, 0.09 * height
+        if distance <= tolerance + tie_margin:
+            candidates.append((distance, tolerance, tie_margin, key))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    distance, tolerance, tie_margin, key = candidates[0]
+    if distance > tolerance or (len(candidates) > 1 and candidates[1][0] - distance <= tie_margin):
+        return None
+    return key
+
+
 def word_at_point(word, point):
-    if "/" not in word.text:
-        return WORD_TOKEN.search(word.text)
+    matches = list(WORD_TOKEN.finditer(word.text))
+    if len(matches) <= 1:
+        return matches[0] if matches else None
     # Windows supplies one ink box for e.g. "read/write", with no glyph boxes
     # or source font. Scale proportional advances into that box before hit-testing.
     font = QFont("Segoe UI")
     font.setPixelSize(64)
     metrics = QFontMetricsF(font)
     position = (point.x() - word.rect.left()) / word.rect.width() * metrics.horizontalAdvance(word.text)
-    for match in WORD_TOKEN.finditer(word.text):
+    if point.x() <= word.rect.left():
+        return matches[0]
+    if point.x() >= word.rect.right():
+        return matches[-1]
+    for match in matches:
         left = metrics.horizontalAdvance(word.text[:match.start()])
         right = metrics.horizontalAdvance(word.text[:match.end()])
         if left <= position < right:
@@ -115,10 +162,9 @@ def passage_from_lines(lines, point):
     if point is None:
         return Passage("\n".join(" ".join(w.text for w in line) for line in lines))
 
-    hit = next(((i, j) for i, line in enumerate(lines) for j, word in enumerate(line)
-                if word.rect.contains(point)), None)
+    hit = nearest_box(point, (((i, j), word.rect) for i, line in enumerate(lines) for j, word in enumerate(line)))
     if hit is None:
-        raise ValueError("光标下没有识别到词。请指向单词中的字母，或点主窗口的「开始框选」。")
+        raise ValueError("光标附近没有可确定的词。请移近想查的词，或点主窗口的「开始框选」。")
     anchor, column = hit
     match = word_at_point(lines[anchor][column], point)
     if not match:
@@ -158,17 +204,7 @@ def passage_from_lines(lines, point):
     return sentence_at(" ".join(pieces), start, end)
 
 
-async def recognize(image, point=None):
-    engine = OcrEngine.try_create_from_language(Language("en-US"))
-    if engine is None:
-        raise ValueError("请在 Windows 设置 → 时间和语言 → 语言和区域中，为英语安装「基本输入」和文字识别。")
-    limit = OcrEngine.max_image_dimension
-    if max(image.width(), image.height()) > limit:
-        old = image.size()
-        image = image.scaled(QSize(limit, limit), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        if point is not None:
-            point = QPointF(point.x() * image.width() / old.width(),
-                            point.y() * image.height() / old.height())
+async def ocr_lines(engine, image):
     image = image.convertToFormat(QImage.Format_ARGB32)
     writer = DataWriter()
     try:
@@ -193,4 +229,38 @@ async def recognize(image, point=None):
             words.append(Word(item.text, rect))
         if words:
             lines.append(words)
-    return passage_from_lines(lines, point)
+    return lines
+
+
+async def recognize(image, point=None):
+    engine = OcrEngine.try_create_from_language(Language("en-US"))
+    if engine is None:
+        raise ValueError("请在 Windows 设置 → 时间和语言 → 语言和区域中，为英语安装「基本输入」和文字识别。")
+    limit = OcrEngine.max_image_dimension
+    frame, hit = image, point
+    if max(frame.width(), frame.height()) > limit:
+        frame = image.scaled(QSize(limit, limit), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        if point is not None:
+            hit = QPointF(point.x() * frame.width() / image.width(), point.y() * frame.height() / image.height())
+    lines = await ocr_lines(engine, frame)
+    try:
+        return passage_from_lines(lines, hit)
+    except ValueError:
+        if point is None:
+            raise
+        # A delimiter or a tie between close boxes is a targeting decision.
+        # Retry only when the OCR engine found no nearby ink box at all.
+        for line in lines:
+            for word in line:
+                margin = word.rect.height() * 0.51
+                if word.rect.adjusted(-margin, -margin, margin, margin).contains(hit):
+                    raise
+    # Windows OCR can skip a small label completely at native resolution.
+    # Give it one larger view of the original pixels, bounded even on a 4K screen.
+    width = min(image.width(), 1200, limit // 2)
+    height = min(image.height(), 320, limit // 2)
+    left = max(0, min(image.width() - width, int(point.x()) - width // 2))
+    top = max(0, min(image.height() - height, int(point.y()) - height // 2))
+    crop = image.copy(left, top, width, height)
+    crop = crop.scaled(2 * width, 2 * height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+    return passage_from_lines(await ocr_lines(engine, crop), (point - QPointF(left, top)) * 2)

@@ -28,7 +28,8 @@ class Notebook:
         source, gloss, translation = result
         with self.connection() as db:
             db.execute("""INSERT INTO entries(word, context, position, source, gloss, translation, due)
-                          VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(word, context, position) DO NOTHING""",
+                          VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(word, context, position) DO UPDATE SET
+                          source=excluded.source, gloss=excluded.gloss, translation=excluded.translation""",
                        (passage.word, passage.text, passage.selection[0], source, gloss, translation, int(time.time())))
 
     def entries(self):
