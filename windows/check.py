@@ -77,6 +77,7 @@ class Checks(unittest.TestCase):
                 for width, height in ((1080, 675), (820, 500), (740, 480), (570, 485), (540, 610), (540, 800)):
                     window.resize(width, height)
                     QApplication.processEvents()
+                    self.assertEqual(window.sidebar.height(), 36 if window.compact else 38)
                     self.assertGreaterEqual(window.wordmark.width(), window.wordmark.sizeHint().width())
                     for button in nav:
                         self.assertTrue(window.sidebar.rect().contains(button.geometry()))
