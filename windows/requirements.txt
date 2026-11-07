@@ -5,6 +5,7 @@ protobuf==7.36.2
 pycld2==0.42
 py3langid==0.4.0
 Janome==0.5.1
+tesserocr==2.12.0
 python-mecab-ko==1.3.7
 python-mecab-ko-dic==2.1.1.post2
 comtypes==1.4.17

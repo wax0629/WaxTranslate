@@ -1,9 +1,13 @@
 """Preferences for the Windows reader. The window owns persistence and system actions."""
-from PySide6.QtCore import QPointF, QRectF, QSignalBlocker, Qt
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+
+from PySide6.QtCore import QPointF, QRectF, QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout,
                                QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
 
+from install_model import DEFAULT_LANGUAGES, install_language, language_ready, translation_dir
 from languages import NAMES
 from theme import label
 
@@ -125,6 +129,8 @@ class PreferenceSection(QWidget):
 
 
 class SettingsPage(QScrollArea):
+    pack_finished = Signal(object)
+
     def __init__(self, parent=None):
         super().__init__(parent, objectName="settingsPage")
         self.setWidgetResizable(True)
@@ -182,6 +188,31 @@ class SettingsPage(QScrollArea):
         self.auto_online = Switch()
         setting_row(reading, "未收录词自动查百科", self.auto_online,
                     "本机查不到时，仅将选中的英文词条发送给 Wikidata。")
+        self.packs = PreferenceSection("语言包")
+        layout.addWidget(self.packs)
+        self.pack_choice = Choice()
+        self.pack_choice.setAccessibleName("选择要管理的语言包")
+        for code in NAMES:
+            self.pack_choice.addItem(NAMES[code], code)
+        defaults = "、".join(NAMES[c] for c in DEFAULT_LANGUAGES)
+        setting_row(self.packs.options, "离线语言", self.pack_choice, f"默认提供{defaults}。每个语言包包含识字和简体中文翻译资源。")
+        actions = QHBoxLayout()
+        self.pack_status = label("", "meta")
+        self.pack_status.setWordWrap(True)
+        self.pack_status.setTextFormat(Qt.PlainText)
+        actions.addWidget(self.pack_status, 1)
+        self.download = QPushButton("下载语言包")
+        actions.addWidget(self.download)
+        self.packs.options.addLayout(actions)
+        self.pack_pool = ThreadPoolExecutor(max_workers=1)
+        self.cancel_install = Event()
+        self.pack_job = None
+        self.pack_finished.connect(self.finish_pack)
+        self.download.clicked.connect(self.start_pack)
+        self.pack_choice.setCurrentIndex(next((i for i, code in enumerate(NAMES) if not language_ready(code)), 0))
+        self.pack_choice.currentIndexChanged.connect(self.refresh_packs)
+        self.source_language.currentIndexChanged.connect(self.select_missing_pack)
+        self.refresh_packs()
         layout.addWidget(self.system)
         self.notice = label("", "warning")
         self.notice.setTextFormat(Qt.PlainText)
@@ -196,8 +227,57 @@ class SettingsPage(QScrollArea):
         compact = self.viewport().width() < 650
         self.system.set_compact(compact)
         self.reading.set_compact(compact)
+        self.packs.set_compact(compact)
         margin = 16 if self.viewport().width() < 520 else 32
         self.widget().layout().setContentsMargins(margin, 15 if compact else 24, margin, 24)
+
+    def refresh_packs(self):
+        if self.pack_job is not None:
+            return
+        with QSignalBlocker(self.pack_choice):
+            for i in range(self.pack_choice.count()):
+                code = self.pack_choice.itemData(i)
+                status = "已安装" if language_ready(code) else "待下载"
+                self.pack_choice.setItemText(i, f"{NAMES[code]} · {status}")
+        code = self.pack_choice.currentData()
+        ready = language_ready(code)
+        self.pack_status.setText("已安装，可以离线使用。" if ready else
+                                 "已有翻译资源，下载后补齐识字模型。" if translation_dir(code) else
+                                 "下载并校验后即可使用。")
+        self.download.setEnabled(not ready)
+        self.download.setText("已安装" if ready else "下载语言包")
+
+    def select_missing_pack(self):
+        code = self.source_language.currentData()
+        if code and self.pack_job is None and not language_ready(code):
+            self.pack_choice.setCurrentIndex(self.pack_choice.findData(code))
+
+    def start_pack(self):
+        code = self.pack_choice.currentData()
+        if self.pack_job is not None or language_ready(code):
+            return
+        self.pack_choice.setEnabled(False)
+        self.download.setEnabled(False)
+        self.download.setText("下载中…")
+        self.pack_status.setText(f"正在下载并校验{NAMES[code]}语言包…")
+        self.pack_job = self.pack_pool.submit(install_language, code, cancel=self.cancel_install)
+        self.pack_job.add_done_callback(self.pack_finished.emit)
+
+    def finish_pack(self, job):
+        if self.cancel_install.is_set():
+            return
+        self.pack_job = None
+        self.pack_choice.setEnabled(True)
+        self.refresh_packs()
+        try:
+            job.result()
+        except Exception as error:
+            self.pack_status.setText(f"安装失败，可重新下载。{error}")
+            self.download.setText("重新下载")
+
+    def stop_downloads(self):
+        self.cancel_install.set()
+        self.pack_pool.shutdown(wait=False, cancel_futures=True)
 
     def set_startup_state(self, state, message=""):
         with QSignalBlocker(self.startup):

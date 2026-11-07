@@ -130,13 +130,7 @@ class LanguageTests(unittest.TestCase):
                     painter.end()
                     hit = QPointF(10 + metrics.horizontalAdvance(text[:text.index(word)]) +
                                   metrics.horizontalAdvance(word) / 2, 55 - metrics.capHeight() / 2)
-                installed = OcrEngine.try_create_from_language(Language(OCR_TAGS[code]))
-                if installed is None:
-                    with self.assertRaisesRegex(ValueError, NAMES[code] + "安装文字识别"):
-                        asyncio.run(recognize(image, hit, code))
-                    if code in ("ja", "ko", "ru"):
-                        continue  # These scripts require their own system OCR.
-                for setting in (("", code) if installed else ("",)):
+                for setting in ("", code):
                     read, result, _, language, _ = analyze(image, hit, None, setting)
                     self.assertEqual((read.word.casefold(), language), (word.casefold(), NAMES[code]), (setting, read))
                     self.assertIn("猫", result[1], (read, result))
@@ -145,6 +139,22 @@ class LanguageTests(unittest.TestCase):
                         _, result, _, name, _ = analyze(None, None, region, setting)
                         self.assertEqual(name, NAMES[code])
                         self.assertIn("猫", result[1])
+
+    def test_screen_word_and_region_on_small_japanese_titles_without_system_pack(self):
+        image = QImage(str(Path(__file__).parent / "testdata/ocr-japanese-list.png"))
+        self.assertFalse(image.isNull())
+        english = Language("en-US")
+        engines = SimpleNamespace(available_recognizer_languages=[english],
+                                  try_create_from_language=lambda lang: OcrEngine.try_create_from_language(lang)
+                                  if lang.language_tag == english.language_tag else None,
+                                  max_image_dimension=OcrEngine.max_image_dimension)
+        with patch("reader.OcrEngine", engines):
+            passage, result, _, language, _ = analyze(image, QPointF(64, 18), None)
+            self.assertEqual((language, passage.word, passage.text), ("日语", "傷", "誰かが傷を負うその瞬間を"))
+            self.assertIn("伤", result[1])
+            passage, result, _, language, _ = analyze(image.copy(12, 57, 70, 24), None, None)
+            self.assertEqual((language, passage.text), ("日语", "祝おう"))
+            self.assertIn("庆祝", result[1])
 
     def test_auto_ocr_retries_an_installed_script_after_empty_latin_pass(self):
         image, point = object(), QPointF(18, 12)

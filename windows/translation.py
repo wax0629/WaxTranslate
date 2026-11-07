@@ -2,14 +2,13 @@
 
 from concurrent.futures import CancelledError
 from functools import lru_cache
-from pathlib import Path
 import re
 from threading import Lock
 
 import ctranslate2
 import sentencepiece
 
-from install_model import MODELS, MODEL_DIR
+from install_model import translation_dir
 from languages import HANGUL, NAMES, SHORT_CYRILLIC, SUPPORTED, detect_source
 from lexicon import lookup_entry
 from reader import Passage, context_excerpt, korean_morphemes, word_spans
@@ -27,11 +26,9 @@ def engine(code):
 # Keep the Chinese leg and the two most recently used source models resident.
 @lru_cache(maxsize=3)
 def _load_engine(code):
-    package = MODELS[code].name
-    bundled = Path(__file__).resolve().parent.parent / "models" / package
-    model = bundled if bundled.is_dir() else MODEL_DIR / package
-    if not all((model / name).is_file() for name in MODELS[code].files):
-        raise ValueError(f"缺少{NAMES[code]}翻译模型。请运行 windows\\setup.cmd 或重新完整解压便携包。")
+    model = translation_dir(code)
+    if model is None:
+        raise ValueError(f"请在「设置 → 语言包」下载{NAMES[code]}，安装后重新翻译。")
     # SentencePiece's Windows file API cannot open some non-ASCII paths.
     tokenizer = sentencepiece.SentencePieceProcessor(model_proto=(model / "sentencepiece.model").read_bytes())
     translator = ctranslate2.Translator(str(model / "model"), device="cpu", compute_type="int8",
@@ -132,6 +129,13 @@ def isolated_translation(word, code):
             noun = re.fullmatch(r"This is (?:an? |the )?([^.!?]+)[.!]?", framed.text, re.I)
             if noun:
                 return Passage(noun[1])
+    if code == "ja" and re.fullmatch(r"[一-鿿々]+", word):
+        # Bare kanji nouns can produce clipped English output. Strip the
+        # nominal frame only when the first model preserves its grammar.
+        framed = translate_leg(Passage(f"それは{word}です。"), code)
+        noun = re.fullmatch(r"It is (?:an? |the )?([^.!?]+)[.!]?", framed.text, re.I)
+        if noun:
+            return Passage(noun[1])
     if code in QUOTED_WORD and word.isalpha():
         # Short formulae such as ありがとう and 감사합니다 need a sentence for
         # these models. Extract only an intact translation of the quotation.
