@@ -1,48 +1,52 @@
-"""Offline English speech. A short-lived child owns synthesis and audio playback."""
+"""Offline speech. A short-lived child owns synthesis and audio playback."""
 import asyncio
 import io
 import json
+import locale
 import sys
 import wave
 import winsound
+
+from languages import NAMES
 
 
 class SpeechUnavailable(Exception):
     pass
 
 
-def english_desktop_voice():
+def desktop_voice(language):
     from comtypes import COMError
     from comtypes.client import CreateObject
 
     voice = CreateObject("SAPI.SpVoice", dynamic=True)
 
-    def is_english(token):
+    def matches(token):
         try:
-            # SAPI stores hexadecimal Windows language IDs; 0x09 is English.
+            # SAPI stores hexadecimal Windows locale IDs.
             languages = token.GetAttribute("Language").split(";")
-            return any(int(code, 16) & 0x3ff == 0x09 for code in languages if code.strip())
+            return any(locale.windows_locale.get(int(code, 16), "").split("_")[0] == language
+                       for code in languages if code.strip())
         except (AttributeError, COMError, OSError, ValueError):
             return False
 
-    if is_english(voice.Voice):
+    if matches(voice.Voice):
         return voice
     tokens = voice.GetVoices()
     for index in range(tokens.Count):
         token = tokens.Item(index)
-        if is_english(token):
+        if matches(token):
             voice.Voice = token
             return voice
     return None
 
 
-async def modern_voice_audio(text, slow):
+async def modern_voice_audio(text, slow, language="en"):
     from winrt.windows.media.speechsynthesis import SpeechSynthesizer
     from winrt.windows.storage.streams import DataReader
 
-    voice = next((v for v in SpeechSynthesizer.all_voices if v.language.split("-")[0].lower() == "en"), None)
+    voice = next((v for v in SpeechSynthesizer.all_voices if v.language.split("-")[0].lower() == language), None)
     if voice is None:
-        raise SpeechUnavailable("请在 Windows「设置 → 时间和语言 → 语音」添加英语声音，然后重试。")
+        raise SpeechUnavailable(f"请在 Windows「设置 → 时间和语言 → 语音」添加{NAMES[language]}声音，然后重试。")
     with SpeechSynthesizer() as synth:
         synth.voice = voice
         synth.options.speaking_rate = 0.72 if slow else 1.0
@@ -54,16 +58,16 @@ async def modern_voice_audio(text, slow):
                 return bytes(audio)
 
 
-def synthesize(text, slow):
+def synthesize(text, slow, language="en"):
     from comtypes import COMError
 
     # Older desktop and modern Windows voices have separate inventories.
     try:
-        voice = english_desktop_voice()
+        voice = desktop_voice(language)
     except (COMError, OSError):
         voice = None
     if voice is None:
-        return asyncio.run(modern_voice_audio(text, slow))
+        return asyncio.run(modern_voice_audio(text, slow, language))
     from comtypes.client import CreateObject
 
     stream = CreateObject("SAPI.SpMemoryStream", dynamic=True)
@@ -79,12 +83,12 @@ def synthesize(text, slow):
 
 
 if __name__ == "__main__":
-    text, slow = json.loads(sys.stdin.buffer.read())
+    text, slow, language = json.loads(sys.stdin.buffer.read())
     try:
-        winsound.PlaySound(synthesize(text, slow), winsound.SND_MEMORY | winsound.SND_NODEFAULT)
+        winsound.PlaySound(synthesize(text, slow, language), winsound.SND_MEMORY | winsound.SND_NODEFAULT)
     except SpeechUnavailable as error:
         sys.stdout.buffer.write(str(error).encode("utf-8"))
         sys.exit(1)
     except Exception:
-        sys.stdout.buffer.write("未能播放英语语音。请检查 Windows 声音输出设备和已安装的英语声音，再试一次。".encode("utf-8"))
+        sys.stdout.buffer.write(f"未能播放语音。请检查 Windows 声音输出设备和已安装的{NAMES[language]}声音。".encode("utf-8"))
         sys.exit(1)

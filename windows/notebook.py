@@ -8,6 +8,12 @@ import time
 
 INTERVALS = (1, 3, 7, 14, 30, 60)
 
+ENTRIES_SCHEMA = """CREATE TABLE IF NOT EXISTS entries (
+    id INTEGER PRIMARY KEY, word TEXT NOT NULL, context TEXT NOT NULL,
+    position INTEGER NOT NULL, source TEXT NOT NULL, gloss TEXT NOT NULL,
+    translation TEXT NOT NULL, due INTEGER NOT NULL, streak INTEGER NOT NULL DEFAULT 0,
+    language TEXT NOT NULL DEFAULT 'en', UNIQUE(word, context, position, language))"""
+
 
 class Notebook:
     def __init__(self, path=None):
@@ -18,11 +24,17 @@ class Notebook:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(sqlite3.connect(self.path)) as db, db:
             db.row_factory = sqlite3.Row
-            db.execute("""CREATE TABLE IF NOT EXISTS entries (
-                id INTEGER PRIMARY KEY, word TEXT NOT NULL, context TEXT NOT NULL,
-                position INTEGER NOT NULL, source TEXT NOT NULL, gloss TEXT NOT NULL,
-                translation TEXT NOT NULL, due INTEGER NOT NULL, streak INTEGER NOT NULL DEFAULT 0,
-                UNIQUE(word, context, position))""")
+            db.execute(ENTRIES_SCHEMA)
+            if not db.execute("SELECT 1 FROM pragma_table_info('entries') WHERE name='language'").fetchone():
+                db.execute("BEGIN IMMEDIATE")
+                if not db.execute("SELECT 1 FROM pragma_table_info('entries') WHERE name='language'").fetchone():
+                    fields = "id, word, context, position, source, gloss, translation, due, streak"
+                    db.execute("ALTER TABLE entries RENAME TO entries_english")
+                    db.execute(ENTRIES_SCHEMA)
+                    db.execute(f"INSERT INTO entries({fields}) SELECT {fields} FROM entries_english")
+                    db.execute("DROP TABLE entries_english")
+                    db.execute("CREATE INDEX entries_due ON entries(due)")
+                db.commit()
             yield db
 
     def record_lookup(self, now=None):
@@ -64,10 +76,11 @@ class Notebook:
     def save(self, passage, result):
         source, gloss, translation = result
         with self.connection() as db:
-            db.execute("""INSERT INTO entries(word, context, position, source, gloss, translation, due)
-                          VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(word, context, position) DO UPDATE SET
+            db.execute("""INSERT INTO entries(word, context, position, source, gloss, translation, due, language)
+                          VALUES(?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(word, context, position, language) DO UPDATE SET
                           source=excluded.source, gloss=excluded.gloss, translation=excluded.translation""",
-                       (passage.word, passage.text, passage.selection[0], source, gloss, translation, int(time.time())))
+                       (passage.word, passage.text, passage.selection[0], source, gloss, translation,
+                        int(time.time()), passage.source_code or "en"))
 
     def entries(self):
         with self.connection() as db:

@@ -54,9 +54,10 @@ class HomeStatsTests(unittest.TestCase):
         db.close()
         self.assertEqual(self.book.home_stats(99), (0, 1, 0))
         self.assertEqual(self.book.home_stats(100), (0, 1, 1))
-        self.assertEqual(self.book.entries()[0]["streak"], 2)
+        old = self.book.entries()[0]
+        self.assertEqual((old["id"], old["streak"], old["language"]), (7, 2, "en"))
         self.book.record_lookup(100)
-        second = SimpleNamespace(word="bank", text="river bank", selection=(6, 10))
+        second = SimpleNamespace(word="bank", text="river bank", selection=(6, 10), source_code="en")
         with patch("notebook.time.time", return_value=100):
             self.book.save(second, ("词典", "岸", ""))
             self.book.save(second, ("词典", "河岸", ""))

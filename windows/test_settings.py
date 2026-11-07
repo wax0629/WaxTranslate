@@ -44,9 +44,12 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(page.trigger.currentData(), "right")
         self.assertTrue(page.auto_online.isChecked())
         self.assertEqual(page.close_behavior.currentData(), "tray")
+        self.assertEqual(window.workspace.source_code, "")
         self.login.set_enabled.assert_not_called()
 
         page.close_behavior.setCurrentIndex(page.close_behavior.findData("quit"))
+        page.source_language.setCurrentIndex(page.source_language.findData("de"))
+        self.assertEqual(window.workspace.source_label.text(), "德语")
         page.trigger.setCurrentIndex(page.trigger.findData("off"))
         page.auto_online.click()
         window.tabs.setCurrentWidget(window.home)
@@ -61,6 +64,7 @@ class SettingsTests(unittest.TestCase):
 
         reopened = self.window()
         self.assertEqual(reopened.preferences.close_behavior.currentData(), "quit")
+        self.assertEqual(reopened.workspace.source_code, "de")
         self.assertEqual(reopened.trigger.currentData(), "off")
         self.assertFalse(reopened.auto_online.isChecked())
         self.login.set_enabled.assert_not_called()

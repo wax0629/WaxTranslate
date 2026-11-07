@@ -226,7 +226,7 @@ class Checks(unittest.TestCase):
     def test_lookup_during_paragraph_translation(self):
         translating, release = Event(), Event()
 
-        def long_translation(_text, _stop):
+        def long_translation(_text, _stop, _source):
             translating.set()
             release.wait(10)
             return "段落译文"
@@ -255,7 +255,8 @@ class Checks(unittest.TestCase):
             log = folder / "last.json"
             worker.write_text(
                 "import json, sys, time\nfrom pathlib import Path\n"
-                "text, slow = json.loads(sys.stdin.buffer.read())\n"
+                "text, slow, language = json.loads(sys.stdin.buffer.read())\n"
+                "assert language == 'en'\n"
                 "Path(__file__).with_name('last.json').write_text(json.dumps([text,slow]))\n"
                 "if text == 'failure':\n"
                 "    sys.stdout.buffer.write('请检查声音输出设备'.encode('utf-8'))\n    sys.exit(1)\n"
@@ -361,10 +362,10 @@ class Checks(unittest.TestCase):
                 wait_until(card.save.isVisible)
                 self.assertIn("英语 · 名词", card.text.toPlainText())
                 window.invalidate()
-                source = "La méthode proposée permet de mesurer la température dans cet environnement."
+                source = "Il metodo proposto permette di misurare la temperatura in questo ambiente."
                 window.submit(point, passage=Passage(source))
                 wait_until(lambda: card.copy.isVisible() and card.copy.text() == "复制原文")
-                self.assertEqual(card.caption.text(), "法语原文")
+                self.assertEqual(card.caption.text(), "意大利语原文")
                 self.assertFalse(card.save.isVisible())
                 card.copy.click()
                 self.assertEqual(QApplication.clipboard().text(), source)
@@ -386,7 +387,7 @@ class Checks(unittest.TestCase):
         area = QApplication.primaryScreen().availableGeometry()
         point = area.topLeft() + QPoint(3, 4)
         try:
-            card.show_message("本机英译中", "正在读取并翻译…", point)
+            card.show_message("本机翻译", "正在读取并翻译…", point)
             QApplication.processEvents()
             start = card.pos()
             press = card.grip.mapToGlobal(card.grip.rect().center())
@@ -425,7 +426,7 @@ class Checks(unittest.TestCase):
             self.assertIn("an", card.text.textCursor().selectedText())
             self.assertEqual(card.pos(), start + delta)
             card.close()
-            card.show_message("本机英译中", "正在读取并翻译…", point)
+            card.show_message("本机翻译", "正在读取并翻译…", point)
             self.assertEqual(card.pos(), start)
         finally:
             card.close()
@@ -580,7 +581,7 @@ class Checks(unittest.TestCase):
                 self.assertFalse(ui.copy.isEnabled())
                 ui.submit.click()
                 wait_until(lambda: ui.pending is None)
-                self.assertIn("英文", ui.output.toPlainText())
+                self.assertIn("西班牙语", ui.output.toPlainText())
                 self.assertFalse(ui.copy.isEnabled())
                 ui.input.setPlainText(RIVER)
                 QTest.keyClick(ui.input, Qt.Key_Enter, Qt.ControlModifier)
@@ -861,7 +862,7 @@ class Checks(unittest.TestCase):
             wait_until(lambda: window.ticket != previous_ticket)
             # Moving after the shortcut must not retarget the delayed capture.
             move_cursor(sample.mapToGlobal(QPoint(5, 5)))
-            wait_until(lambda: window.card.isVisible() and window.card.caption.text() not in ("", "本机英译中"))
+            wait_until(window.card.save.isVisible)
             self.assertEqual(window.card.caption.text(), "句中释义")
             self.assertIn("岸", window.card.text.toPlainText())
             self.assertFalse(window.isVisible(), "A background lookup opened the main window")
@@ -903,7 +904,7 @@ class Checks(unittest.TestCase):
                 user.mouse_event(2, 0, 0, 0, 0)
                 user.mouse_event(4, 0, 0, 0, 0)
                 wait_until(lambda: speak.called)
-                speak.assert_called_once_with(card.listen, "bank", True)
+                speak.assert_called_once_with(card.listen, "bank", True, "en")
                 self.assertTrue(card.isVisible())
             button = window.card.copy
             center = button.mapToGlobal(button.rect().center())
@@ -972,8 +973,7 @@ class Checks(unittest.TestCase):
             home_ticket = window.ticket
             user.keybd_event(right_ctrl, 0x1D, 1, 0)
             user.keybd_event(right_ctrl, 0x1D, 3, 0)
-            wait_until(lambda: window.ticket != home_ticket and window.card.isVisible()
-                       and window.card.caption.text() != "本机英译中")
+            wait_until(lambda: window.ticket != home_ticket and window.card.save.isVisible())
             self.assertTrue(window.card.save.isVisible(),
                             (window.card.text.toPlainText(), target, demo.mapToGlobal(demo.rect().center())))
             self.assertEqual(window.saved_result[0].text, HOME_EXAMPLE)

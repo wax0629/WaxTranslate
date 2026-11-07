@@ -1,4 +1,4 @@
-"""Read English text in physical image pixels with the Windows OCR engine."""
+"""Read text in physical image pixels with the Windows OCR engine."""
 
 import re
 from dataclasses import dataclass, field
@@ -11,12 +11,16 @@ from winrt.windows.graphics.imaging import BitmapAlphaMode, BitmapPixelFormat, S
 from winrt.windows.media.ocr import OcrEngine
 from winrt.windows.storage.streams import DataWriter
 
+from languages import NAMES, OCR_TAGS, UnsupportedLanguage, detect_source
+
 
 # Keep a Latin identifier selectable in mixed text such as “看懂ChatGPT的输出”.
 # Periods and underscores inside an identifier belong to it; surrounding
 # punctuation and a slash separating alternatives do not.
 CJK = "\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af"
-ALNUM = rf"[^\W_{CJK}]"
+# Pasted PDFs may represent an accent as a separate combining mark. Keep it
+# with the base letter without normalizing away the original character offsets.
+ALNUM = rf"(?:[^\W_{CJK}][\u0300-\u036f]*)"
 WORD_TOKEN = re.compile(rf"(?i:\.net)(?:[0-9]+)?(?![A-Za-z_])|"
                         rf"[cC](?:\+\+(?:[0-9]+)?|#)|[fF]#|"
                         rf"{ALNUM}+(?:[-‐‑’'_.]{ALNUM}+)*|[{CJK}]+")
@@ -37,6 +41,7 @@ class Passage:
     # and its offset are part of a saved passage's identity.
     context: str = field(default="", compare=False, repr=False)
     context_offset: int | None = field(default=None, compare=False, repr=False)
+    source_code: str = field(default="", compare=False)
 
     @property
     def word(self):
@@ -96,7 +101,7 @@ def context_excerpt(passage):
     if re.search(r"\b(?:no|not|never|cannot|neither|nor|without|if|unless|until|whether|only|except|rather|instead)\b|n['’]t\b",
                  omitted, re.I):
         return None
-    return Passage(excerpt, (a - left, b - left))
+    return Passage(excerpt, (a - left, b - left), source_code=passage.source_code)
 
 
 def line_rect(words):
@@ -158,7 +163,7 @@ def word_at_point(word, point):
 
 def passage_from_lines(lines, point):
     if not lines:
-        raise ValueError("未识别到英文。请重新框选清晰、可见的文字。")
+        raise ValueError("未识别到文字。请重新框选清晰、可见的原文。")
     if point is None:
         return Passage("\n".join(" ".join(w.text for w in line) for line in lines))
 
@@ -168,7 +173,7 @@ def passage_from_lines(lines, point):
     anchor, column = hit
     match = word_at_point(lines[anchor][column], point)
     if not match:
-        raise ValueError("请指向一个英文词。")
+        raise ValueError("请指向一个词。")
     rects = [line_rect(line) for line in lines]
 
     def neighbors(direction):
@@ -232,10 +237,38 @@ async def ocr_lines(engine, image):
     return lines
 
 
-async def recognize(image, point=None):
-    engine = OcrEngine.try_create_from_language(Language("en-US"))
+async def recognize(image, point=None, source_code=""):
+    code = source_code or "en"
+    engine = OcrEngine.try_create_from_language(Language(OCR_TAGS[code]))
+    if engine is None and not source_code:
+        # All supported sources use Latin script. Start with any installed
+        # supported recognizer when English is unavailable.
+        for language in OcrEngine.available_recognizer_languages:
+            if language.language_tag.split("-")[0].lower() in NAMES:
+                engine = OcrEngine.try_create_from_language(language)
+                if engine is not None:
+                    break
     if engine is None:
-        raise ValueError("请在 Windows 设置 → 时间和语言 → 语言和区域中，为英语安装「基本输入」和文字识别。")
+        raise ValueError(f"请在 Windows 设置 → 时间和语言 → 语言和区域中，为{NAMES[code]}安装文字识别，或在阅读页粘贴原文。")
+    passage = await read_passage(engine, image, point)
+    passage.source_code = source_code
+    if not source_code:
+        try:
+            detected = detect_source(passage.text)
+        except UnsupportedLanguage:
+            return passage
+        if detected and detected != engine.recognizer_language.language_tag.split("-")[0].lower():
+            matched = OcrEngine.try_create_from_language(Language(OCR_TAGS[detected]))
+            if matched is not None:
+                try:
+                    passage = await read_passage(matched, image, point)
+                except ValueError:
+                    pass  # The first pass already found the requested occurrence.
+            passage.source_code = detected
+    return passage
+
+
+async def read_passage(engine, image, point):
     limit = OcrEngine.max_image_dimension
     frame, hit = image, point
     if max(frame.width(), frame.height()) > limit:

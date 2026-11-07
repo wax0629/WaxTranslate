@@ -245,7 +245,7 @@ class HomePage(QScrollArea):
         else:
             self.guide_title.setText("仅应用内查词")
             self.headline.setText("单击查词")
-            self.description.setText("在阅读页粘贴英文，点词看释义。")
+            self.description.setText("在阅读页粘贴原文，点词看释义。")
             self.region_hint.setText("点击「开始框选」，拖选屏幕上的原文。")
 
     def set_stats(self, today, saved, due):
