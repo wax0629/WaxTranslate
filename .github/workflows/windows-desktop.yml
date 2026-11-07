@@ -33,6 +33,17 @@ jobs:
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'new profile'
           & "$env:PORTABLE_APP\runtime\python.exe" windows\check_launcher.py "$env:PORTABLE_APP"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Verify default languages and download optional packs in a fresh profile
+        shell: pwsh
+        run: |
+          $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'new profile'
+          $python = "$env:PORTABLE_APP\runtime\python.exe"
+          & $python -c "import install_model as m; assert {c for c in m.MODELS if m.language_ready(c)} == set(m.DEFAULT_LANGUAGES)"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & $python "$env:PORTABLE_APP\windows\install_model.py" --all-languages
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & $python -c "import install_model as m; assert all(m.language_ready(c) for c in m.MODELS)"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Test packaged desktop at 100% and 150% Qt scale
         shell: pwsh
         run: |

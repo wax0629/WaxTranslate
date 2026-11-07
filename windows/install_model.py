@@ -1,7 +1,7 @@
 """Install the pinned offline models and English-Chinese dictionary."""
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from contextlib import closing
 import csv
 from dataclasses import dataclass
@@ -47,6 +47,45 @@ MODELS = {
     "pt": ModelPackage("translate-pt_en-1_9", "ae76df6f650895c16f2b582065014fab496755ca846ecb19fae81d51f332a38e"),
     "ru": ModelPackage("translate-ru_en-1_9", "e9ba8bf722d10a4a4c39f74289d5938fd47eac08dbe4ed0afd22d89445a5c3ac"),
 }
+DEFAULT_LANGUAGES = ("en", "ja", "ko")
+BUNDLED_MODELS = Path(__file__).resolve().parents[1] / "models"
+OCR_REV = "87416418657359cb625c412a48b6e1d6d41c29bd"
+OCR_MODELS = {
+    "de": ("deu", 1525436, "19d219bbb6672c869d20a9636c6816a81eb9a71796cb93ebe0cb1530e2cdb22d"),
+    "en": ("eng", 4113088, "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"),
+    "es": ("spa", 2294433, "6f2e04d02774a18f01bed44b1111f2cd7f3ba7ac9dc4373cd3f898a40ea6b464"),
+    "fr": ("fra", 1130365, "ced037562e8c80c13122dece28dd477d399af80911a28791a66a63ac1e3445ca"),
+    "it": ("ita", 2701314, "b8f89e1e785118dac4d51ae042c029a64edb5c3ee42ef73027a6d412748d8827"),
+    "ja": ("jpn", 2471260, "1f5de9236d2e85f5fdf4b3c500f2d4926f8d9449f28f5394472d9e8d83b91b4d"),
+    "ko": ("kor", 1677415, "6b85e11d9bbf07863b97b3523b1b112844c43e713df8b66418a081fd1060b3b2"),
+    "pt": ("por", 1982756, "c4932b937207a9514b7514d518b931a99938c02a28a5a5a553f8599ed58b7deb"),
+    "ru": ("rus", 3861738, "e16e5e036cce1d9ec2b00063cf8b54472625b9e14d893a169e2b0dedeb4df225"),
+}
+
+
+def complete_model(directory, package):
+    return all((directory / name).is_file() and (directory / name).stat().st_size for name in package.files)
+
+
+def translation_dir(code):
+    package = MODELS[code]
+    return next((base / package.name for base in (BUNDLED_MODELS, MODEL_DIR)
+                 if complete_model(base / package.name, package)), None)
+
+
+def ocr_file(code):
+    lang, size, _ = OCR_MODELS[code]
+    for base in (BUNDLED_MODELS, MODEL_DIR):
+        path = base / "tessdata" / f"{lang}.traineddata"
+        if path.is_file() and path.stat().st_size == size:
+            return path
+    return None
+
+
+def language_ready(code):
+    return ocr_file(code) is not None and translation_dir(code) is not None
+
+
 POS_PACKAGE = "averaged_perceptron_tagger_eng"
 POS_ARCHIVE = MODEL_DIR / f"{POS_PACKAGE}.zip"
 POS_SHA = "6025f530624335c67d6547d44757b357b4e79bae030a0383e9887a92c1718f0b"
@@ -164,9 +203,20 @@ def install_word_tags():
         os.replace(pending, POS_ARCHIVE)
 
 
-def install_model(package, archive=None):
+def download_resource(url, destination, cancel):
+    with urllib.request.urlopen(url, timeout=30) as response, destination.open("wb") as output:
+        while True:
+            if cancel is not None and cancel.is_set():
+                raise CancelledError()
+            chunk = response.read(512 * 1024)
+            if not chunk:
+                break
+            output.write(chunk)
+
+
+def install_model(package, archive=None, cancel=None):
     model = MODEL_DIR / package.name
-    if all((model / name).is_file() for name in package.files):
+    if complete_model(model, package):
         return
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=MODEL_DIR) as stage:
@@ -177,8 +227,7 @@ def install_model(package, archive=None):
             for base in mirrors:
                 url = f"{base}/{package.name}.argosmodel"
                 try:
-                    with urllib.request.urlopen(url, timeout=90) as response, archive.open("wb") as output:
-                        shutil.copyfileobj(response, output)
+                    download_resource(url, archive, cancel)
                     break
                 except (URLError, TimeoutError, IncompleteRead) as error:
                     if base == mirrors[-1]:
@@ -190,23 +239,45 @@ def install_model(package, archive=None):
         extracted = Path(stage) / package.name
         with zipfile.ZipFile(archive) as bundle:
             for name in package.files:
+                if cancel is not None and cancel.is_set():
+                    raise CancelledError()
                 path = extracted / name
                 path.parent.mkdir(exist_ok=True, parents=True)
                 with bundle.open(f"{package.archive_root or package.name}/{name}") as source, path.open("wb") as output:
                     shutil.copyfileobj(source, output)
         try:
             extracted.rename(model)
-        except FileExistsError:
-            if not all((model / name).is_file() for name in package.files):
-                raise RuntimeError(f"Incomplete model at {model}. Move that folder aside and retry.")
+        except OSError:
+            if not model.is_dir():
+                raise
+            # Repair a partial older installation with files from the verified archive.
+            for name in package.files:
+                dest = model / name
+                if not dest.is_file() or dest.stat().st_size == 0:
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(extracted / name, dest)
 
 
-def install(archive=None):
-    # Each verified language package is published atomically to its own
-    # directory. Overlap a few downloads on first install of the nine models.
+def install_language(code, archive=None, *, cancel=None):
+    if not ocr_file(code):
+        lang, _, digest = OCR_MODELS[code]
+        dest = MODEL_DIR / "tessdata" / f"{lang}.traineddata"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=dest.parent) as stage:
+            pending = Path(stage) / dest.name
+            url = f"https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/{OCR_REV}/{dest.name}"
+            download_resource(url, pending, cancel)
+            with pending.open("rb") as data:
+                if hashlib.file_digest(data, "sha256").hexdigest() != digest:
+                    raise ValueError("OCR model checksum mismatch.")
+            os.replace(pending, dest)
+    if not translation_dir(code):
+        install_model(MODELS[code], archive, cancel)
+
+
+def install(archive=None, codes=DEFAULT_LANGUAGES):
     with ThreadPoolExecutor(max_workers=3) as pool:
-        jobs = [pool.submit(install_model, package, archive if code == "en" else None)
-                for code, package in MODELS.items()]
+        jobs = [pool.submit(install_language, code, archive if code == "en" else None) for code in codes]
         for job in jobs:
             job.result()
 
@@ -214,7 +285,15 @@ def install(archive=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, help="use an already downloaded English-Chinese .argosmodel")
-    install(parser.parse_args().archive)
-    install_word_tags()
-    install_lexicon()
-    print(f"Models ready at {MODEL_DIR}")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--language", choices=MODELS, help="install one language's translation and OCR resources")
+    group.add_argument("--all-languages", action="store_true", help="install all supported languages for development")
+    args = parser.parse_args()
+    if args.language:
+        install_language(args.language)
+    else:
+        install(args.archive, MODELS if args.all_languages else DEFAULT_LANGUAGES)
+        if not args.all_languages:
+            install_word_tags()
+            install_lexicon()
+    print("Models ready.", flush=True)

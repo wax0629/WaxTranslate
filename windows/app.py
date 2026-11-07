@@ -389,6 +389,7 @@ class Window(QWidget):
     def tab_changed(self, index):
         if self.tabs.widget(index) is self.preferences:
             self.refresh_startup()
+            self.preferences.refresh_packs()
         elif self.tabs.widget(index) is self.reader_page:
             self.workspace.input.setFocus()
 
@@ -760,6 +761,7 @@ class Window(QWidget):
 
     def shutdown(self):
         self.stopping = True
+        self.preferences.stop_downloads()
         self.player.shutdown()
         self.gestures.closeWriteChannel()
         if self.gestures.state() != QProcess.NotRunning and not self.gestures.waitForFinished(2000):

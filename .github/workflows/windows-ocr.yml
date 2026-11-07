@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'windows/reader.py'
+      - 'windows/ocr_worker.py'
+      - 'windows/install_model.py'
       - 'windows/languages.py'
       - 'windows/test_languages.py'
       - 'windows/testdata/ocr-*.png'
@@ -26,6 +28,8 @@ jobs:
           $ocr = Start-Job -FilePath "$PWD/.github/scripts/install-test-ocr.ps1"
           try {
             .\windows\setup.cmd
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            .\.venv\Scripts\python.exe windows\install_model.py --all-languages
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
             Receive-Job -Job $ocr -Wait -ErrorAction Stop
             if ($ocr.State -ne 'Completed') { throw "Native OCR provisioning failed." }

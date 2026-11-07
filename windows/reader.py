@@ -1,17 +1,22 @@
 """Read text in physical image pixels with the Windows OCR engine."""
 
+import json
+from pathlib import Path
 import re
+import subprocess
+import sys
 from dataclasses import dataclass, field
 from math import hypot
 from threading import local
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QFont, QFontMetricsF, QImage
+from PySide6.QtGui import QFont, QFontMetricsF, QImage, QPainter
 from winrt.windows.globalization import Language
 from winrt.windows.graphics.imaging import BitmapAlphaMode, BitmapPixelFormat, SoftwareBitmap
 from winrt.windows.media.ocr import OcrEngine
 from winrt.windows.storage.streams import DataWriter
 
+from install_model import ocr_file
 from languages import CYRILLIC, HANGUL, KANA, NAMES, OCR_TAGS, UnsupportedLanguage, detect_source, script_ocr_score
 
 
@@ -35,15 +40,19 @@ def korean_morphemes(word):
     return _segmenters.korean.parse(word)
 
 
+def japanese_tokenizer():
+    if not hasattr(_segmenters, "japanese"):
+        from janome.tokenizer import Tokenizer
+        _segmenters.japanese = Tokenizer()
+    return _segmenters.japanese
+
+
 def word_spans(text, source_code=""):
     japanese = source_code == "ja" or (not source_code and KANA.search(text))
     for match in WORD_TOKEN.finditer(text):
         if japanese and re.fullmatch(rf"[{CJK}]+", match.group()):
-            if not hasattr(_segmenters, "japanese"):
-                from janome.tokenizer import Tokenizer
-                _segmenters.japanese = Tokenizer(wakati=True)
             start = match.start()
-            for surface in _segmenters.japanese.tokenize(match.group()):
+            for surface in japanese_tokenizer().tokenize(match.group(), wakati=True):
                 end = start + len(surface)
                 if any(c.isalpha() for c in surface):
                     yield start, end
@@ -232,6 +241,7 @@ def passage_from_lines(lines, point, source_code=""):
     if not match:
         raise ValueError("请指向一个词。")
     rects = [line_rect(line) for line in lines]
+    japanese_anchor = source_code == "ja" and any(KANA.search(w.text) for w in lines[anchor])
 
     def neighbors(direction):
         result = []
@@ -239,6 +249,10 @@ def passage_from_lines(lines, point, source_code=""):
         while True:
             choices = []
             for i, rect in enumerate(rects):
+                # An adjacent Latin credit under a Japanese title is a separate
+                # label even when both start at the same x and use the same size.
+                if japanese_anchor and all(w.text.isascii() for w in lines[i]):
+                    continue
                 height = max(current.height(), rect.height())
                 step = direction * (rect.center().y() - current.center().y())
                 overlap = min(current.right(), rect.right()) - max(current.left(), rect.left())
@@ -299,15 +313,99 @@ async def ocr_lines(engine, image):
     return lines
 
 
+def read_from_pack(image, point, code):
+    """Return the passage and mean recognition confidence on its own line(s)."""
+    if image.isNull():
+        raise ValueError("未识别到文字。请重新框选清晰、可见的原文。")
+    model = ocr_file(code)
+    if model is None:
+        raise ValueError(f"请在「设置 → 语言包」下载{NAMES[code]}识字和翻译资源。")
+    frame = image
+    single_line = False
+    if point is not None:
+        width, height = min(image.width(), 1200), min(image.height(), 96)
+        left = max(0, min(image.width() - width, int(point.x()) - width // 2))
+        top = max(0, min(image.height() - height, int(point.y()) - height // 2))
+        frame = image.copy(left, top, width, height)
+        point = point - QPointF(left, top)
+    elif frame.height() <= 64:
+        gray = frame.convertToFormat(QImage.Format_Grayscale8)
+        data, stride = gray.constBits(), gray.bytesPerLine()
+        last, bands = -4, 0
+        for y in range(gray.height()):
+            row = data[y * stride:y * stride + gray.width()]
+            if max(row) - min(row) >= 45:
+                if y - last > 3:
+                    bands += 1
+                last = y
+        single_line = bands == 1
+    if single_line and frame.width() >= 4 * frame.height():
+        # A little background around a tightly selected label keeps thin edge
+        # strokes from being interpreted as part of the image boundary.
+        padded = QImage(frame.width() + 8, frame.height() + 8, QImage.Format_RGB32)
+        padded.fill(frame.pixelColor(0, 0))
+        with QPainter(padded) as painter:
+            painter.drawImage(4, 4, frame)
+        frame = padded
+    # Enlarge small antialiased labels while bounding the cost of a full-screen region.
+    zoom = 2 if point is not None else (3 if image.height() <= 64 else 1.5)
+    factor = min(zoom, 3200 / max(frame.width(), frame.height()))
+    pixels = frame.scaled(max(1, round(frame.width() * factor)), max(1, round(frame.height() * factor)),
+                          Qt.IgnoreAspectRatio, Qt.SmoothTransformation).convertToFormat(QImage.Format_Grayscale8)
+    if point is not None:
+        point = QPointF(point.x() * pixels.width() / frame.width(), point.y() * pixels.height() / frame.height())
+    command = [str(Path(sys.executable).with_name("python.exe")), str(Path(__file__).with_name("ocr_worker.py")),
+               model.stem, str(pixels.width()), str(pixels.height()), str(pixels.bytesPerLine()), str(int(single_line))]
+    try:
+        job = subprocess.run(command, cwd=model.parent, input=bytes(pixels.constBits()), capture_output=True,
+                             check=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError(f"{NAMES[code]}离线识字失败，请检查语言包后重试。") from error
+
+    def rect(bounds):
+        x, y, right, bottom = bounds
+        return QRectF(x, y, right - x, bottom - y)
+
+    lines, line_boxes, confidence = [], [], []
+    for bounds, tokens in json.loads(job.stdout):
+        words = []
+        for text, box, _, blanks in tokens:
+            if code in ("ja", "ko") and words and not blanks:
+                # Tesseract tokenizes CJK internally. Reassemble the printed
+                # unspaced run before mapping to a Japanese or Korean morpheme.
+                words[-1].text += text
+                words[-1].rect = words[-1].rect.united(rect(box))
+            else:
+                words.append(Word(text, rect(box)))
+        if len(words) == 1:
+            words[0].rect = rect(bounds)
+        lines.append(words)
+        line_boxes.append(rect(bounds))
+        confidence.append(sum(token[2] for token in tokens) / len(tokens))
+    if point is not None:
+        hit = nearest_box(point, enumerate(line_boxes))
+        if hit is None:
+            raise ValueError("光标附近没有可确定的词。请指向标题文字。")
+        # Sparse labels on adjacent rows can be unrelated (song and artist).
+        lines, confidence = [lines[hit]], [confidence[hit]]
+    passage = passage_from_lines(lines, point, code)
+    passage.source_code = code
+    return passage, sum(confidence) / len(confidence)
+
+
 async def recognize(image, point=None, source_code=""):
     installed = {lang.language_tag.split("-")[0].lower(): lang for lang in OcrEngine.available_recognizer_languages}
 
     async def read(code):
         language = installed.get(code) or Language(OCR_TAGS[code])
         engine = OcrEngine.try_create_from_language(language)
-        if engine is None:
-            raise ValueError(f"请在 Windows 设置 → 时间和语言 → 语言和区域中，为{NAMES[code]}安装文字识别，或在「对照翻译」粘贴原文。")
-        return await read_passage(engine, image, point)
+        if engine is not None:
+            try:
+                return await read_passage(engine, image, point)
+            except ValueError:
+                if not source_code:
+                    raise
+        return read_from_pack(image, point, code)[0]
 
     if source_code:
         passage = await read(source_code)
@@ -347,6 +445,17 @@ async def recognize(image, point=None, source_code=""):
                 candidates.append(candidate)
         except ValueError:
             continue
+    if not candidates:
+        for code, script in (("ja", KANA), ("ko", HANGUL), ("ru", CYRILLIC)):
+            if not ocr_file(code):
+                continue
+            try:
+                candidate, confidence = read_from_pack(image, point, code)
+                if (confidence >= 55 and script.search(candidate.text)
+                        and (point is None or not candidate.word.isascii()) and detect_source(candidate.text) == code):
+                    candidates.append(candidate)
+            except ValueError:
+                continue
     if len(candidates) == 1:
         return candidates[0]
     if candidates:
