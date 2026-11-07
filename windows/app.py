@@ -25,6 +25,7 @@ from startup import LoginStartup
 from theme import APP_NAME, apply_theme, label, ui_icon
 from languages import UnsupportedLanguage
 from workspace import TextWorkspace
+from window_frame import HTCAPTION, caption_hit, configure_frame
 
 
 def image_point(point, logical_size, image_size):
@@ -199,6 +200,24 @@ class Window(QWidget):
             nav.setIconSize(QSize(23, 23))
             group.addButton(nav, index)
             rail.addWidget(nav)
+        controls = QHBoxLayout()
+        controls.setSpacing(0)
+        rail.addLayout(controls)
+        for icon, name, callback in (("minimize", "最小化", self.showMinimized),
+                                     ("maximize", "最大化", self.toggle_maximized),
+                                     ("close", "关闭", self.close)):
+            button = QPushButton(ui_icon(icon, "#242422"), "")
+            button.setProperty("role", "windowControl")
+            button.setAccessibleName(name)
+            button.setToolTip(name)
+            button.setFixedSize(32, 28)
+            button.setIconSize(QSize(16, 16))
+            button.clicked.connect(callback)
+            controls.addWidget(button)
+            if icon == "maximize":
+                self.maximize_button = button
+            elif icon == "close":
+                button.setObjectName("closeWindow")
         group.idClicked.connect(self.tabs.setCurrentIndex)
         self.tabs.currentChanged.connect(lambda index: group.button(index).setChecked(True))
 
@@ -297,12 +316,21 @@ class Window(QWidget):
         if available and not self.tray.isVisible():
             self.tray.show()
         kind = Qt.Tool if available else Qt.Window
-        if self.windowType() != kind:
-            # On Windows Qt.Tool supplies WS_EX_TOOLWINDOW. Explicit caption
-            # hints keep resizing and the minimize/maximize buttons available.
-            self.setWindowFlags(kind | Qt.WindowTitleHint | Qt.WindowSystemMenuHint
-                                | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
+        if self.windowType() != kind or not self.windowFlags() & Qt.CustomizeWindowHint:
+            self.setWindowFlags(kind | Qt.CustomizeWindowHint | Qt.WindowSystemMenuHint)
+        configure_frame(self)
         return available
+
+    def nativeEvent(self, event_type, message):
+        if event_type == b"windows_generic_MSG" and hasattr(self, "sidebar") and caption_hit(self, message):
+            return True, HTCAPTION
+        return super().nativeEvent(event_type, message)
+
+    def toggle_maximized(self):
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
 
     def open_home(self):
         self.sync_tray_window()
@@ -349,6 +377,12 @@ class Window(QWidget):
 
     def changeEvent(self, event):
         super().changeEvent(event)
+        if event.type() == QEvent.WindowStateChange and hasattr(self, "maximize_button"):
+            maximized = self.isMaximized()
+            name = "还原" if maximized else "最大化"
+            self.maximize_button.setIcon(ui_icon("restore" if maximized else "maximize", "#242422"))
+            self.maximize_button.setAccessibleName(name)
+            self.maximize_button.setToolTip(name)
         if event.type() == QEvent.WindowStateChange and self.isMinimized() and hasattr(self, "tray"):
             # Finish the native minimize transition before hiding the window.
             QTimer.singleShot(0, self.finish_minimize)
