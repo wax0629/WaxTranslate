@@ -178,20 +178,20 @@ class Window(QWidget):
         self.wordmark = label(APP_NAME, "brand")
         self.wordmark.setAccessibleName(APP_NAME)
         rail.addWidget(self.wordmark)
-        self.nav_buttons = []
         self.tabs = QStackedWidget()
         outer.addWidget(self.tabs, 1)
-        group = QButtonGroup(self)
-        pages = (("查词记录", "history"), ("对照翻译", "book"), ("生词本", "bookmark"), ("设置", "settings"))
-        for index, (name, icon) in enumerate(pages):
+        group = self.navigation = QButtonGroup(self)
+        for index, name in enumerate(("查词记录", "对照翻译", "生词本", "设置")):
+            if index:
+                rule = QFrame(objectName="pageDivider")
+                rule.setFixedSize(1, 15)
+                rail.addWidget(rule)
             nav = QPushButton(name)
             nav.setAccessibleName(name)
             nav.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
             nav.setCheckable(True)
             nav.setProperty("role", "nav")
             nav.setCursor(Qt.PointingHandCursor)
-            nav.setIconSize(QSize(16, 16))
-            self.nav_buttons.append((nav, ui_icon(icon, "#383831")))
             group.addButton(nav, index)
             rail.addWidget(nav)
         rail.addStretch()
@@ -319,13 +319,12 @@ class Window(QWidget):
         if self.compact == compact:
             return
         self.compact = compact
-        self.wordmark.setStyleSheet(f"font-size:{16 if compact else 26}px; padding-right:{4 if compact else 16}px;")
-        self.sidebar.setFixedHeight(46 if compact else 55)
-        self.rail.setSpacing(4 if compact else 6)
-        for button, icon in self.nav_buttons:
-            button.setIcon(QIcon() if compact else icon)
-            button.setFixedHeight(30 if compact else 34)
-            button.setStyleSheet(f"font-size:{13 if compact else 14}px; padding:0 {7 if compact else 11}px;")
+        self.wordmark.setStyleSheet(f"font-size:{16 if compact else 21}px; padding-right:{6 if compact else 14}px;")
+        self.sidebar.setFixedHeight(36 if compact else 38)
+        self.rail.setSpacing(3 if compact else 5)
+        for button in self.navigation.buttons():
+            button.setFixedHeight(28)
+            button.setStyleSheet(f"font-size:{13 if compact else 14}px; padding:0 {6 if compact else 8}px;")
         if compact:
             self.rail.setContentsMargins(12, 0, 8, 0)
             self.reading_layout.setContentsMargins(18, 18, 18, 18)
