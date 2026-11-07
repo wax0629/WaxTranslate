@@ -13,7 +13,7 @@ from winrt.windows.media.ocr import OcrEngine
 from app import analyze
 from languages import NAMES, OCR_TAGS, UnsupportedLanguage, detect_source
 from notebook import Notebook
-from reader import Passage, recognize, sentence_at
+from reader import Passage, WORD_TOKEN, recognize, sentence_at
 from translation import translate_text
 
 
@@ -59,17 +59,18 @@ class LanguageTests(unittest.TestCase):
             self.assertNotEqual(rows["en"]["gloss"], rows["fr"]["gloss"])
 
     def test_repeated_accented_word_uses_its_byte_range_in_first_model(self):
-        source = "Près du café, le deuxième café est fermé."
-        start = source.rindex("café")
-        passage = sentence_at(source, start, start + 4)
+        word = "cafe\u0301"
+        source = f"Près du {word}, le deuxième {word} est fermé."
+        match = [m for m in WORD_TOKEN.finditer(source) if m.group() == word][1]
+        passage = sentence_at(source, *match.span())
         from translation import aligned_selection
         with patch("translation.aligned_selection", wraps=aligned_selection) as align:
             analyze(None, None, passage, "fr")
         _, indices, _, tokenizer = align.call_args_list[0].args
         pieces = tokenizer.encode(source, return_type="proto").pieces
-        selected_start = len(source[:start].encode())
+        selected_start = len(source[:match.start()].encode())
         self.assertEqual(indices, [i for i, p in enumerate(pieces)
-                                   if p.begin < selected_start + len("café".encode()) and p.end > selected_start])
+                                   if p.begin < selected_start + len(word.encode()) and p.end > selected_start])
 
     def test_screen_word_and_region_with_installed_ocr(self):
         font = QFont("Segoe UI")

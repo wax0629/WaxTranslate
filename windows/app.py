@@ -558,7 +558,8 @@ class Window(QWidget):
             "de": ("Die Katze schläft auf dem Sofa im Wohnzimmer.", "Katze"),
             "es": ("El gato duerme en la casa de mi hermana.", "gato"),
         }
-        text, word = examples.get(self.workspace.source_code, ("They sat on the river bank and watched the water.", "bank"))
+        text, word = examples.get(self.workspace.source_code,
+                                  ("They sat on the river bank and watched the water.", "bank"))
         editor = self.workspace.input
         if not editor.toPlainText().strip():
             editor.setPlainText(text + "\n\nShe deposited her paycheck at the bank." if word == "bank" else text)

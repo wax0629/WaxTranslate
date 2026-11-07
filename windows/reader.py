@@ -18,7 +18,9 @@ from languages import NAMES, OCR_TAGS, UnsupportedLanguage, detect_source
 # Periods and underscores inside an identifier belong to it; surrounding
 # punctuation and a slash separating alternatives do not.
 CJK = "\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af"
-ALNUM = rf"[^\W_{CJK}]"
+# Pasted PDFs may represent an accent as a separate combining mark. Keep it
+# with the base letter without normalizing away the original character offsets.
+ALNUM = rf"(?:[^\W_{CJK}][\u0300-\u036f]*)"
 WORD_TOKEN = re.compile(rf"(?i:\.net)(?:[0-9]+)?(?![A-Za-z_])|"
                         rf"[cC](?:\+\+(?:[0-9]+)?|#)|[fF]#|"
                         rf"{ALNUM}+(?:[-‐‑’'_.]{ALNUM}+)*|[{CJK}]+")
