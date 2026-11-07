@@ -548,6 +548,11 @@ class Window(QWidget):
 
     def demo(self):
         examples = {
+            "ja": ("図書館で日本語の本を読みます。", "図書館"),
+            "ko": ("도서관에서 한국어 책을 읽습니다.", "도서관"),
+            "it": ("Il gatto dorme sul divano in salotto.", "gatto"),
+            "pt": ("O gato da minha irmã está dormindo no sofá da sala.", "gato"),
+            "ru": ("Кошка спит на диване в гостиной.", "Кошка"),
             "fr": ("Le chat dort dans la maison de ma sœur.", "chat"),
             "de": ("Die Katze schläft auf dem Sofa im Wohnzimmer.", "Katze"),
             "es": ("El gato duerme en la casa de mi hermana.", "gato"),

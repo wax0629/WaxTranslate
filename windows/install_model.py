@@ -1,6 +1,7 @@
 """Install the pinned offline models and English-Chinese dictionary."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 import csv
 from dataclasses import dataclass
@@ -29,14 +30,22 @@ class ModelPackage:
                     "sentencepiece.model", "README.md", "metadata.json")
 
 
+LEGACY_FILES = ("model/model.bin", "model/shared_vocabulary.txt", "sentencepiece.model", "README.md", "metadata.json")
 MODELS = {
     "en": ModelPackage("translate-en_zh-1_9", "433e7c4f034d87fbe2353161e05f18646d7999452f801a4e1f0378522b9850ab"),
     "fr": ModelPackage("translate-fr_en-1_9", "3b3052fee6bb1e8e8e632a26a723eb2a2c7710dfe73ba61ffd9b83e85d4f14c1"),
     "de": ModelPackage("translate-de_en-1_3", "becc2b0011f8249fcb89be9ecb75ba0d876b1fab93c28ee6ff0420936897d637"),
     # The compact Spanish SentencePiece release uses CT2's legacy text vocabulary.
     "es": ModelPackage("translate-es_en-1_0", "1b963aa0e0cb6e5ce874f0aa1a1949a19bc4d762e833532239a8834340f6b378",
-                       "es_en", ("model/model.bin", "model/shared_vocabulary.txt",
-                                 "sentencepiece.model", "README.md", "metadata.json")),
+                       "es_en", LEGACY_FILES),
+    "ja": ModelPackage("translate-ja_en-1_1", "623e3477959a815eb0a5ef53e09079ae8f1f9d3bbcd230473baf28c03fb83335",
+                       "ja_en", LEGACY_FILES),
+    "ko": ModelPackage("translate-ko_en-1_1", "6da8f3db6ca40f42b1875570a1c06856f6e17c7ef62845d85de217ba548c1471",
+                       "ko_en", LEGACY_FILES),
+    "it": ModelPackage("translate-it_en-1_0", "d2dd23b8b702f612b8127f07c7a0391f5f2a8b93344e6ddc9dd93c81824e85cb",
+                       "it_en", LEGACY_FILES),
+    "pt": ModelPackage("translate-pt_en-1_9", "ae76df6f650895c16f2b582065014fab496755ca846ecb19fae81d51f332a38e"),
+    "ru": ModelPackage("translate-ru_en-1_9", "e9ba8bf722d10a4a4c39f74289d5938fd47eac08dbe4ed0afd22d89445a5c3ac"),
 }
 POS_PACKAGE = "averaged_perceptron_tagger_eng"
 POS_ARCHIVE = MODEL_DIR / f"{POS_PACKAGE}.zip"
@@ -193,8 +202,13 @@ def install_model(package, archive=None):
 
 
 def install(archive=None):
-    for code, package in MODELS.items():
-        install_model(package, archive if code == "en" else None)
+    # Each verified language package is published atomically to its own
+    # directory. Overlap a few downloads on first install of the nine models.
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        jobs = [pool.submit(install_model, package, archive if code == "en" else None)
+                for code, package in MODELS.items()]
+        for job in jobs:
+            job.result()
 
 
 if __name__ == "__main__":

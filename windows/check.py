@@ -364,10 +364,10 @@ class Checks(unittest.TestCase):
                 wait_until(card.save.isVisible)
                 self.assertIn("英语 · 名词", card.text.toPlainText())
                 window.invalidate()
-                source = "Il metodo proposto permette di misurare la temperatura in questo ambiente."
+                source = "De voorgestelde methode maakt het mogelijk om de temperatuur in deze omgeving te meten."
                 window.submit(point, passage=Passage(source))
                 wait_until(lambda: card.copy.isVisible() and card.copy.text() == "复制原文")
-                self.assertEqual(card.caption.text(), "意大利语原文")
+                self.assertEqual(card.caption.text(), "荷兰语原文")
                 self.assertFalse(card.save.isVisible())
                 card.copy.click()
                 self.assertEqual(QApplication.clipboard().text(), source)
@@ -393,7 +393,9 @@ class Checks(unittest.TestCase):
             QApplication.processEvents()
             start = card.pos()
             press = card.grip.mapToGlobal(card.grip.rect().center())
-            delta = QPoint(32, 24)
+            # Leave the full screen height for the expanded card. At 150%
+            # scaling a downward drag can legitimately trigger edge clamping.
+            delta = QPoint(32, area.top() - start.y())
             for kind, location, button, buttons in [
                 (QEvent.MouseButtonPress, press, Qt.LeftButton, Qt.LeftButton),
                 (QEvent.MouseMove, press + delta, Qt.NoButton, Qt.LeftButton),
@@ -1028,11 +1030,23 @@ def load_tests(loader, tests, pattern):
     return tests
 
 
-if __name__ == "__main__":
-    if DESKTOP:
-        # A native input stall can block the event loop itself, bypassing
-        # wait_until's timeout. Preserve the stack in the runner log.
+class DesktopResult(unittest.TextTestResult):
+    def startTest(self, test):
+        # A native input stall can bypass wait_until. Time each test, since
+        # cold-loading nine models can take longer than one gesture timeout.
+        super().startTest(test)
         faulthandler.dump_traceback_later(75, exit=True)
+
+    def stopTest(self, test):
+        faulthandler.cancel_dump_traceback_later()
+        super().stopTest(test)
+
+
+class DesktopRunner(unittest.TextTestRunner):
+    resultclass = DesktopResult
+
+
+if __name__ == "__main__":
     app = QApplication([])
     if not DESKTOP:
         # Qt's offscreen plugin has no system font database on Windows.
@@ -1043,4 +1057,4 @@ if __name__ == "__main__":
     # A developer's lookup count, notebook and preferences are personal data.
     # The model installer paths are already resolved, so source runs can still use the real models.
     with TemporaryDirectory() as profile, patch.dict(os.environ, {"LOCALAPPDATA": profile}):
-        unittest.main()
+        unittest.main(testRunner=DesktopRunner if DESKTOP else None)

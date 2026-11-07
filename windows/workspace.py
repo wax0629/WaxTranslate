@@ -6,7 +6,7 @@ from PySide6.QtGui import QKeySequence, QShortcut, QTextCursor, QTextLine, QText
 from PySide6.QtWidgets import (QApplication, QBoxLayout, QCheckBox, QFrame, QHBoxLayout, QPlainTextEdit,
                                QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
-from reader import WORD_TOKEN, nearest_box, sentence_at
+from reader import nearest_box, sentence_at, word_spans
 from languages import NAMES
 from theme import label
 from translation import translate_text
@@ -23,6 +23,7 @@ class ReadingEditor(QPlainTextEdit):
     def __init__(self, parent=None, **kwargs):
         super().__init__(parent, **kwargs)
         self.single_click = False
+        self.source_code = ""
         self.press_position = None
 
     def insertFromMimeData(self, source):
@@ -94,18 +95,17 @@ class ReadingEditor(QPlainTextEdit):
         hit = nearest_box(point, boxes)
         return self.lookup_at(hit) if hit is not None else False
 
-    @staticmethod
-    def nearby_words(block, line, x, origin):
+    def nearby_words(self, block, line, x, origin):
         # Text positions returned by Qt are UTF-16 units. Limit geometry
         # work to words near the pointer on this visual (possibly wrapped) line.
         low, high = sorted((line.xToCursor(x - line.height()), line.xToCursor(x + line.height())))
         value = block.text()
         previous = units = 0
-        for match in WORD_TOKEN.finditer(value):
-            start = units + utf16_length(value[previous:match.start()])
-            units = start + utf16_length(match.group())
-            previous = match.end()
-            if units < low or not any(c.isalpha() for c in match.group()):
+        for a, b in word_spans(value, self.source_code):
+            start = units + utf16_length(value[previous:a])
+            units = start + utf16_length(value[a:b])
+            previous = b
+            if units < low or not any(c.isalpha() for c in value[a:b]):
                 continue
             if start > high:
                 break
@@ -129,13 +129,15 @@ class ReadingEditor(QPlainTextEdit):
         # when the paper contains a supplementary-plane symbol before the word.
         relative = pos - block.position()
         offset = len(value.encode("utf-16-le")[:relative * 2].decode("utf-16-le", errors="ignore"))
-        for word in WORD_TOKEN.finditer(value):
-            if not (word.start() <= offset < word.end() or at_caret and end == pos and offset == word.end()):
+        for a, b in word_spans(value, self.source_code):
+            trailing_caret = at_caret and end == pos and offset == b and (b == len(value) or not value[b].isalnum())
+            if not (a <= offset < b or trailing_caret):
                 continue
-            if not any(char.isalpha() for char in word.group()):
+            word = value[a:b]
+            if not any(char.isalpha() for char in word):
                 return False
-            begin = block.position() + utf16_length(value[:word.start()])
-            finish = begin + utf16_length(word.group())
+            begin = block.position() + utf16_length(value[:a])
+            finish = begin + utf16_length(word)
             if end is not None and end != pos and (pos != begin or end != finish):
                 return False
             cursor = QTextCursor(self.document())
@@ -145,7 +147,7 @@ class ReadingEditor(QPlainTextEdit):
             self.ensureCursorVisible()
             text = self.toPlainText()
             start = len(text.encode("utf-16-le")[:begin * 2].decode("utf-16-le"))
-            self.lookup_requested.emit(sentence_at(text, start, start + len(word.group())),
+            self.lookup_requested.emit(sentence_at(text, start, start + len(word)),
                                        self.viewport().mapToGlobal(self.cursorRect().bottomRight()))
             return True
         return False
@@ -173,7 +175,7 @@ class TextWorkspace(QWidget):
         self.panes.setSpacing(0)
         spread.addLayout(self.panes, 1)
         self.input = ReadingEditor(objectName="input")
-        self.input.setPlaceholderText("在这里粘贴英语、法语、德语或西班牙语原文…")
+        self.input.setPlaceholderText("在这里粘贴要译成中文的原文…")
         self.input.setAccessibleName("原文")
         self.output = QPlainTextEdit(objectName="translation")
         self.output.setAccessibleName("简体中文译文")
@@ -257,7 +259,7 @@ class TextWorkspace(QWidget):
         self.setFocusProxy(self.input)
 
     def set_source_language(self, code):
-        self.source_code = code
+        self.source_code = self.input.source_code = code
         self.source_label.setText(NAMES.get(code, "自动识别"))
         self.reset_result()
 

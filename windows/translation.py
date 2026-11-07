@@ -10,9 +10,9 @@ import ctranslate2
 import sentencepiece
 
 from install_model import MODELS, MODEL_DIR
-from languages import NAMES, SUPPORTED, detect_source
+from languages import HANGUL, NAMES, SHORT_CYRILLIC, SUPPORTED, detect_source
 from lexicon import lookup_entry
-from reader import Passage, context_excerpt
+from reader import Passage, context_excerpt, korean_morphemes, word_spans
 
 
 _engine_lock = Lock()
@@ -24,7 +24,8 @@ def engine(code):
         return _load_engine(code)
 
 
-@lru_cache(maxsize=len(MODELS))
+# Keep the Chinese leg and the two most recently used source models resident.
+@lru_cache(maxsize=3)
 def _load_engine(code):
     package = MODELS[code].name
     bundled = Path(__file__).resolve().parent.parent / "models" / package
@@ -42,7 +43,7 @@ def decoded(tokenizer, pieces):
     return tokenizer.decode(pieces).replace("▁", " ").replace("_", " ").strip()
 
 
-def aligned_selection(output, selected_tokens, source_length, tokenizer):
+def aligned_selection(output, selected_tokens, source_length, tokenizer, min_mass=0.40):
     target = output.hypotheses[0]
     attention = output.attention[0]
     # CT2 returns attention over the source tokens, either with or without the
@@ -58,7 +59,7 @@ def aligned_selection(output, selected_tokens, source_length, tokenizer):
         if not piece.strip("▁") or not any(char.isalnum() for char in piece):
             continue
         peak = max(range(len(row)), key=row.__getitem__)
-        if peak in indices and sum(row[k] for k in indices) >= 0.40:
+        if peak in indices and sum(row[k] for k in indices) >= min_mass:
             aligned.append(i)
     if not aligned or aligned[-1] - aligned[0] + 1 != len(aligned):
         return None
@@ -91,7 +92,7 @@ def translate_leg(passage, code):
     if len(pieces) <= 200:
         batches = [pieces]
     else:
-        sentences = re.split(r"(?<=[.!?])\s+|\n+", source)
+        sentences = re.split(r"(?<=[.!?])\s+|(?<=[。！？])\s*|\n+", source)
         batches = []
         for sentence in sentences:
             encoded = tokenizer.encode(sentence, out_type=str)
@@ -100,31 +101,76 @@ def translate_leg(passage, code):
     outputs = translator.translate_batch(batches, beam_size=4, max_decoding_length=512,
                                          return_attention=align, replace_unknowns=True)
     sentence = "\n".join(decoded(tokenizer, out.hypotheses[0]) for out in outputs)
+    # Some older models echo an isolated word (e.g. gatto -> "cat cat").
+    if code != "en" and source.isalpha():
+        words = sentence.split()
+        if len(words) > 1 and len({w.casefold() for w in words}) == 1:
+            return Passage(words[0])
     selection = None
     if align:
         # SentencePiece's serialized proto records UTF-8 byte offsets.
         start, end = (len(source[:pos].encode("utf-8")) for pos in passage.selection)
         selected = [i for i, part in enumerate(tokens.pieces) if part.begin < end and part.end > start]
-        selection = aligned_selection(outputs[0], selected, len(pieces), tokenizer)
+        # The older Japanese, Korean and Italian models can spread attention
+        # across unrelated words. Require a stronger link for a contextual gloss.
+        selection = aligned_selection(outputs[0], selected, len(pieces), tokenizer,
+                                      min_mass=0.60 if code in ("ja", "ko", "it") else 0.40)
     return Passage(sentence, selection)
 
 
+QUOTED_WORD = {"ja": "彼は「{}」と言いました。", "ko": '그는 "{}"라고 말했습니다.', "ru": "Он сказал: «{}»."}
+
+
+def isolated_translation(word, code):
+    if code == "ko" and word.isalpha() and HANGUL.search(word):
+        morphemes = korean_morphemes(word)
+        if morphemes and all(m.feature.pos in ("NNG", "NNP") for m in morphemes):
+            # This model translates isolated nouns like 고양이 as "Teens".
+            # A copular sentence supplies the missing grammar. Only accept
+            # the nominal complement when the model preserves the frame.
+            framed = translate_leg(Passage(f"이것은 {word}입니다."), code)
+            noun = re.fullmatch(r"This is (?:an? |the )?([^.!?]+)[.!]?", framed.text, re.I)
+            if noun:
+                return Passage(noun[1])
+    if code in QUOTED_WORD and word.isalpha():
+        # Short formulae such as ありがとう and 감사합니다 need a sentence for
+        # these models. Extract only an intact translation of the quotation.
+        framed = translate_leg(Passage(QUOTED_WORD[code].format(word)), code)
+        quote = re.fullmatch(r'''He said,? ["“]([^"“”]+)["”][.!]?''', framed.text, re.I)
+        if quote:
+            return Passage(quote[1])
+    return translate_leg(Passage(word), code)
+
+
 def translate(passage):
-    code = passage.source_code or detect_source(passage.text) or "en"
-    if not re.search("[A-Za-zÀ-ÖØ-öø-ÿŒœẞ]", passage.text):
+    code = passage.source_code or detect_source(passage.text)
+    if not any(c.isalpha() for c in passage.text):
         raise ValueError(f"请输入{SUPPORTED}原文。")
+    if not code:
+        if SHORT_CYRILLIC.fullmatch(passage.text.strip()):
+            code = "ru"
+        elif re.search("[A-Za-zÀ-ÖØ-öø-ÿŒœẞ]", passage.text):
+            code = "en"
+        else:
+            raise ValueError(f"无法确定原文语言。请在设置中指定{SUPPORTED}之一。")
     intermediate = passage
-    if code != "en":
+    bare = passage.text.rstrip(".。!")
+    short_expression = code in QUOTED_WORD and len(bare) <= 16 and bare.isalpha()
+    if short_expression and (code != "ja" or len(list(word_spans(bare, "ja"))) <= 3):
+        intermediate = isolated_translation(bare, code)
+    elif code != "en":
         intermediate = translate_leg(passage, code)
     chinese = translate_leg(intermediate, "en")
     sentence = chinese.text
     if not passage.selection:
         return "选区译文", sentence, ""
+    if passage.word == passage.text:
+        return "单词参考", sentence.rstrip("。.!！") or passage.word, sentence
     if chinese.selection:
         return "句中释义", strip_attached_particle(intermediate.word, chinese.word), sentence
     word = Passage(passage.word)
     if code != "en":
-        word = translate_leg(word, code)
+        word = isolated_translation(passage.word, code)
     gloss = translate_leg(word, "en").text.rstrip("。.!！")
     return "单词参考", gloss or passage.word, sentence
 
