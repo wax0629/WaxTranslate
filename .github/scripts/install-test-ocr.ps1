@@ -5,11 +5,11 @@
 $ErrorActionPreference = 'Stop'
 $iso = 'https://software-static.download.prss.microsoft.com/dbazure/888969d5-f34g-4e03-ac9d-1f9786c66749/26100.1.240331-1435.ge_release_amd64fre_SERVER_LOF_PACKAGES_OEM.iso'
 $packages = @(
-    @('Basic-ja-jp', '726542336-787132801')
-    @('OCR-ja-jp', '2045255680-2046782463')
-    @('Basic-ko-kr', '805877760-815622131')
-    @('OCR-ko-kr', '2046783488-2050191283')
-    @('Basic-ru-ru', '973547520-986008516')
+    @('Basic-ja-jp', '726542336-787132801'),
+    @('OCR-ja-jp', '2045255680-2046782463'),
+    @('Basic-ko-kr', '805877760-815622131'),
+    @('OCR-ko-kr', '2046783488-2050191283'),
+    @('Basic-ru-ru', '973547520-986008516'),
     @('OCR-ru-ru', '2051182592-2051344053')
 )
 foreach ($package in $packages) {
@@ -29,5 +29,3 @@ foreach ($package in $packages) {
     }
     Add-WindowsPackage -Online -PackagePath $cab -NoRestart -ErrorAction Stop | Out-Host
 }
-& ./.venv/Scripts/python.exe -c "from winrt.windows.media.ocr import OcrEngine; tags = {l.language_tag.split('-')[0] for l in OcrEngine.available_recognizer_languages}; print('Installed OCR:', sorted(tags)); assert {'ja', 'ko', 'ru'} <= tags"
-exit $LASTEXITCODE

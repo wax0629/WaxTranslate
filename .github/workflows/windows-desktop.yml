@@ -18,6 +18,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Install Japanese, Korean and Russian OCR on the test machine
+        shell: pwsh
+        run: ./.github/scripts/install-test-ocr.ps1
       - name: Install Windows development build
         run: .\windows\setup.cmd
       - name: Build and unpack the portable app
@@ -34,13 +37,12 @@ jobs:
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'new profile'
           & "$env:PORTABLE_APP\runtime\python.exe" windows\check_launcher.py "$env:PORTABLE_APP"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Install Japanese, Korean and Russian OCR on the test machine
-        shell: pwsh
-        run: ./.github/scripts/install-test-ocr.ps1
       - name: Test packaged desktop at 100% and 150% Qt scale
         shell: pwsh
         run: |
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'new profile'
+          & "$env:PORTABLE_APP/runtime/python.exe" -c "from winrt.windows.media.ocr import OcrEngine; tags = {l.language_tag.split('-')[0] for l in OcrEngine.available_recognizer_languages}; print('Installed OCR:', sorted(tags)); assert {'ja', 'ko', 'ru'} <= tags"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           foreach ($scale in '1', '1.5') {
             Write-Host "QT_SCALE_FACTOR=$scale"
             $env:QT_SCALE_FACTOR = $scale
