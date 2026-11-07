@@ -20,7 +20,9 @@ from PySide6.QtWidgets import QApplication, QLabel
 
 from app import Window, app_icon, image_point, image_rect
 from notebook import Notebook
+from popup import Card
 from reader import Passage, Word, passage_from_lines, recognize
+from theme import apply_theme
 from translation import translate
 from workspace import TextWorkspace
 
@@ -49,6 +51,51 @@ def wait_until(predicate):
 
 
 class Checks(unittest.TestCase):
+    def test_reading_card_layout(self):
+        card = Card()
+        area = QApplication.primaryScreen().availableGeometry()
+        point = area.bottomRight()
+        try:
+            source = "A bank near the <river> bank."
+            a = source.rindex("bank")
+            card.show_result(Passage(source, (a, a + 4)), "句中释义", "岸", "河岸边有一家银行。", point)
+            QApplication.processEvents()
+            short = card.height()
+            self.assertTrue(area.contains(card.geometry()))
+            self.assertEqual(card.text.verticalScrollBar().maximum(), 0)
+            self.assertIn(source, card.text.toPlainText())
+            doc = card.text.document()
+            first = doc.find("bank", doc.find("bank"))
+            second = doc.find("bank", first)
+            self.assertEqual(first.charFormat().background().style(), Qt.NoBrush)
+            self.assertNotEqual(second.charFormat().background().style(), Qt.NoBrush)
+
+            word = "inter" * 110
+            card.show_result(Passage(word, (0, len(word))), "单词参考", "参考", "译文", point)
+            QApplication.processEvents()
+            self.assertEqual(card.caption.text(), "单词参考")
+            self.assertGreater(card.text.verticalScrollBar().maximum(), 0)
+            self.assertEqual(card.text.horizontalScrollBar().maximum(), 0)
+            self.assertTrue(card.save.isVisibleTo(card))
+            card.text.verticalScrollBar().setValue(card.text.verticalScrollBar().maximum())
+            card.show_result(Passage("Example. " * 150), "选区译文", "示例。" * 150, "", point)
+            QApplication.processEvents()
+            self.assertTrue(area.contains(card.geometry()))
+            self.assertEqual(card.text.verticalScrollBar().value(), 0)
+            self.assertTrue(card.copy.isVisibleTo(card))
+            self.assertFalse(card.save.isVisibleTo(card))
+            self.assertTrue(card.rect().contains(card.copy.mapTo(card, card.copy.rect().center())))
+
+            card.show_message("需要处理", "未识别到 <text>。", point)
+            QApplication.processEvents()
+            self.assertLess(card.height(), short)
+            self.assertEqual(card.text.toPlainText(), "未识别到 <text>。")
+            self.assertFalse(card.copy.isVisibleTo(card))
+            QTest.keyClick(card.text, Qt.Key_Escape)
+            self.assertFalse(card.isVisible())
+        finally:
+            card.close()
+
     def test_inline_keyboard_translation(self):
         with patch.object(QProcess, "start"):
             window = Window()
@@ -283,9 +330,10 @@ class Checks(unittest.TestCase):
                 super().mouseReleaseEvent(event)
 
         sample = Sample(RIVER)
-        sample.setFont(QFont("Segoe UI", 20))
         sample.setMargin(16)
-        sample.setStyleSheet("color:black;background:white")
+        # This window represents another app. Keep its OCR sample independent
+        # of WaxTranslate's application-wide font rules.
+        sample.setStyleSheet("font:20pt 'Segoe UI'; color:black; background:white;")
         sample.setWindowFlag(Qt.WindowStaysOnTopHint)
         sample.adjustSize()
         area = QApplication.primaryScreen().availableGeometry()
@@ -366,7 +414,8 @@ class Checks(unittest.TestCase):
             begin_drag()
             user.mouse_event(4, 0, 0, 0, 0)
             key(ctrl, False)
-            wait_until(lambda: window.card.caption.text() == "选区译文")
+            wait_until(lambda: window.card.caption.text() in ("选区译文", "需要处理"))
+            self.assertEqual(window.card.caption.text(), "选区译文", window.card.text.toPlainText())
             self.assertIn("河岸", window.card.text.toPlainText())
             self.assertEqual(len(clicks), 1, "Capture drag reached the foreground window")
             window.demo()
@@ -400,4 +449,5 @@ if __name__ == "__main__":
         font = os.path.join(os.environ["WINDIR"], "Fonts", "segoeui.ttf")
         if QFontDatabase.addApplicationFont(font) == -1:
             raise RuntimeError(f"Cannot load Windows test font: {font}")
+    apply_theme(app)
     unittest.main()

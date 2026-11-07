@@ -1,7 +1,6 @@
 import asyncio
 import ctypes
 from concurrent.futures import ThreadPoolExecutor
-from html import escape
 import json
 import sqlite3
 from pathlib import Path
@@ -10,20 +9,17 @@ import sys
 from PySide6.QtCore import QPoint, QPointF, QProcess, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPen
 from PySide6.QtSvgWidgets import QSvgWidget
-from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton,
-                               QStackedWidget, QStyle, QSystemTrayIcon, QTextBrowser, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QFrame, QHBoxLayout, QMenu, QPushButton,
+                               QStackedWidget, QStyle, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 from gestures import LOOKUP_HINT, REGION_HINT
 from notebook import Notebook
+from popup import Card
 from library import Library
 from reader import Passage, recognize
 from theme import APP_NAME, apply_theme, label, nav_icon
 from translation import translate
 from workspace import TextWorkspace
-
-
-def plain(text):
-    return escape(text).replace("\n", "<br>")
 
 
 def image_point(point, logical_size, image_size):
@@ -40,90 +36,6 @@ def image_rect(rect, logical_size, image_size):
 
 def app_icon():
     return QIcon(str(Path(__file__).with_name("waxtranslate.ico")))
-
-
-class Card(QWidget):
-    dismissed = Signal()
-    save_requested = Signal()
-
-    def __init__(self):
-        super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setWindowTitle(f"{APP_NAME} · 翻译结果")
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        shell = QFrame(objectName="cardShell")
-        outer.addWidget(shell)
-        layout = QVBoxLayout(shell)
-        layout.setContentsMargins(18, 10, 14, 13)
-        layout.setSpacing(4)
-        bar = QHBoxLayout()
-        self.caption = label("", "meta")
-        self.caption.setWordWrap(True)
-        bar.addWidget(self.caption)
-        bar.addStretch()
-        close = QPushButton("×")
-        close.setProperty("role", "close")
-        close.setAccessibleName("关闭翻译结果")
-        close.setFixedSize(26, 26)
-        close.setToolTip("关闭浮窗 (Esc)")
-        close.clicked.connect(self.close)
-        bar.addWidget(close)
-        layout.addLayout(bar)
-        self.text = QTextBrowser(objectName="result")
-        self.text.document().setDocumentMargin(0)
-        self.text.setFrameShape(QTextBrowser.NoFrame)
-        self.text.setOpenLinks(False)
-        layout.addWidget(self.text)
-        self.divider = QFrame(objectName="hairline")
-        self.divider.setFixedHeight(1)
-        layout.addWidget(self.divider)
-        buttons = QHBoxLayout()
-        self.copy = QPushButton("复制译文")
-        self.save = QPushButton("收藏生词")
-        self.copy.setProperty("role", "quiet")
-        buttons.addWidget(self.copy)
-        buttons.addStretch()
-        buttons.addWidget(self.save)
-        layout.addLayout(buttons)
-        self.copy.clicked.connect(lambda: QApplication.clipboard().setText(self.translation))
-        self.save.clicked.connect(self.save_requested)
-        self.translation = ""
-
-    def present(self, caption, content, point, translation="", can_save=False):
-        self.translation = translation
-        self.divider.setVisible(bool(translation))
-        self.copy.setVisible(bool(translation))
-        self.save.setVisible(can_save)
-        self.save.setText("收藏生词")
-        self.save.setEnabled(True)
-        self.caption.setText(caption)
-        screen = QApplication.screenAt(point) or QApplication.primaryScreen()
-        area = screen.availableGeometry()
-        width = min(395, area.width())
-        self.text.setHtml(content)
-        self.text.verticalScrollBar().setValue(0)
-        self.text.document().setTextWidth(width - 48)
-        height = min(area.height(), max(106, min(400, int(self.text.document().size().height()) + (112 if translation else 76))))
-        self.resize(width, height)
-        x = max(area.left(), min(point.x() + 16, area.right() - width + 1))
-        y = point.y() + 22
-        if y + height > area.bottom() + 1:
-            y = max(area.top(), point.y() - height - 12)
-        self.move(x, y)
-        self.show()
-        self.raise_()
-        self.activateWindow()
-
-    def closeEvent(self, event):
-        self.dismissed.emit()
-        super().closeEvent(event)
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Escape:
-            self.close()
-        else:
-            super().keyPressEvent(event)
 
 
 class Selection(QWidget):
@@ -469,7 +381,7 @@ class Window(QWidget):
         top = max(0, min(local.y() - band // 2, height - band))
         shot = screen.grabWindow(0, 0, top, screen.size().width(), band)
         if shot.isNull():
-            self.card.present("截图失败", "请返回普通桌面后重试。", point)
+            self.card.show_message("截图失败", "请返回普通桌面后重试。", point)
             return
         logical = screen.size()
         logical.setHeight(band)
@@ -479,7 +391,7 @@ class Window(QWidget):
     def open_selection(self, screen, point, from_ctrl=False):
         shot = screen.grabWindow(0)
         if shot.isNull():
-            self.card.present("截图失败", "请返回普通桌面后重试。", point)
+            self.card.show_message("截图失败", "请返回普通桌面后重试。", point)
             return False
         overlay = Selection(screen, shot, from_ctrl)
         self.overlay = overlay
@@ -497,7 +409,7 @@ class Window(QWidget):
 
     def submit(self, point, image=None, hit=None, passage=None):
         ticket = self.ticket
-        self.card.present("本机英译中", "正在读取并翻译…", point)
+        self.card.show_message("本机英译中", "正在读取并翻译…", point)
         future = self.pool.submit(analyze, image, hit, passage)
         self.pending = future
 
@@ -512,21 +424,10 @@ class Window(QWidget):
         try:
             passage, (origin, gloss, sentence) = job.result()
         except Exception as error:
-            self.card.present("需要处理", plain(str(error)), point)
+            self.card.show_message("需要处理", str(error), point)
             return
-        content = ""
-        if passage.word:
-            content += f"<p style='margin:2px 0 6px; font: bold 25pt Georgia; color:#24231f'>{plain(passage.word)}</p>"
-        content += f"<p style='margin:0 0 12px;font-size:14pt;color:#272721'>{plain(gloss)}</p>"
-        context = plain(passage.text)
-        if passage.selection:
-            a, b = passage.selection
-            context = plain(passage.text[:a]) + "<b>" + plain(passage.word) + "</b>" + plain(passage.text[b:])
-        content += f"<p style='margin:6px 0 3px;color:#4b4c45;font-size:11pt'>{context}</p>"
-        if sentence:
-            content += f"<p style='margin:2px 0 4px;color:#63635d;font-size:10pt'>{plain(sentence)}</p>"
         self.saved_result = (passage, (origin, gloss, sentence)) if passage.selection else None
-        self.card.present(origin, content, point, translation=sentence or gloss, can_save=bool(passage.selection))
+        self.card.show_result(passage, origin, gloss, sentence, point)
 
     def closeEvent(self, event):
         if self.tray.isVisible():
