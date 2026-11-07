@@ -19,7 +19,7 @@ def action_icon(bookmark):
     painter = QPainter(pix)
     painter.setRenderHint(QPainter.Antialiasing)
     painter.scale(3, 3)
-    painter.setPen(QPen(QColor("#336256" if bookmark else "#606a65"), 1.3,
+    painter.setPen(QPen(QColor("#714235" if bookmark else "#6b594b"), 1.3,
                         Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     if bookmark:
         path = QPainterPath()
@@ -44,22 +44,22 @@ def action_icon(bookmark):
 
 
 CARD_STYLE = """
-    QFrame#readingCard {background:#fcfcf9; border:1px solid #dce0da; border-radius:17px;}
-    QLabel#origin {background:transparent; color:#58685f; font:12px 'Microsoft YaHei UI';}
+    QFrame#readingCard {background:#fcf5e4; border:1px solid #bda581; border-top:3px solid #853f35; border-radius:5px;}
+    QLabel#origin {background:transparent; color:#705b49; font:12px 'Microsoft YaHei UI';}
     QPushButton {font:12px 'Microsoft YaHei UI'; border:1px solid transparent; min-height:0;
-        padding:5px 9px; border-radius:8px;}
-    QPushButton#bookmark {background:#e7efea; color:#2c5748;}
-    QPushButton#bookmark:hover {background:#dae8df;}
-    QPushButton#bookmark:pressed {background:#cddfd2;}
-    QPushButton#bookmark:disabled {background:#edf1ed; color:#546b5d;}
-    QPushButton#copy, QPushButton#dismiss, QPushButton#expand {background:transparent; color:#59655e;}
-    QPushButton#copy:hover, QPushButton#dismiss:hover, QPushButton#expand:hover {background:#ebeeea; color:#25372c;}
+        padding:5px 9px; border-radius:3px;}
+    QPushButton#bookmark {background:#efdfbf; color:#64392d;}
+    QPushButton#bookmark:hover {background:#e6cfa8;}
+    QPushButton#bookmark:pressed {background:#d9bf94;}
+    QPushButton#bookmark:disabled {background:#efe5cf; color:#746451;}
+    QPushButton#copy, QPushButton#dismiss, QPushButton#expand {background:transparent; color:#685648;}
+    QPushButton#copy:hover, QPushButton#dismiss:hover, QPushButton#expand:hover {background:#f0e3c8; color:#3b2b21;}
     QPushButton#dismiss {font:17px 'Segoe UI'; padding:0; border-radius:10px;}
-    QPushButton:focus {border-color:#6b8d7d;}
+    QPushButton:focus {border-color:#935345;}
     QTextBrowser {background:transparent; border:0; padding:0;
-        selection-background-color:#ccdfd3; selection-color:#18281e;}
+        selection-background-color:#e7c8a7; selection-color:#37241c;}
     QScrollBar:vertical {background:transparent; width:6px; margin:1px 0;}
-    QScrollBar::handle:vertical {background:#bac5bd; border-radius:3px; min-height:22px;}
+    QScrollBar::handle:vertical {background:#bda789; border-radius:3px; min-height:22px;}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {height:0;}
     QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {background:transparent;}
 """
@@ -83,7 +83,7 @@ class Card(QWidget):
         shadow = QGraphicsDropShadowEffect(self.shell)
         shadow.setBlurRadius(16)
         shadow.setOffset(0, 4)
-        shadow.setColor(QColor(29, 41, 32, 40))
+        shadow.setColor(QColor(57, 36, 23, 51))
         self.shell.setGraphicsEffect(shadow)
         outer.addWidget(self.shell)
         body = QVBoxLayout(self.shell)

@@ -17,7 +17,7 @@ WaxTranslate 的 macOS 版使用 Vision 在本机识字，使用 Apple 翻译处
 
 ## WaxTranslate Windows 桌面版
 
-![Windows 首页：在漫画人物旁试查 bank，下方为示例词本的学习记录](Assets/Previews/windows-home.png)
+![Windows 首页：在河岸版画旁试查 bank，下方展示示例学习记录](Assets/Previews/windows-home.png)
 
 在 Windows 11 x64 上完整解压便携包，双击 `WaxTranslate.exe`。程序默认在系统托盘待命，可以直接取词。点击时钟旁的 WaxTranslate 图标（可能在「显示隐藏的图标」里），或再次双击启动器，即可打开主窗口。包内含运行环境和英译中模型。屏幕取词需要系统的英语 OCR 语言功能，也可以在「阅读」页粘贴英文翻译。
 
