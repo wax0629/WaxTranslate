@@ -393,7 +393,9 @@ class Checks(unittest.TestCase):
             QApplication.processEvents()
             start = card.pos()
             press = card.grip.mapToGlobal(card.grip.rect().center())
-            delta = QPoint(32, 24)
+            # Leave the full screen height for the expanded card. At 150%
+            # scaling a downward drag can legitimately trigger edge clamping.
+            delta = QPoint(32, area.top() - start.y())
             for kind, location, button, buttons in [
                 (QEvent.MouseButtonPress, press, Qt.LeftButton, Qt.LeftButton),
                 (QEvent.MouseMove, press + delta, Qt.NoButton, Qt.LeftButton),
