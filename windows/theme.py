@@ -14,14 +14,27 @@ def label(text, role):
     return widget
 
 
-def nav_icon(book=False, *, settings=False):
+def nav_icon(book=False, *, settings=False, home=False):
     pix = QPixmap(48, 48)
     pix.fill(Qt.transparent)
     p = QPainter(pix)
     p.setRenderHint(QPainter.Antialiasing)
     p.scale(2, 2)
     p.setPen(QPen(QColor("#55534b"), 1.55, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-    if settings:
+    if home:
+        path = QPainterPath(QPointF(3, 10.5))
+        path.lineTo(12, 3.5)
+        path.lineTo(21, 10.5)
+        path.moveTo(5.5, 9)
+        path.lineTo(5.5, 20)
+        path.lineTo(10, 20)
+        path.lineTo(10, 14)
+        path.lineTo(14, 14)
+        path.lineTo(14, 20)
+        path.lineTo(18.5, 20)
+        path.lineTo(18.5, 9)
+        p.drawPath(path)
+    elif settings:
         for y, x in ((6, 9), (12, 15), (18, 10)):
             p.drawLine(QPointF(3.5, y), QPointF(x - 2, y))
             p.drawLine(QPointF(x + 2, y), QPointF(20.5, y))
@@ -50,8 +63,24 @@ def apply_theme(app):
     app.setFont(QFont("Microsoft YaHei UI", 10))
     app.setStyleSheet("""
         QWidget {color:#272722; font-size:13px;}
-        QWidget#desk, QWidget#home, QWidget#library, QWidget#settingsSurface, QScrollArea#settingsPage {
+        QWidget#desk, QWidget#home, QWidget#readingPage, QWidget#library, QWidget#settingsSurface, QScrollArea#settingsPage,
+        QScrollArea#lookupHome {
             background:#fbfaf7;}
+        QFrame#gesturePanel {background:#eaf1eb; border:1px solid #d8e3d9; border-radius:14px;}
+        QLabel[role="homeSection"] {color:#4c6758; font-weight:600; font-size:13px;}
+        QLabel[role="gestureHeadline"] {color:#20392c; font-weight:650; font-size:27px;}
+        QLabel[role="gestureKey"] {background:#fff; color:#284a36; border:1px solid #b5c9ba;
+            border-bottom:3px solid #b5c9ba; border-radius:7px; font-size:21px; font-weight:600; padding:0 9px;}
+        QLabel[role="gestureDescription"] {color:#46594c; font-size:14px;}
+        QFrame#gestureSample {background:#fcfdfb; border:1px solid #d6e1d7; border-radius:8px;}
+        QLabel[role="exampleText"], QPushButton#sampleWord {font-family:'Segoe UI'; font-size:17px; color:#334137;}
+        QPushButton#sampleWord {background:#dceadf; color:#204f36; font-weight:600; min-height:0;
+            border-radius:4px; border:1px solid transparent; padding:0 3px;}
+        QPushButton#sampleWord:hover {background:#cddfd1;}
+        QPushButton#sampleWord:focus {border-color:#587a61;}
+        QFrame#homeStats {background:#fff; border:1px solid #e2dfd6; border-radius:11px;}
+        QFrame#metricDivider {background:#e6e3da; border:0; min-width:1px; max-width:1px;}
+        QLabel[role="metricValue"] {font-family:'Segoe UI'; font-size:26px; font-weight:600; color:#293d30;}
         QFrame#settingsGroup {background:#fff; border:1px solid #e2dfd6; border-radius:12px;}
         QFrame#settingsGroup QFrame#hairline {min-height:1px;}
         QFrame#sidebar {background:#f0eee7; border:0; border-right:1px solid #e3e0d8;}
@@ -63,8 +92,6 @@ def apply_theme(app):
         QLabel[role="settingsSection"] {color:#536459; font-size:12px; font-weight:600;}
         QLabel[role="meta"] {color:#69685f; font-size:12px;}
         QLabel[role="language"] {color:#58594f; font-size:12px; font-weight:600;}
-        QLabel[role="key"] {color:#56564e; background:#f2f1eb; border:1px solid #e2dfd6;
-            border-radius:5px; padding:2px 7px; font-size:12px;}
         QLabel[role="warning"] {color:#963f26;}
         QFrame#translationPane, QFrame#editor, QTextBrowser#entry, QListWidget#words {
             background:white; border:1px solid #e2dfd6; border-radius:12px;}
@@ -97,10 +124,6 @@ def apply_theme(app):
         QPushButton[role="quiet"] {background:transparent;
             border:1px solid transparent; color:#56574e; padding:4px 8px;}
         QPushButton[role="quiet"]:hover {background:#eeede7; color:#20211e;}
-        QPushButton[role="disclosure"] {background:transparent; border:1px solid transparent; padding:3px 0;
-            color:#393a35; font-size:13px; font-weight:600;}
-        QPushButton[role="disclosure"]:hover {color:#171814;}
-        QPushButton[role="disclosure"]:focus {border-color:#6589ab;}
         QPushButton[role="sample"] {background:#e7efe8; color:#315947; border:1px solid transparent;
             border-radius:7px; padding:2px 8px; min-height:16px; font-size:12px;}
         QPushButton[role="sample"]:hover {background:#dae8dd;}

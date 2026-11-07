@@ -1,5 +1,6 @@
-"""Persistent user-selected vocabulary. Due times are Unix timestamps."""
+"""User-selected vocabulary and the current local day's aggregate lookup count."""
 from contextlib import closing, contextmanager
+from datetime import date
 from pathlib import Path
 import os
 import sqlite3
@@ -23,6 +24,42 @@ class Notebook:
                 translation TEXT NOT NULL, due INTEGER NOT NULL, streak INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(word, context, position))""")
             yield db
+
+    def record_lookup(self, now=None):
+        """Count one completed word lookup without storing its text or occurrence."""
+        with self.connection() as db:
+            # Assign the local day after preceding writers, including at midnight.
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("""CREATE TABLE IF NOT EXISTS lookup_counter (
+                id INTEGER PRIMARY KEY CHECK (id = 1), day TEXT NOT NULL, total INTEGER NOT NULL)""")
+            # Subsequent dashboard refreshes can count the schedule directly,
+            # without scanning saved sentences or their translations.
+            db.execute("CREATE INDEX IF NOT EXISTS entries_due ON entries(due)")
+            day = date.fromtimestamp(time.time() if now is None else now).isoformat()
+            row = db.execute("""INSERT INTO lookup_counter(id, day, total) VALUES(1, ?, 1)
+                                ON CONFLICT(id) DO UPDATE SET day=excluded.day,
+                                    total=CASE WHEN day=excluded.day THEN total+1 ELSE 1 END
+                                RETURNING total""", (day,)).fetchone()
+            return row["total"]
+
+    def home_stats(self, now=None):
+        """Return today's lookups, saved entries and entries currently due."""
+        if not self.path.exists():
+            return 0, 0, 0
+        now = time.time() if now is None else now
+        day = date.fromtimestamp(now).isoformat()
+        with self.connection() as db:
+            # Read one snapshot if a save or a new lookup happens concurrently.
+            db.execute("BEGIN")
+            saved, due = db.execute("""SELECT (SELECT count(*) FROM entries),
+                                              (SELECT count(*) FROM entries WHERE due <= ?)""", (now,)).fetchone()
+            # Pre-dashboard notebooks may have vocabulary but no counter.
+            exists = db.execute("""SELECT 1 FROM sqlite_master
+                                   WHERE type='table' AND name='lookup_counter'""").fetchone()
+            if not exists:
+                return 0, saved, due
+            row = db.execute("SELECT total FROM lookup_counter WHERE id=1 AND day=?", (day,)).fetchone()
+            return (row["total"] if row else 0), saved, due
 
     def save(self, passage, result):
         source, gloss, translation = result
