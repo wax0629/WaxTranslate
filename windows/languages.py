@@ -30,6 +30,15 @@ def _sentence_identifier():
     return LanguageIdentifier.from_model_file(MODEL_FILE, norm_probs=True)
 
 
+def script_ocr_score(text, code):
+    # Compare independent recognizers on the same pixels. A stray kana glyph
+    # in a failed Japanese pass must not outrank a complete Korean sentence.
+    native = {"ja": r"[ぁ-ゖァ-ヺｦ-ﾝ一-鿿]", "ko": HANGUL, "ru": CYRILLIC}[code]
+    count = len(re.findall(native, text))
+    probability = dict(_sentence_identifier().rank(text)).get(code, 0)
+    return count * (0.25 + 0.75 * probability)
+
+
 def detect_source(text):
     """Return a language code, leaving ambiguous short Latin input unconfirmed."""
     try:

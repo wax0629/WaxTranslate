@@ -12,7 +12,7 @@ from winrt.windows.graphics.imaging import BitmapAlphaMode, BitmapPixelFormat, S
 from winrt.windows.media.ocr import OcrEngine
 from winrt.windows.storage.streams import DataWriter
 
-from languages import CYRILLIC, HANGUL, KANA, NAMES, OCR_TAGS, UnsupportedLanguage, detect_source
+from languages import CYRILLIC, HANGUL, KANA, NAMES, OCR_TAGS, UnsupportedLanguage, detect_source, script_ocr_score
 
 
 # Keep a Latin identifier selectable in mixed text such as “看懂ChatGPT的输出”.
@@ -336,6 +336,7 @@ async def recognize(image, point=None, source_code=""):
 
     # A Latin OCR engine may produce nothing or punctuation over kana,
     # Hangul or Cyrillic. Retry installed recognizers for those scripts only.
+    candidates = []
     for code, script in (("ja", KANA), ("ko", HANGUL), ("ru", CYRILLIC)):
         if code == first or code not in installed:
             continue
@@ -343,9 +344,13 @@ async def recognize(image, point=None, source_code=""):
             candidate = await read(code)
             if script.search(candidate.text) and detect_source(candidate.text) == code:
                 candidate.source_code = code
-                return candidate
+                candidates.append(candidate)
         except ValueError:
             continue
+    if len(candidates) == 1:
+        return candidates[0]
+    if candidates:
+        return max(candidates, key=lambda p: script_ocr_score(p.text, p.source_code))
     if passage:
         return passage
     raise initial_error

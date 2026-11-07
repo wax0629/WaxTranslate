@@ -140,8 +140,11 @@ class LanguageTests(unittest.TestCase):
                     read, result, _, language, _ = analyze(image, hit, None, setting)
                     self.assertEqual((read.word.casefold(), language), (word.casefold(), NAMES[code]), (setting, read))
                     self.assertIn("猫", result[1], (read, result))
-                    _, region, _, _, _ = analyze(image, None, None, setting)
-                    self.assertIn("猫", region[1])
+                    region = asyncio.run(recognize(image, None, setting))
+                    with self.subTest(setting=setting or "auto", raw=region.text, detected=region.source_code):
+                        _, result, _, name, _ = analyze(None, None, region, setting)
+                        self.assertEqual(name, NAMES[code])
+                        self.assertIn("猫", result[1])
 
     def test_auto_ocr_retries_an_installed_script_after_empty_latin_pass(self):
         image, point = object(), QPointF(18, 12)
@@ -161,3 +164,12 @@ class LanguageTests(unittest.TestCase):
                 self.assertEqual([c.args for c in read.await_args_list],
                                  [(Language("en-US").language_tag, image, point),
                                   (Language(OCR_TAGS[code]).language_tag, image, point)])
+
+    def test_partial_kana_does_not_win_over_a_complete_korean_region(self):
+        engines = SimpleNamespace(
+            available_recognizer_languages=[Language(tag) for tag in ("en-US", "ja-JP", "ko-KR")],
+            try_create_from_language=lambda lang: lang.language_tag)
+        with patch("reader.OcrEngine", engines), patch("reader.read_passage", side_effect=[
+                ValueError("未识别到文字"), Passage("ノ"), Passage(SAMPLES["ko"][0])]):
+            result = asyncio.run(recognize(object()))
+        self.assertEqual((result.source_code, result.text), ("ko", SAMPLES["ko"][0]))
