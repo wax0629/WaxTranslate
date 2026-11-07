@@ -101,9 +101,12 @@ def verify_frame(window):
         assert user.ClientToScreen(window, ctypes.byref(origin))
         # Only the native resize border should separate the client from each edge.
         assert abs((origin.y - first.top) - (origin.x - first.left)) <= 2
-        preference = wt.DWORD()
-        assert dwm.DwmGetWindowAttribute(window, 33, ctypes.byref(preference), 4) == 0
-        assert preference.value == 3  # DWMWCP_ROUNDSMALL
+        def small_corners():
+            preference = wt.DWORD()
+            assert dwm.DwmGetWindowAttribute(window, 33, ctypes.byref(preference), 4) == 0
+            return preference.value == 3  # DWMWCP_ROUNDSMALL
+
+        wait_for(small_corners, "small corners after the native window appears")
         x, y = origin.x + 26, origin.y + 20
         assert user.SendMessageW(window, 0x84, 0, location(x, y)) == 2  # HTCAPTION on the wordmark
         drag(x, y, 44, 24)
@@ -117,6 +120,7 @@ def verify_frame(window):
         wait_for(lambda: user.IsZoomed(window), "maximizing from the combined title bar")
         assert user.PostMessageW(window, 0x0112, 0xF120, 0)  # SC_RESTORE
         wait_for(lambda: not user.IsZoomed(window), "restoring ordinary window bounds")
+        wait_for(small_corners, "small corners after restoring from maximized")
     finally:
         user.SetCursorPos(old.x, old.y)
 

@@ -326,6 +326,16 @@ class Window(QWidget):
             return True, HTCAPTION
         return super().nativeEvent(event_type, message)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.schedule_frame_update()
+
+    def schedule_frame_update(self):
+        # Qt applies its default corner preference when the native window is
+        # shown or restored. Apply our preference after that transition.
+        if self.isVisible() and not self.isMinimized():
+            QTimer.singleShot(0, self, lambda: configure_frame(self))
+
     def toggle_maximized(self):
         if self.isMaximized():
             self.showNormal()
@@ -383,6 +393,7 @@ class Window(QWidget):
             self.maximize_button.setIcon(ui_icon("restore" if maximized else "maximize", "#242422"))
             self.maximize_button.setAccessibleName(name)
             self.maximize_button.setToolTip(name)
+            self.schedule_frame_update()
         if event.type() == QEvent.WindowStateChange and self.isMinimized() and hasattr(self, "tray"):
             # Finish the native minimize transition before hiding the window.
             QTimer.singleShot(0, self.finish_minimize)
