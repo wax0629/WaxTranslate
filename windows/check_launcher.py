@@ -93,6 +93,7 @@ def check(root):
         return window if window and user.IsWindowVisible(window) else None
 
     command = registered_command()
+    assert command == f'"{exe.resolve()}" --background', f"Expected the portable launcher, got {command!r}"
     launcher_pid = launch(command)
     pid, = wait_for(lambda: python_children(launcher_pid), "the login launcher's child")
     try:

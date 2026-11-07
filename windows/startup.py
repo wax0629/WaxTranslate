@@ -20,11 +20,13 @@ def _value(key_path):
 
 class LoginStartup:
     def __init__(self):
-        self.script = Path(__file__).resolve().with_name("app.py")
+        self.script = Path(__file__).parent.resolve() / "app.py"
         root = self.script.parents[1]
-        interpreter = Path(sys.executable).absolute()
-        self.pythonw = interpreter.with_name("pythonw.exe")
-        if interpreter.parent == root / "runtime":
+        # %TEMP% and the executable can use a DOS short path while Python's
+        # module path is expanded. Keep the venv's pythonw, resolving its directory.
+        interpreter_dir = Path(sys.executable).parent.resolve()
+        self.pythonw = interpreter_dir / "pythonw.exe"
+        if interpreter_dir == root / "runtime":
             self.paths = (root / "WaxTranslate.exe",)
         else:
             self.paths = (self.pythonw, self.script)

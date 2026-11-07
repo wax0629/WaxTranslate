@@ -74,7 +74,7 @@ class LoginStartupTests(unittest.TestCase):
         first.set_enabled(True)
         self.assertEqual(first.status(), "on")
         self.assertEqual(self.argv(self.read(self.run)),
-                         [str(self.root / "原 始/WaxTranslate.exe"), "--background"])
+                         [str((self.root / "原 始/WaxTranslate.exe").resolve()), "--background"])
         moved = self.install("开发 目录", portable=False)
         original = self.read(self.run)
         self.assertEqual(moved.status(), "moved")
@@ -82,8 +82,8 @@ class LoginStartupTests(unittest.TestCase):
         moved.set_enabled(True)
         self.assertEqual(moved.status(), "on")
         self.assertEqual(self.argv(self.read(self.run)),
-                         [str(self.root / "开发 目录/.venv/Scripts/pythonw.exe"),
-                          str(self.root / "开发 目录/windows/app.py"), "--background"])
+                         [str((self.root / "开发 目录/.venv/Scripts/pythonw.exe").resolve()),
+                          str((self.root / "开发 目录/windows/app.py").resolve()), "--background"])
         moved.set_enabled(False)
         moved.set_enabled(False)
         self.assertEqual(moved.status(), "off")
