@@ -36,35 +36,39 @@ struct ResultCard: View {
     private var targetName: String { target.languageCode == .english ? "英语" : "简体中文" }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("\(Locale(identifier: "zh_CN").localizedString(forIdentifier: source.minimalIdentifier) ?? source.minimalIdentifier) → \(targetName)")
-                    .font(.caption).foregroundStyle(DeskTheme.muted)
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(spacing: 8) {
+                Image(systemName: isRegion ? "viewfinder" : "text.magnifyingglass")
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(DeskTheme.accent)
+                Text("\(Locale(identifier: "zh_CN").localizedString(forIdentifier: source.minimalIdentifier) ?? source.minimalIdentifier)  →  \(targetName)")
+                    .font(.system(size: 11, weight: .medium)).foregroundStyle(DeskTheme.muted)
                 Spacer()
-                Button(action: close) { Image(systemName: "xmark") }
-                    .buttonStyle(.plain).foregroundStyle(DeskTheme.muted).accessibilityLabel("关闭")
+                Button(action: close) {
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
+                        .frame(width: 22, height: 22).background(DeskTheme.soft, in: Circle())
+                }.buttonStyle(.plain).foregroundStyle(DeskTheme.muted).accessibilityLabel("关闭")
             }
             ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 7) {
                     if !isRegion {
-                        Text(passage.text).font(.system(size: 25, weight: .semibold, design: .serif))
+                        Text(passage.text).font(.custom("Baskerville-Italic", size: 38))
                     }
                     if let result {
-                        HStack(alignment: .firstTextBaseline, spacing: 7) {
-                            Text(result.meaning).font(isRegion ? .body : .system(size: 17, weight: .medium))
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(result.meaning).font(isRegion ? .body : .system(size: 17, weight: .semibold))
                             if result.origin == .dictionary {
-                                Text("词典参考").font(.caption2).foregroundStyle(DeskTheme.muted)
+                                Text("词典参考").font(.caption).foregroundStyle(DeskTheme.accent)
                             } else if result.origin == .word && hasSentence {
-                                Text("单词参考").font(.caption2).foregroundStyle(DeskTheme.muted)
+                                Text("单词参考").font(.caption).foregroundStyle(DeskTheme.accent)
                             }
                         }
                     }
                     if hasSentence || isRegion {
-                        if result != nil { BookRule().padding(.vertical, 2) }
+                        if result != nil { BookRule().padding(.vertical, 3) }
                         Text(LookupTranslation.markedSentence(passage) ?? AttributedString(isRegion ? passage.text : passage.context))
-                            .font(.system(.callout, design: .serif)).foregroundStyle(DeskTheme.muted)
+                            .font(.custom("Baskerville", size: 18)).foregroundStyle(DeskTheme.ink)
                         if let translation = result?.sentenceTranslation {
-                            Text(translation).font(.callout)
+                            Text(translation).font(.callout).foregroundStyle(DeskTheme.muted)
                         }
                     }
                     translationStatus
@@ -72,15 +76,17 @@ struct ResultCard: View {
             }
             BookRule()
             HStack(spacing: 12) {
-                Button { speak(passage.text, source.minimalIdentifier) } label: { Image(systemName: "speaker.wave.2") }
-                    .accessibilityLabel("朗读").help("朗读原文")
+                Button { speak(passage.text, source.minimalIdentifier) } label: {
+                    Image(systemName: "speaker.wave.2").frame(width: 22, height: 26)
+                }.accessibilityLabel("朗读").help("朗读原文")
                 Button {
                     guard let result else { return }
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(result.meaning, forType: .string)
                     copied = true
-                } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc") }
-                    .disabled(result == nil).accessibilityLabel("复制译文").help("复制译文")
+                } label: {
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc").frame(width: 22, height: 26)
+                }.disabled(result == nil).accessibilityLabel("复制译文").help("复制译文")
                 Spacer()
                 Button {
                     guard let result else { return }
@@ -88,12 +94,12 @@ struct ResultCard: View {
                 } label: {
                     Label(notebook.contains(passage) ? "已加入生词本" : "加入生词本",
                           systemImage: notebook.contains(passage) ? "bookmark.fill" : "bookmark")
-                }.disabled(result == nil || notebook.contains(passage) || phase == .translating)
+                }.buttonStyle(ReaderActionStyle())
+                    .disabled(result == nil || notebook.contains(passage) || phase == .translating)
             }.buttonStyle(.plain).controlSize(.small).foregroundStyle(DeskTheme.muted)
         }
-        .padding(16).frame(width: 390, height: isRegion ? 276 : 246)
-        .foregroundStyle(DeskTheme.ink).tint(DeskTheme.wax).background(DeskTheme.sheet)
-        .overlay(alignment: .top) { Rectangle().fill(DeskTheme.binding).frame(height: 3) }
+        .padding(17).frame(width: 390, height: isRegion ? 278 : 258)
+        .foregroundStyle(DeskTheme.ink).tint(DeskTheme.accent).background(DeskTheme.sheet)
         .task {
             let availability = await LanguageAvailability().status(from: source, to: target)
             guard !Task.isCancelled else { return }

@@ -3,9 +3,10 @@ import sqlite3
 import time
 
 from PySide6.QtCore import QPointF, QRectF, QSize, QTimer, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeySequence, QPainter, QPen, QPolygonF, QShortcut
-from PySide6.QtWidgets import (QBoxLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QMessageBox, QPushButton, QStyle, QStyledItemDelegate, QTextBrowser, QVBoxLayout, QWidget)
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeySequence, QPainter, QPainterPath, QPen, QPolygonF, QShortcut
+from PySide6.QtWidgets import (QBoxLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QListView, QListWidget,
+                               QListWidgetItem, QMessageBox, QPushButton, QSizePolicy, QStyle,
+                               QStyledItemDelegate, QTextBrowser, QVBoxLayout, QWidget)
 
 from reader import Passage
 from languages import NAMES
@@ -18,35 +19,43 @@ class NotebookCover(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setFixedSize(104, 96)
+        self.setFixedSize(130, 85)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.translate(52, 47)
-        painter.rotate(-10)
+        painter.translate(8, 0)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#d9c9a8"))
-        painter.drawRoundedRect(QRectF(-24, -29, 61, 72), 5, 5)
-        painter.setPen(QPen(QColor("#968162"), 1))
-        painter.setBrush(QColor("#fff4d6"))
-        painter.drawRoundedRect(QRectF(-29, -34, 60, 73), 4, 4)
-        painter.drawLine(QPointF(-24, 35.5), QPointF(26, 35.5))
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#7d3c33"))
-        painter.drawRoundedRect(QRectF(-31, -38, 62, 71), 4, 4)
-        painter.setPen(QPen(QColor("#ad7b59"), 1.3))
-        painter.drawLine(QPointF(-23, -36), QPointF(-23, 31))
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#d4ad6c"))
-        painter.drawPolygon(QPolygonF([QPointF(9, -38), QPointF(18, -38),
-                                       QPointF(18, -13), QPointF(13.5, -17), QPointF(9, -13)]))
+        painter.setBrush(QColor("#ced7c9"))
+        painter.drawEllipse(QRectF(3, 65, 108, 11))
+        for direction, color in ((-1, "#f8f7ef"), (1, "#e6ebdf")):
+            painter.save()
+            painter.translate(56, 0)
+            painter.scale(direction, 1)
+            page = QPainterPath(QPointF(0, 26))
+            page.cubicTo(13, 14, 32, 12, 48, 14)
+            page.lineTo(51, 59)
+            page.cubicTo(31, 58, 15, 63, 0, 71)
+            page.closeSubpath()
+            painter.setBrush(QColor("#354638"))
+            painter.drawPath(page.translated(0, 3))
+            painter.setBrush(QColor(color))
+            painter.setPen(QPen(QColor("#758675"), 1))
+            painter.drawPath(page)
+            for y in (28, 33, 38):
+                lines = QPainterPath(QPointF(12, y + 3))
+                lines.quadTo(25, y - 3, 38, y - 3)
+                painter.drawPath(lines)
+            painter.restore()
+        painter.setBrush(QColor("#bd5036"))
+        painter.drawPolygon(QPolygonF([QPointF(66, 20), QPointF(72, 17), QPointF(73, 39),
+                                       QPointF(69, 36), QPointF(66, 41)]))
 
 
 class WordDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index):
-        return QSize(95, 55)
+        return QSize(120, 60)
 
     def paint(self, painter, option, index):
         painter.save()
@@ -55,22 +64,24 @@ class WordDelegate(QStyledItemDelegate):
         selected = bool(option.state & QStyle.State_Selected)
         painter.setPen(Qt.NoPen)
         if selected or option.state & QStyle.State_MouseOver:
-            painter.setBrush(QColor("#edd7b4" if selected else "#f0e4c9"))
-            painter.drawRoundedRect(bounds, 6, 6)
+            painter.setBrush(QColor("#e5ebe0" if selected else "#eff1eb"))
+            painter.drawRoundedRect(bounds, 4, 4)
+        if selected:
+            painter.fillRect(bounds.left(), bounds.top() + 10, 2, bounds.height() - 20, QColor("#b44e33"))
         if option.state & QStyle.State_HasFocus:
-            painter.setPen(QPen(QColor("#925645"), 1))
+            painter.setPen(QPen(QColor("#839481"), 1))
             painter.setBrush(Qt.NoBrush)
-            painter.drawRoundedRect(bounds, 6, 6)
+            painter.drawRoundedRect(bounds, 4, 4)
         word, _, gloss = index.data().partition("\n")
-        rows = ((word, QFont("Spectral"), 18, "#472e24"), (gloss, option.font, 12, "#685445"))
+        rows = ((word, QFont("Spectral"), 21, "#23382b"), (gloss, option.font, 12, "#58665b"))
         y = bounds.y() + 4
         for value, font, pixels, color in rows:
             font.setPixelSize(pixels)
             metrics = QFontMetrics(font)
             painter.setFont(font)
             painter.setPen(QColor(color))
-            text = metrics.elidedText(" ".join(value.split()), Qt.ElideRight, max(0, bounds.width() - 18))
-            painter.drawText(bounds.x() + 9, y + metrics.ascent(), text)
+            text = metrics.elidedText(" ".join(value.split()), Qt.ElideRight, max(0, bounds.width() - 24))
+            painter.drawText(bounds.x() + 12, y + metrics.ascent(), text)
             y += metrics.height() + 1
         painter.restore()
 
@@ -88,8 +99,8 @@ class Library(QWidget):
         self.revealed = False
         self.session_count = 0
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 26, 30, 23)
-        layout.setSpacing(12)
+        layout.setContentsMargins(32, 24, 32, 24)
+        layout.setSpacing(14)
         header = QHBoxLayout()
         self.heading = label("生词本", "heading")
         header.addWidget(self.heading)
@@ -112,14 +123,12 @@ class Library(QWidget):
         self.search.setAccessibleName("搜索生词")
         self.search.setPlaceholderText("搜索单词、释义或原句")
         self.search.setClearButtonEnabled(True)
-        layout.addWidget(self.search)
         self.search.textChanged.connect(self.filter_rows)
         find = QShortcut(QKeySequence.Find, self)
         find.setContext(Qt.WidgetWithChildrenShortcut)
         find.activated.connect(self.focus_search)
         self.no_matches = label("没有找到匹配的生词", "meta")
         self.no_matches.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.no_matches)
         self.empty = QFrame(objectName="emptyBook")
         empty_layout = QVBoxLayout(self.empty)
         empty_layout.setContentsMargins(20, 18, 20, 18)
@@ -143,27 +152,37 @@ class Library(QWidget):
         self.entries = QWidget()
         content = self.columns = QBoxLayout(QBoxLayout.LeftToRight, self.entries)
         content.setContentsMargins(0, 0, 0, 0)
-        content.setSpacing(12)
+        content.setSpacing(14)
+        self.index_panel = QWidget()
+        index = QVBoxLayout(self.index_panel)
+        index.setContentsMargins(0, 0, 0, 0)
+        index.setSpacing(8)
+        index.addWidget(self.search)
         self.list = QListWidget(objectName="words")
         self.list.setItemDelegate(WordDelegate(self.list))
         self.list.setUniformItemSizes(True)
         self.list.setMouseTracking(True)
+        self.list.setHorizontalScrollMode(QListView.ScrollPerPixel)
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.list.setMinimumWidth(90)
-        self.list.setMaximumWidth(196)
         self.list.setAccessibleName("收藏的词和语境")
         self.list.currentRowChanged.connect(self.display)
-        content.addWidget(self.list, 1)
+        index.addWidget(self.list)
+        content.addWidget(self.index_panel, 1)
         sheet = QFrame(objectName="entrySheet")
         card = QVBoxLayout(sheet)
-        card.setContentsMargins(14, 12, 14, 10)
-        card.setSpacing(8)
+        card.setContentsMargins(19, 14, 19, 12)
+        card.setSpacing(9)
+        card.addWidget(self.no_matches, 1)
         self.detail = QTextBrowser(objectName="entry")
         self.detail.setFrameShape(QFrame.NoFrame)
-        self.detail.document().setDefaultStyleSheet(DOCUMENT_STYLE)
+        self.detail.document().setDefaultStyleSheet(DOCUMENT_STYLE + ".word {font-size:40px;}")
+        self.detail.document().setDocumentMargin(1)
+        self.detail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         self.detail.setOpenLinks(False)
         card.addWidget(self.detail, 1)
-        card.addWidget(QFrame(objectName="hairline"))
+        self.action_rule = QFrame(objectName="hairline")
+        card.addWidget(self.action_rule)
         content.addWidget(sheet, 2)
         layout.addWidget(self.entries, 1)
         buttons = QHBoxLayout()
@@ -192,13 +211,16 @@ class Library(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         narrow = event.size().width() < 520
-        margins = (16, 16, 16, 16) if narrow else (30, 26, 30, 23)
+        margins = (16, 15, 16, 16) if narrow else (32, 24, 32, 24)
         self.layout().setContentsMargins(*margins)
         self.columns.setDirection(QBoxLayout.TopToBottom if narrow else QBoxLayout.LeftToRight)
-        if narrow:
-            self.list.setMaximumSize(16777215, 96)
-        else:
-            self.list.setMaximumSize(196, 16777215)
+        self.columns.setStretch(0, 0 if narrow else 1)
+        self.columns.setStretch(1, 1 if narrow else 2)
+        self.index_panel.setMaximumWidth(16777215 if narrow else 248)
+        self.list.setFlow(QListView.LeftToRight if narrow else QListView.TopToBottom)
+        self.list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff if narrow else Qt.ScrollBarAsNeeded)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded if narrow else Qt.ScrollBarAlwaysOff)
+        self.list.setMaximumHeight(75 if narrow else 16777215)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -290,11 +312,13 @@ class Library(QWidget):
         else:
             self.listen.set_content()
         self.empty.setVisible(not self.rows)
-        self.entries.setVisible(bool(row))
+        self.entries.setVisible(bool(self.rows))
+        self.index_panel.setVisible(not self.testing and bool(self.rows))
         self.search.setVisible(not self.testing and bool(self.rows))
         self.no_matches.setVisible(not self.testing and bool(self.rows) and not row)
         self.list.setVisible(not self.testing and bool(row))
         self.detail.setVisible(bool(row))
+        self.action_rule.setVisible(bool(row))
         self.remove.setVisible(bool(row) and not self.testing)
         self.reveal.setVisible(self.testing and not self.revealed)
         for button in (self.again, self.known):

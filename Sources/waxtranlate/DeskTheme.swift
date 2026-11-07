@@ -1,16 +1,14 @@
 import SwiftUI
 
-/// Warm paper in daylight and a low-luminance reading surface in Dark Mode.
 enum DeskTheme {
-    static let paper = adaptive(0xf6ecd6, 0x302822)
-    static let sheet = adaptive(0xfcf5e4, 0x392f28)
-    static let ink = adaptive(0x392a22, 0xf4e8d1)
-    static let muted = adaptive(0x6b5746, 0xcbbb9f)
-    static let rule = adaptive(0xc3ac87, 0x79644d)
-    static let wax = adaptive(0x803c34, 0xe9aa96)
-    static let binding = Color(red: 0.46, green: 0.21, blue: 0.18)
-    static let gilt = Color(red: 0.84, green: 0.73, blue: 0.55)
-    static let ivory = Color(red: 1, green: 0.95, blue: 0.84)
+    static let paper = adaptive(0xf8f7f2, 0x1a211e)
+    static let sheet = adaptive(0xfffefa, 0x242d28)
+    static let ink = adaptive(0x202c28, 0xf7f6ed)
+    static let muted = adaptive(0x58645e, 0xb3beb6)
+    static let rule = adaptive(0xd7dad2, 0x46504a)
+    static let accent = adaptive(0xac442d, 0xffa58a)
+    static let soft = adaptive(0xeceee7, 0x313d36)
+    static let coverInk = Color(red: 0.12, green: 0.17, blue: 0.15)
 
     private static func adaptive(_ light: Int, _ dark: Int) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -21,30 +19,57 @@ enum DeskTheme {
     }
 }
 
-struct WalnutGrain: View {
+struct BookRule: View {
+    @Environment(\.displayScale) private var scale
+
     var body: some View {
-        Canvas { context, size in
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(
-                Gradient(colors: [Color(red: 0.23, green: 0.15, blue: 0.12),
-                                  Color(red: 0.29, green: 0.20, blue: 0.15),
-                                  Color(red: 0.21, green: 0.14, blue: 0.11)]),
-                startPoint: .zero, endPoint: CGPoint(x: size.width, y: 0)))
-            for x in stride(from: -8.0, to: size.width + 8, by: 2.6) {
-                var grain = Path()
-                for y in stride(from: 0.0, through: size.height + 12, by: 12) {
-                    let bend = sin(y / 88 + x / 24) + 0.6 * sin(y / 47 + x / 38)
-                    let p = CGPoint(x: x + 2 * bend, y: y)
-                    if y == 0 { grain.move(to: p) } else { grain.addLine(to: p) }
-                }
-                context.stroke(grain, with: .color(.black.opacity(0.065 + 0.035 * sin(x))),
-                               lineWidth: 1.2 + 0.5 * cos(x / 6))
-            }
-        }.accessibilityHidden(true).allowsHitTesting(false)
+        Rectangle().fill(DeskTheme.rule).frame(height: 1 / scale).accessibilityHidden(true)
     }
 }
 
-struct BookRule: View {
+struct RiverCover: View {
+    // Installed apps carry the photograph inside the signed bundle. A source
+    // build reads the same master used to assemble it.
+    private static let image: NSImage? = {
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            return Bundle.main.url(forResource: "river", withExtension: "jpg").flatMap(NSImage.init(contentsOf:))
+        }
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        return NSImage(contentsOf: root.appendingPathComponent("Assets/Editorial/river.jpg"))
+    }()
+
     var body: some View {
-        Rectangle().fill(DeskTheme.rule).frame(height: 1).accessibilityHidden(true)
+        GeometryReader { proxy in
+            ZStack {
+                DeskTheme.coverInk
+                if let image = Self.image {
+                    Image(nsImage: image).resizable().scaledToFill()
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
+            .overlay {
+                LinearGradient(stops: [
+                    .init(color: .black.opacity(0.48), location: 0),
+                    .init(color: .black.opacity(0.30), location: 0.43),
+                    .init(color: .clear, location: 0.78)
+                ], startPoint: .leading, endPoint: .trailing)
+            }
+        }.allowsHitTesting(false).accessibilityHidden(true)
+    }
+}
+
+struct ReaderActionStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    var emphasized = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .padding(.horizontal, 13).frame(minHeight: 31)
+            .foregroundStyle(emphasized ? DeskTheme.paper : DeskTheme.ink)
+            .background(emphasized ? DeskTheme.ink : DeskTheme.soft, in: Capsule())
+            .opacity(enabled ? (configuration.isPressed ? 0.7 : 1) : 0.44)
     }
 }

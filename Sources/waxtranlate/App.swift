@@ -54,7 +54,8 @@ import AVFoundation
             let window = NSWindow(contentViewController: NSHostingController(rootView: view))
             window.styleMask = [.titled, .closable, .resizable, .miniaturizable]
             window.title = "我靠翻译"
-            window.setContentSize(NSSize(width: 640, height: 405))
+            let available = NSScreen.main?.visibleFrame.size ?? NSSize(width: 880, height: 600)
+            window.setContentSize(NSSize(width: min(860, available.width - 32), height: min(555, available.height - 66)))
             window.center()
             window.isReleasedWhenClosed = false
             library = window
@@ -153,7 +154,7 @@ import AVFoundation
                 Button("关闭") { [weak self] in self?.reset() }
             }
         }.padding().frame(width: 330)
-            .foregroundStyle(DeskTheme.ink).tint(DeskTheme.wax).background(DeskTheme.sheet)
+            .foregroundStyle(DeskTheme.ink).tint(DeskTheme.accent).background(DeskTheme.sheet)
         show(message, at: point)
     }
 
