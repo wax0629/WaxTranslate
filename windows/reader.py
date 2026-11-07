@@ -40,15 +40,19 @@ def korean_morphemes(word):
     return _segmenters.korean.parse(word)
 
 
+def japanese_tokenizer():
+    if not hasattr(_segmenters, "japanese"):
+        from janome.tokenizer import Tokenizer
+        _segmenters.japanese = Tokenizer()
+    return _segmenters.japanese
+
+
 def word_spans(text, source_code=""):
     japanese = source_code == "ja" or (not source_code and KANA.search(text))
     for match in WORD_TOKEN.finditer(text):
         if japanese and re.fullmatch(rf"[{CJK}]+", match.group()):
-            if not hasattr(_segmenters, "japanese"):
-                from janome.tokenizer import Tokenizer
-                _segmenters.japanese = Tokenizer(wakati=True)
             start = match.start()
-            for surface in _segmenters.japanese.tokenize(match.group()):
+            for surface in japanese_tokenizer().tokenize(match.group(), wakati=True):
                 end = start + len(surface)
                 if any(c.isalpha() for c in surface):
                     yield start, end

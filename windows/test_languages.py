@@ -152,6 +152,7 @@ class LanguageTests(unittest.TestCase):
             passage, result, _, language, _ = analyze(image, QPointF(64, 18), None)
             self.assertEqual((language, passage.word, passage.text), ("日语", "傷", "誰かが傷を負うその瞬間を"))
             self.assertIn("伤", result[1])
+            self.assertIn("受伤", result[2])
             passage, result, _, language, _ = analyze(image.copy(12, 57, 70, 24), None, None)
             self.assertEqual((language, passage.text), ("日语", "祝おう"))
             self.assertIn("庆祝", result[1])

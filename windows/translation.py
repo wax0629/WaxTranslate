@@ -11,7 +11,7 @@ import sentencepiece
 from install_model import translation_dir
 from languages import HANGUL, NAMES, SHORT_CYRILLIC, SUPPORTED, detect_source
 from lexicon import lookup_entry
-from reader import Passage, context_excerpt, korean_morphemes, word_spans
+from reader import Passage, context_excerpt, japanese_tokenizer, korean_morphemes, word_spans
 
 
 _engine_lock = Lock()
@@ -146,6 +146,21 @@ def isolated_translation(word, code):
     return translate_leg(Passage(word), code)
 
 
+def japanese_fragment(passage):
+    text = passage.text
+    if (not text.endswith("を") or re.search(r"[。！？.!?\n]", text)
+            or (passage.selection and passage.selection[1] >= len(text))):
+        return passage
+    # A standalone relative clause plus noun can end in an object marker
+    # with no governing verb (e.g. a title). Translate its noun phrase.
+    tokens = list(japanese_tokenizer().tokenize(text))
+    if (len(tokens) >= 4 and tokens[-1].part_of_speech.startswith("助詞,格助詞")
+            and tokens[-2].part_of_speech.startswith("名詞,")
+            and any(t.part_of_speech.startswith("動詞,") for t in tokens[:-2])):
+        return Passage(text[:-1], passage.selection, source_code="ja")
+    return passage
+
+
 def translate(passage):
     code = passage.source_code or detect_source(passage.text)
     if not any(c.isalpha() for c in passage.text):
@@ -163,7 +178,8 @@ def translate(passage):
     if short_expression and (code != "ja" or len(list(word_spans(bare, "ja"))) <= 3):
         intermediate = isolated_translation(bare, code)
     elif code != "en":
-        intermediate = translate_leg(passage, code)
+        source = japanese_fragment(passage) if code == "ja" else passage
+        intermediate = translate_leg(source, code)
     chinese = translate_leg(intermediate, "en")
     sentence = chinese.text
     if not passage.selection:
