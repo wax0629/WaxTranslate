@@ -214,6 +214,7 @@ class Library(QWidget):
         self.speech_error.setVisible(bool(message))
 
     def toggle_review(self):
+        self.listen.stop()
         self.testing = not self.testing
         self.session_count = 0
         self.refresh()
@@ -230,6 +231,7 @@ class Library(QWidget):
             except (OSError, sqlite3.Error) as error:
                 self.status.setText(f"复习进度保存失败：{error}")
                 return
+            self.listen.stop()
             self.session_count += 1
             self.refresh()
 

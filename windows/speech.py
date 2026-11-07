@@ -24,12 +24,18 @@ class SpeechPlayer(QObject):
         self.stop()
         process = QProcess(self)
         self.process, self.owner = process, owner
+        def send_utterance():
+            if self.process is not process:
+                process.kill()
+                return
+            process.write(json.dumps((text, slow), ensure_ascii=False).encode("utf-8"))
+            process.closeWriteChannel()
+
+        process.started.connect(send_utterance)
         process.finished.connect(lambda code, _status: self.finished(process, code))
         process.errorOccurred.connect(lambda error: self.finished(process, 1) if error == QProcess.FailedToStart else None)
         process.start(str(Path(sys.executable).with_name("pythonw.exe")),
                       [str(WORKER)])
-        process.write(json.dumps((text, slow), ensure_ascii=False).encode("utf-8"))
-        process.closeWriteChannel()
         self.changed.emit()
 
     def finished(self, process, code):
