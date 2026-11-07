@@ -31,6 +31,43 @@ class Passage:
         return self.text[slice(*self.selection)] if self.selection else ""
 
 
+def context_excerpt(passage):
+    """Suggest a contiguous clause containing this occurrence for a second sense check."""
+    text = passage.text
+    if not passage.selection or len(ENGLISH_WORD.findall(text)) <= 12:
+        return None
+    a, b = passage.selection
+    left, right = 0, len(text)
+    # A comma may introduce a list item rather than a new clause. Only
+    # restart after it when the following text has an explicit subject.
+    pronoun = r"(?:I|we|you|he|she|it|they)\b"
+    restart = rf";\s+|,\s+(?={pronoun}|(?:the|this|that|these|those)\b)|\s+(?:and|but)\s+(?={pronoun})"
+    for boundary in re.finditer(restart, text, re.I):
+        if boundary.end() > a:
+            break
+        left = boundary.end()
+    # Unpunctuated timing clauses can also end the useful context. Require a
+    # pronoun so that e.g. "look after the children" stays together.
+    boundary = re.search(rf"[,;]\s+|\s+(?:before|after|while|whereas|and|but)\s+(?={pronoun})",
+                         text[b:], re.I)
+    if boundary:
+        right = b + boundary.start()
+    excerpt = text[left:right]
+    omitted = text[:left] + " " + text[right:]
+    if len(ENGLISH_WORD.findall(excerpt)) < 4 or len(ENGLISH_WORD.findall(omitted)) < 4:
+        return None
+    if any(excerpt.count(opener) != excerpt.count(closer) for opener, closer in ("()", "[]", "{}")):
+        return None
+    if right < len(text) and re.match(r"(?:if|unless|whether|although|even if|until)\b", excerpt, re.I):
+        return None
+    # A matching dictionary sense alone cannot tell whether an omitted clause
+    # negates, conditions or corrects the statement.
+    if re.search(r"\b(?:no|not|never|cannot|neither|nor|without|if|unless|until|whether|only|except|rather|instead)\b|n['’]t\b",
+                 omitted, re.I):
+        return None
+    return Passage(excerpt, (a - left, b - left))
+
+
 def line_rect(words):
     rect = QRectF(words[0].rect)
     for word in words[1:]:

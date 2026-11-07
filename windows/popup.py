@@ -3,7 +3,7 @@ from html import escape
 from math import ceil
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QPoint, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QShortcut
 from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout,
@@ -55,8 +55,8 @@ CARD_STYLE = """
     QPushButton#bookmark:hover {background:#dae8df;}
     QPushButton#bookmark:pressed {background:#cddfd2;}
     QPushButton#bookmark:disabled {background:#edf1ed; color:#546b5d;}
-    QPushButton#copy, QPushButton#dismiss {background:transparent; color:#59655e;}
-    QPushButton#copy:hover, QPushButton#dismiss:hover {background:#ebeeea; color:#25372c;}
+    QPushButton#copy, QPushButton#dismiss, QPushButton#expand {background:transparent; color:#59655e;}
+    QPushButton#copy:hover, QPushButton#dismiss:hover, QPushButton#expand:hover {background:#ebeeea; color:#25372c;}
     QPushButton#dismiss {font:17px 'Segoe UI'; padding:0; border-radius:10px;}
     QPushButton:focus {border-color:#6b8d7d;}
     QTextBrowser {background:transparent; border:0; padding:0;
@@ -78,9 +78,26 @@ DOCUMENT_STYLE = """
 """
 
 
+def result_html(passage, gloss, sentence, prefix="", suffix=""):
+    source = plain(passage.text)
+    heading = ""
+    if passage.selection:
+        a, b = passage.selection
+        word = plain(passage.word)
+        heading = f"<p class='word'>{word}</p>"
+        source = plain(passage.text[:a]) + f"<span class='hit'>{word}</span>" + plain(passage.text[b:])
+    content = (heading + f"<p class='gloss'>{plain(gloss)}</p>"
+               + f"<hr style='background-color:#dfe5df'><p class='source'>{prefix}{source}{suffix}</p>")
+    if sentence:
+        content += f"<p class='translation'>{plain(sentence)}</p>"
+    return content
+
+
 class Card(QWidget):
     dismissed = Signal()
+    presented = Signal()
     save_requested = Signal()
+    dismiss_on_deactivate = True
 
     def __init__(self):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
@@ -131,18 +148,22 @@ class Card(QWidget):
         footer = QHBoxLayout(self.actions)
         footer.setContentsMargins(0, 4, 0, 0)
         self.save = QPushButton(action_icon(True), "收藏生词", objectName="bookmark")
+        self.expand = QPushButton("查看全句", objectName="expand")
+        self.expand.setCheckable(True)
         self.copy = QPushButton(action_icon(False), "复制", objectName="copy")
         self.copy.setAccessibleName("复制译文")
         self.copy.setToolTip("复制译文")
         footer.addWidget(self.save)
         footer.addStretch()
+        footer.addWidget(self.expand)
         footer.addWidget(self.copy)
         body.addWidget(self.actions)
-        for button in (self.save, self.copy, close):
+        for button in (self.save, self.expand, self.copy, close):
             button.setCursor(Qt.PointingHandCursor)
             button.setIconSize(QSize(15, 15))
         self.save.clicked.connect(self.save_requested)
         self.copy.clicked.connect(self.copy_translation)
+        self.expand.clicked.connect(self.display_context)
         QShortcut(Qt.Key_Escape, self, activated=self.close)
         self.translation = ""
 
@@ -153,28 +174,42 @@ class Card(QWidget):
     def show_message(self, caption, message, point):
         self.present(caption, f"<p class='message'>{plain(message)}</p>", point)
 
-    def show_result(self, passage, origin, gloss, sentence, point):
-        source = plain(passage.text)
-        heading = ""
-        if passage.selection:
-            a, b = passage.selection
-            word = plain(passage.word)
-            heading = f"<p class='word'>{word}</p>"
-            source = plain(passage.text[:a]) + f"<span class='hit'>{word}</span>" + plain(passage.text[b:])
-        content = (heading + f"<p class='gloss'>{plain(gloss)}</p>"
-                   + f"<hr style='background-color:#dfe5df'><p class='source'>{source}</p>")
-        if sentence:
-            content += f"<p class='translation'>{plain(sentence)}</p>"
-        self.present(origin, content, point, sentence or gloss, bool(passage.selection))
+    def show_result(self, passage, origin, gloss, sentence, point, excerpt=None):
+        full = result_html(passage, gloss, sentence)
+        if excerpt is None:
+            self.present(origin, full, point, sentence or gloss, bool(passage.selection))
+            return
+        part, translated = excerpt
+        start = passage.selection[0] - part.selection[0]
+        short = result_html(part, gloss, translated, "… " if start else "",
+                            " …" if start + len(part.text) < len(passage.text) else "")
+        self.present(origin, short, point, translated, True, (full, sentence))
 
-    def present(self, caption, content, point, translation="", can_save=False):
-        self.translation = translation
+    def present(self, caption, content, point, translation="", can_save=False, full_context=None):
+        self.anchor = point
+        self.default_context = content, translation
+        self.full_context = full_context
         self.caption.setText(caption)
         self.save.setText("收藏生词")
         self.save.setEnabled(True)
         self.save.setVisible(can_save)
-        self.copy.setText("复制")
+        self.expand.setChecked(False)
+        self.expand.setVisible(full_context is not None)
         self.actions.setVisible(bool(translation))
+        self.display_context(False)
+        if not self.isVisible():
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            self.text.setFocus()
+        self.presented.emit()
+
+    def display_context(self, expanded):
+        content, self.translation = self.full_context if expanded else self.default_context
+        self.expand.setText("收起" if expanded else "查看全句")
+        self.copy.setText("复制")
+        self.copy.setToolTip("复制语境译文" if self.full_context and not expanded else "复制译文")
+        point = self.anchor
         self.text.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.text.setHtml(content)
         screen = QApplication.screenAt(point) or QApplication.primaryScreen()
@@ -198,12 +233,14 @@ class Card(QWidget):
         if y + height > area.bottom() + 1:
             y = max(area.top(), point.y() - height - 4)
         self.move(QPoint(x, y))
-        self.show()
         self.text.verticalScrollBar().setValue(0)
-        self.raise_()
-        self.activateWindow()
-        self.text.setFocus()
 
     def closeEvent(self, event):
         self.dismissed.emit()
         super().closeEvent(event)
+
+    def event(self, event):
+        if (event.type() == QEvent.WindowDeactivate and self.dismiss_on_deactivate
+                and self.isVisible() and QApplication.activePopupWidget() is None):
+            self.close()
+        return super().event(event)

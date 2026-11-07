@@ -26,6 +26,10 @@ user32.UnhookWindowsHookEx.argtypes = (wt.HANDLE,)
 user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
 user32.GetAsyncKeyState.restype = ctypes.c_short
 user32.GetCursorPos.argtypes = (ctypes.POINTER(wt.POINT),)
+user32.WindowFromPhysicalPoint.argtypes = (wt.POINT,)
+user32.WindowFromPhysicalPoint.restype = wt.HWND
+user32.GetAncestor.argtypes = (wt.HWND, wt.UINT)
+user32.GetAncestor.restype = wt.HWND
 user32.GetMessageW.argtypes = (ctypes.POINTER(wt.MSG), wt.HWND, wt.UINT, wt.UINT)
 user32.PostThreadMessageW.argtypes = (wt.DWORD, wt.UINT, wt.WPARAM, wt.LPARAM)
 
@@ -60,6 +64,7 @@ class CtrlGestures:
         self.keyboard_proc = HookProc(self.keyboard)
         self.mouse_proc = HookProc(self.mouse)
         self.events = SimpleQueue()
+        self.watched_card = None
 
     def listen(self):
         # Windows drops slow hooks. Keep both Qt's event loop and the model's
@@ -92,9 +97,12 @@ class CtrlGestures:
             writer.join()
 
     def watch_parent(self):
-        # The pipe also closes if the application crashes.
+        # Only observe clicks while the parent is showing a card. EOF also
+        # releases both hooks if the application exits unexpectedly.
         try:
-            sys.stdin.buffer.read()
+            for line in sys.stdin.buffer:
+                ticket, hwnd = json.loads(line)
+                self.watched_card = (ticket, hwnd) if hwnd else None
         finally:
             user32.PostThreadMessageW(self.thread_id, 0x12, 0, 0)  # WM_QUIT
 
@@ -139,6 +147,15 @@ class CtrlGestures:
         return user32.CallNextHookEx(None, code, message, payload)
 
     def mouse(self, code, message, payload):
+        card = self.watched_card
+        if code == 0 and message == WM_LBUTTONDOWN and card:
+            ticket, hwnd = card
+            target = user32.WindowFromPhysicalPoint(MouseEvent.from_address(payload).point)
+            # Native children and owned menus are part of the card. Observe
+            # the original press without intercepting or replaying it.
+            if (target != hwnd and user32.GetAncestor(target, 2) != hwnd
+                    and user32.GetAncestor(target, 3) != hwnd):  # GA_ROOT, GA_ROOTOWNER
+                self.events.put(("dismiss", ticket, None))
         if code == 0 and (self.armed or self.owns_button):
             event = MouseEvent.from_address(payload)
             if event.extra != REPLAY_TAG and self.handle_mouse(message, (event.point.x, event.point.y)):

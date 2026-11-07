@@ -21,9 +21,9 @@ from PySide6.QtWidgets import QApplication, QLabel
 from app import Window, app_icon, image_point, image_rect
 from notebook import Notebook
 from popup import Card
-from reader import Passage, Word, passage_from_lines, recognize
+from reader import Passage, Word, context_excerpt, passage_from_lines, recognize
 from theme import apply_theme
-from translation import translate
+from translation import translate, translate_lookup
 from workspace import TextWorkspace
 
 
@@ -51,6 +51,84 @@ def wait_until(predicate):
 
 
 class Checks(unittest.TestCase):
+    def test_lookup_context(self):
+        for source, word, short, meaning in [
+            ("The Code Review plugin shows a pull request’s description, changed files, comments, and checks.",
+             "description", "The Code Review plugin shows a pull request’s description", "描述"),
+            (RIVER[:-1] + "; meanwhile the rest of the group returned to the village for lunch.",
+             "bank", RIVER[:-1], "岸"),
+            ("After a long meeting with her colleagues, she deposited her paycheck at the bank before she drove home to make dinner.",
+             "bank", "she deposited her paycheck at the bank", "银行"),
+        ]:
+            with self.subTest(source=source):
+                start = source.index(word)
+                passage = Passage(source, (start, start + len(word)))
+                full, (excerpt, sentence) = translate_lookup(passage)
+                self.assertEqual(full, translate(passage))
+                self.assertIn(meaning, full[1])
+                self.assertEqual(excerpt.text, short)
+                self.assertEqual(excerpt.word, word)
+                self.assertEqual(sentence, translate(excerpt)[2])
+
+        for source in (RIVER, "We would walk home from the bank, unless the flood closed the only road out.",
+                       "If it rains during the trip, they will sit on the river bank and wait."):
+            self.assertIsNone(context_excerpt(word_in(source)))
+        negative = "The team did not rule out infection, although several other possibilities were also under discussion."
+        excerpt = context_excerpt(Passage(negative, (negative.index("out"), negative.index("out") + 3)))
+        self.assertEqual(excerpt.text, "The team did not rule out infection")
+        # The second bank must keep its exact position even after removing the lead-in.
+        source = "After they had met at the bank, they walked along the river bank before they went home for dinner."
+        start = source.rindex("bank")
+        passage = Passage(source, (start, start + 4))
+        excerpt = context_excerpt(passage)
+        self.assertEqual(excerpt.text, "they walked along the river bank")
+        self.assertEqual(excerpt.selection[0], excerpt.text.index("bank"))
+        with patch("translation.translate", side_effect=[
+            ("句中释义", "岸", "全句"), ("句中释义", "银行", "短句")
+        ]):
+            self.assertIsNone(translate_lookup(passage)[1])
+
+    def test_context_actions(self):
+        with TemporaryDirectory() as tmp, patch.object(QProcess, "start"):
+            book = Notebook(Path(tmp) / "notebook.sqlite3")
+            window = Window(notebook=book)
+            card = window.card
+            source = RIVER[:-1] + "; meanwhile the rest of the group returned to the village for lunch."
+            point = QApplication.primaryScreen().availableGeometry().center()
+            try:
+                window.submit(point, passage=word_in(source))
+                wait_until(card.expand.isVisible)
+                self.assertNotIn("meanwhile", card.text.toPlainText())
+                card.copy.click()
+                short_translation = QApplication.clipboard().text()
+                card.save.click()
+                card.expand.click()
+                self.assertIn(source, card.text.toPlainText())
+                self.assertFalse(card.save.isEnabled())
+                card.copy.click()
+                entry, = book.entries()
+                self.assertEqual(entry["context"], source)
+                self.assertEqual(entry["position"], source.index("bank"))
+                self.assertEqual(entry["translation"], QApplication.clipboard().text())
+                self.assertNotEqual(entry["translation"], short_translation)
+                card.expand.click()
+                self.assertNotIn("meanwhile", card.text.toPlainText())
+                card.copy.click()
+                self.assertEqual(QApplication.clipboard().text(), short_translation)
+                window.demo()
+                ticket = window.ticket
+                window.on_gesture("dismiss", ticket - 1, None)
+                self.assertTrue(card.isVisible())
+                self.assertFalse(card.expand.isVisible())
+                window.on_gesture("dismiss", ticket, None)
+                wait_until(window.pending.done)
+                QApplication.processEvents()
+                self.assertFalse(card.isVisible())
+            finally:
+                window.shutdown()
+                window.hide()
+                window.deleteLater()
+
     def test_reading_card_layout(self):
         card = Card()
         area = QApplication.primaryScreen().availableGeometry()
@@ -402,8 +480,20 @@ class Checks(unittest.TestCase):
             wait_until(lambda: window.card.isVisible() and window.card.caption.text() not in ("", "本机英译中"))
             self.assertEqual(window.card.caption.text(), "句中释义")
             self.assertIn("岸", window.card.text.toPlainText())
-            QTest.keyClick(window.card, Qt.Key_Escape)
-            self.assertFalse(window.card.isVisible())
+            # Real mouse presses. The inside action works; the first outside
+            # click dismisses the card and still reaches the original window.
+            move_cursor(window.card.copy.mapToGlobal(window.card.copy.rect().center()))
+            user.mouse_event(2, 0, 0, 0, 0)
+            user.mouse_event(4, 0, 0, 0, 0)
+            wait_until(lambda: window.card.copy.text() == "已复制")
+            self.assertTrue(window.card.isVisible())
+            outside = sample.mapToGlobal(QPoint(6, sample.height() // 2))
+            self.assertFalse(window.card.geometry().contains(outside))
+            move_cursor(outside)
+            user.mouse_event(2, 0, 0, 0, 0)
+            user.mouse_event(4, 0, 0, 0, 0)
+            wait_until(lambda: not window.card.isVisible() and len(clicks) == 2)
+            self.assertEqual(clicks[-1], Qt.NoModifier)
             begin_drag()
             key(0x1B, True)
             key(0x1B, False)
@@ -417,7 +507,7 @@ class Checks(unittest.TestCase):
             wait_until(lambda: window.card.caption.text() in ("选区译文", "需要处理"))
             self.assertEqual(window.card.caption.text(), "选区译文", window.card.text.toPlainText())
             self.assertIn("河岸", window.card.text.toPlainText())
-            self.assertEqual(len(clicks), 1, "Capture drag reached the foreground window")
+            self.assertEqual(len(clicks), 2, "Capture drag reached the foreground window")
             window.demo()
             window.card.close()
             wait_until(lambda: window.pending.done())
