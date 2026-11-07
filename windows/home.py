@@ -1,109 +1,80 @@
 """The Windows home screen, with an interactive example of the active lookup gesture."""
-from pathlib import Path
-
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
-from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtGui import QColor, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
+
+from theme import STATIONERY
 
 
 HOME_EXAMPLE = "They sat on the river bank."
-PORTRAIT = Path(__file__).resolve().parent.parent / "Assets" / "Brand" / "barrette.svg"
 
 HOME_STYLE = """
-    QScrollArea#lookupHome, QWidget#home {background:#faf9f5; border:0;}
-    QLabel#pageTitle {color:#193b32; font-size:27px; font-weight:650;}
-    QPushButton#gestureSettings {background:transparent; color:#4e655a; border:1px solid #d6dfd3;
-        border-radius:7px; padding:5px 11px; font-size:12px;}
-    QPushButton#gestureSettings:hover {background:#eaf0e7; border-color:#8da590;}
-    QLabel#gestureHeadline {font-family:'SimSun','Microsoft YaHei UI'; font-size:37px; color:#faf7eb; font-weight:400;}
-    QLabel#keyVerb {font-size:20px; color:#edeede; font-weight:500;}
-    QLabel#gestureKey {color:#253a2b; background:#f6ebbc; border:1px solid #faf4d4;
-        border-bottom:3px solid #c8ba85; border-radius:7px; padding:0 9px 1px;
-        font-size:19px; font-weight:650;}
-    QLabel#heroDescription {color:#d3e3d7; font-size:13px;}
-    QFrame#sampleRule {background:#668476; max-height:1px; border:0;}
+    QPushButton#gestureSettings {color:#653e31; background:#faf2df; border:1px solid #b9a480;
+        border-radius:3px; padding:5px 11px; font-size:12px;}
+    QPushButton#gestureSettings:hover {background:#eedfc2; border-color:#927348;}
+    QLabel#gestureHeadline {font: bold 38px 'SimSun','Microsoft YaHei UI'; color:#402c23;}
+    QLabel#keyVerb {font:19px 'SimSun','Microsoft YaHei UI'; color:#604937;}
+    QLabel#gestureKey {color:#fff4dd; background:#813d35; border:1px solid #73372e;
+        border-bottom:3px solid #5d2c25; border-radius:4px; padding:1px 9px;
+        font-size:17px; font-weight:600;}
+    QLabel#heroDescription {color:#675342; font-size:13px;}
+    QFrame#sampleRule {background:#bfa782; border:0;}
     QLabel#homeExample, QPushButton#trialWord {font-family:'Spectral','Georgia';
-        font-size:23px; color:#f7f3e7; background:transparent; border:0;}
-    QPushButton#trialWord {color:#f9e7aa; background:#38594a; border:1px solid #64785a;
-        border-bottom:2px solid #d9c582; border-radius:4px; padding:0 3px; min-height:0;}
-    QPushButton#trialWord:hover {background:#496750; color:#fff4c4;}
-    QPushButton#homeRead {background:#f6ebbc; color:#273c2e; border:1px solid #f6ebbc;
-        border-radius:6px; margin-top:10px; padding:5px 13px; font-weight:600;}
-    QPushButton#homeRead:hover {background:#ffefb3;}
+        font-size:23px; color:#49342a; background:transparent; border:0;}
+    QPushButton#trialWord {color:#79362e; background:#eedbb6; border-bottom:2px solid #874438;
+        border-radius:1px; padding:0 3px; min-height:0; font-weight:600;}
+    QPushButton#trialWord:hover {background:#e5c994;}
+    QPushButton#homeRead {color:#fff3dd; background:#803c34; border:1px solid #70332d;
+        border-radius:3px; margin-top:10px; padding:5px 13px; font-weight:600;}
+    QPushButton#homeRead:hover {background:#934b40;}
     QLabel#homeWarning {color:#913a23; font-size:12px;}
-    QFrame#regionStrip {background:#f0f2eb; border:1px solid #dce2d7; border-radius:11px;}
-    QLabel#regionTitle {color:#203d32; font-size:15px; font-weight:650;}
-    QLabel#regionHint, QLabel#metricCaption {color:#5b6b60; font-size:12px;}
-    QPushButton#homeRegion {background:#fdfcf8; color:#254735; border:1px solid #ccd6ca;
-        border-radius:7px; padding:5px 12px; font-weight:600;}
-    QPushButton#homeRegion:hover {color:#163b28; border-color:#8da590; background:#fff;}
-    QLabel#recordHeading {color:#213a30; font-size:17px; font-weight:650;}
-    QFrame#homeMetrics {background:transparent; border:0; border-top:1px solid #d9ded2;}
-    QFrame#metricDivider {background:#e3e3d9; border:0; min-width:1px; max-width:1px;}
-    QLabel#metricNumber {color:#223d30; font-family:'Spectral','Georgia'; font-size:39px; font-weight:600;}
-    QPushButton#gestureSettings:focus, QPushButton#homeRegion:focus {border-color:#346b58;}
-    QPushButton#trialWord:focus, QPushButton#homeRead:focus {border:2px solid #fff2bb;}
+    QFrame#regionStrip {background:#ecdfc3; border:1px solid #c6af89; border-radius:3px;}
+    QLabel#regionTitle {color:#493127; font-size:15px; font-weight:650;}
+    QLabel#regionHint, QLabel#metricCaption {color:#685441; font-size:12px;}
+    QPushButton#homeRegion {color:#5a392a; background:#faf1db; border:1px solid #b39a75;
+        border-radius:3px; padding:5px 12px; font-weight:600;}
+    QPushButton#homeRegion:hover {color:#492a20; background:#fff6e1; border-color:#937249;}
+    QLabel#recordHeading {color:#483126; font:bold 20px 'SimSun','Microsoft YaHei UI';}
+    QFrame#homeMetrics {background:transparent; border:0; border-bottom:3px double #bda883;}
+    QFrame#metricDivider {background:#cdb999; border:0; min-width:1px; max-width:1px;}
+    QLabel#metricNumber {color:#61372d; font:600 39px 'Spectral','Georgia';}
+    QPushButton#gestureSettings:focus, QPushButton#homeRegion:focus, QPushButton#trialWord:focus {
+        border:1px solid #893e33;}
+    QPushButton#homeRead:focus {border-color:#dab675;}
 """
 
 
 class HeroPanel(QFrame):
-    """Paint the brand illustration behind the controls, inside the rounded cover."""
+    """A printed plate with space reserved for the interactive text on its left."""
     def __init__(self):
         super().__init__()
-        self.portrait = QPixmap()
+        self.river = QPixmap(str(STATIONERY / "riverbank.png"))
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         area = QRectF(self.rect())
-        outline = QPainterPath()
-        outline.addRoundedRect(area, 14, 14)
-        painter.setClipPath(outline)
+        painter.fillRect(area, QColor("#fbf2dc"))
         width, height = area.width(), area.height()
-        background = QLinearGradient(0, 0, width, height)
-        background.setColorAt(0, QColor("#153a30"))
-        background.setColorAt(1, QColor("#285044"))
-        painter.fillRect(area, background)
+        # Leave the live sentence and controls clear at every breakpoint.
+        art_width = min(width * 0.56, width - self.layout().sizeHint().width() + 4)
+        if art_width >= 115 and not self.river.isNull():
+            scale = min(art_width / self.river.width(), (height - 18) / self.river.height())
+            w, h = self.river.width() * scale, self.river.height() * scale
+            target = QRectF(width - w - 9, (height - h) / 2, w, h)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            painter.drawPixmap(target, self.river, QRectF(self.river.rect()))
 
-        # The same portrait is a book-cover crop on wide windows and a smaller
-        # bust on medium widths. At the narrowest size the text takes the full cover.
-        art_width = min(width * 0.39, width - 284)
-        if art_width < 115:
-            return
-        painter.setClipRect(QRectF(width - art_width, 0, art_width, height), Qt.IntersectClip)
-        diameter = min(art_width * 0.93, height * 1.13)
-        center = QPointF(width - art_width * 0.43, height * 0.48)
-        painter.setPen(QPen(QColor("#69816c"), 0.8))
         painter.setBrush(Qt.NoBrush)
-        painter.drawEllipse(center, diameter * 0.56, diameter * 0.56)
+        for inset, ink in ((0.5, "#ab906b"), (5.5, "#cbb594")):
+            painter.setPen(QPen(QColor(ink), 1))
+            painter.drawRect(area.adjusted(inset, inset, -inset, -inset))
+        painter.setBrush(QColor("#a38359"))
         painter.setPen(Qt.NoPen)
-        sun = QLinearGradient(0, 0, 0, height)
-        sun.setColorAt(0, QColor("#efdfa6"))
-        sun.setColorAt(1, QColor("#c4bd85"))
-        painter.setBrush(sun)
-        painter.drawEllipse(center, diameter / 2, diameter / 2)
-
-        # One small patch of screen tone echoes the pen-and-ink source.
-        painter.setBrush(QColor("#8b946c"))
-        for y in range(8):
-            for x in range(8 - y):
-                painter.drawEllipse(QPointF(width - 12 - x * 5, 13 + y * 5), 0.8, 0.8)
-
-        ratio = self.devicePixelRatioF()
-        if self.portrait.isNull() or self.portrait.devicePixelRatio() != ratio:
-            side = round(400 * ratio)
-            self.portrait = QPixmap(side, side)
-            self.portrait.setDevicePixelRatio(ratio)
-            self.portrait.fill(Qt.transparent)
-            with QPainter(self.portrait) as ink:
-                QSvgRenderer(str(PORTRAIT)).render(ink, QRectF(0, 0, 400, 400))
-                ink.setCompositionMode(QPainter.CompositionMode_SourceAtop)
-                ink.fillRect(QRectF(0, 0, 400, 400), QColor(215, 199, 147, 14))
-        side = min(art_width * 1.12, height * 1.20)
-        target = QRectF(width - art_width * 0.45 - side / 2, height - side * 0.91, side, side)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform)
-        painter.drawPixmap(target, self.portrait, QRectF(self.portrait.rect()))
+        for x in (6, width - 6):
+            for y in (6, height - 6):
+                painter.drawPolygon(QPolygonF([QPointF(x, y - 3), QPointF(x + 3, y),
+                                               QPointF(x, y + 3), QPointF(x - 3, y)]))
 
 
 class RegionMark(QWidget):
@@ -116,10 +87,10 @@ class RegionMark(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#dce8d9"))
-        painter.drawRoundedRect(QRectF(0, 0, 34, 34), 8, 8)
+        painter.setBrush(QColor("#dcc59f"))
+        painter.drawRoundedRect(QRectF(0, 0, 34, 34), 4, 4)
         painter.setBrush(Qt.NoBrush)
-        painter.setPen(QPen(QColor("#486d55"), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(QColor("#6b4632"), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         for x, dx in ((9, 4), (25, -4)):
             for y, dy in ((10, 4), (24, -4)):
                 painter.drawPolyline([QPointF(x + dx, y), QPointF(x, y), QPointF(x, y + dy)])
@@ -150,7 +121,8 @@ class HomePage(QScrollArea):
         header = QHBoxLayout()
         self.guide_title = QLabel(objectName="pageTitle")
         header.addWidget(self.guide_title)
-        header.addStretch()
+        header.setSpacing(14)
+        header.addWidget(QFrame(objectName="hairline"), 1)
         self.settings_link = QPushButton("取词键设置", objectName="gestureSettings")
         self.settings_link.clicked.connect(self.settings_requested)
         header.addWidget(self.settings_link)
@@ -225,11 +197,15 @@ class HomePage(QScrollArea):
         layout.addWidget(strip)
 
         layout.addSpacing(25)
-        layout.addWidget(QLabel("学习记录", objectName="recordHeading"))
+        record = QHBoxLayout()
+        record.setSpacing(12)
+        record.addWidget(QLabel("学习记录", objectName="recordHeading"))
+        record.addWidget(QFrame(objectName="hairline"), 1)
+        layout.addLayout(record)
         layout.addSpacing(8)
         stats = QFrame(objectName="homeMetrics")
         metrics = QHBoxLayout(stats)
-        metrics.setContentsMargins(0, 15, 0, 16)
+        metrics.setContentsMargins(3, 4, 1, 12)
         metrics.setSpacing(0)
         self.values = []
         for caption in ("今日查词", "已收藏", "待复习"):
@@ -283,9 +259,9 @@ class HomePage(QScrollArea):
         self.hero.setMinimumHeight(196 if compact else height)
         if compact != self.compact:
             self.compact = compact
-            margin = 14 if compact else 28
+            margin = 14 if compact else 30
             self.widget().layout().setContentsMargins(margin, 14 if compact else 20, margin, 18)
-            inset = 16 if compact else 24
+            inset = 20 if compact else 30
             self.hero.layout().setContentsMargins(inset, 17 if compact else 23, inset, 18 if compact else 23)
 
     def showEvent(self, event):

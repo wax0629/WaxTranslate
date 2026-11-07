@@ -72,6 +72,9 @@ class Checks(unittest.TestCase):
                 wait_until(window.wordmark.isVisible)
                 self.assertTrue(QFontDatabase.hasFamily("Spectral"))
                 self.assertGreaterEqual(window.wordmark.width(), window.wordmark.fontMetrics().horizontalAdvance("WaxTranslate"))
+                self.assertFalse(window.home.hero.river.isNull())
+                for texture in ("walnut.jpg", "parchment.jpg"):
+                    self.assertFalse(QImage("stationery:" + texture).isNull(), texture)
                 self.assertFalse(window.home.hero.grab().isNull())
                 window.resize(570, 485)
                 wait_until(lambda: window.compact is True and window.home.viewport().width() > window.width() - 32)

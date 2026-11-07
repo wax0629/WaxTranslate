@@ -23,14 +23,14 @@ class Switch(QCheckBox):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         if self.hasFocus():
-            painter.setPen(QPen(QColor("#587667"), 1.5))
+            painter.setPen(QPen(QColor("#885145"), 1.5))
             painter.drawRoundedRect(QRectF(1, 2, 46, 30), 15, 15)
         if not self.isEnabled():
-            top, bottom, border = "#edeee8", "#e2e5db", "#ced5c7"
+            top, bottom, border = "#eee5d3", "#e1d8c5", "#c8bca4"
         elif self.isChecked():
-            top, bottom, border = "#3c6250", "#284b3b", "#284b3b"
+            top, bottom, border = "#995044", "#78392f", "#78392f"
         else:
-            top, bottom, border = "#dfe4d9", "#cfd7c9", "#899b88"
+            top, bottom, border = "#e1d1b4", "#d4c2a2", "#998262"
         track = QLinearGradient(0, 6, 0, 28)
         track.setColorAt(0, QColor(top))
         track.setColorAt(1, QColor(bottom))
@@ -39,9 +39,9 @@ class Switch(QCheckBox):
         painter.drawRoundedRect(QRectF(4, 6, 40, 22), 11, 11)
         painter.setPen(Qt.NoPen)
         thumb = QRectF(25 if self.isChecked() else 7, 9, 16, 16)
-        painter.setBrush(QColor(24, 46, 31, 38))
+        painter.setBrush(QColor(50, 31, 22, 38))
         painter.drawEllipse(thumb.translated(0, 1))
-        painter.setBrush(QColor("#fffef7"))
+        painter.setBrush(QColor("#fff7e5"))
         painter.drawEllipse(thumb)
 
 
@@ -54,7 +54,7 @@ class Choice(QComboBox):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor("#53695b"), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(QColor("#765844"), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         x, y = self.width() - 11, self.height() / 2
         painter.drawPolyline([QPointF(x - 3, y - 1.5), QPointF(x, y + 1.5), QPointF(x + 3, y - 1.5)])
 
@@ -91,9 +91,9 @@ class SectionMark(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#e5ece3"))
+        painter.setBrush(QColor("#ead8b6"))
         painter.drawRoundedRect(self.rect(), 9, 9)
-        painter.setPen(QPen(QColor("#365a49"), 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(QColor("#6a4131"), 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         painter.setBrush(Qt.NoBrush)
         if self.window_mark:
             painter.drawRoundedRect(QRectF(7.5, 9, 17, 14), 2, 2)

@@ -69,7 +69,7 @@ def speaker_icon(playing):
     painter = QPainter(pix)
     painter.setRenderHint(QPainter.Antialiasing)
     painter.scale(3, 3)
-    ink = QColor("#315c4c")
+    ink = QColor("#734638")
     painter.setPen(QPen(ink, 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     if playing:
         painter.setBrush(ink)
@@ -104,11 +104,11 @@ class ListenButton(QToolButton):
         self.setPopupMode(QToolButton.MenuButtonPopup)
         self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.setStyleSheet("""
-            QToolButton#listen {font:12px 'Microsoft YaHei UI'; color:#315b4d;
-                background:#e8f0ea; border:1px solid transparent; border-radius:8px; padding:3px 6px;}
-            QToolButton#listen:hover {background:#dae8df;}
-            QToolButton#listen:focus {border-color:#6b8d7d;}
-            QToolButton#listen::menu-button {border:0; border-left:1px solid #cbdccf;
+            QToolButton#listen {font:12px 'Microsoft YaHei UI'; color:#634031;
+                background:#f2e5cb; border:1px solid transparent; border-radius:4px; padding:3px 6px;}
+            QToolButton#listen:hover {background:#e9d5b0;}
+            QToolButton#listen:focus {border-color:#925645;}
+            QToolButton#listen::menu-button {border:0; border-left:1px solid #d1b997;
                 border-top-right-radius:8px; border-bottom-right-radius:8px; width:16px;}
         """)
         menu = QMenu(self)

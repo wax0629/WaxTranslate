@@ -39,30 +39,30 @@ struct ResultCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("\(Locale(identifier: "zh_CN").localizedString(forIdentifier: source.minimalIdentifier) ?? source.minimalIdentifier) → \(targetName)")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(DeskTheme.muted)
                 Spacer()
                 Button(action: close) { Image(systemName: "xmark") }
-                    .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("关闭")
+                    .buttonStyle(.plain).foregroundStyle(DeskTheme.muted).accessibilityLabel("关闭")
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if !isRegion {
-                        Text(passage.text).font(.system(size: 23, weight: .semibold, design: .serif))
+                        Text(passage.text).font(.system(size: 25, weight: .semibold, design: .serif))
                     }
                     if let result {
                         HStack(alignment: .firstTextBaseline, spacing: 7) {
                             Text(result.meaning).font(isRegion ? .body : .system(size: 17, weight: .medium))
                             if result.origin == .dictionary {
-                                Text("词典参考").font(.caption2).foregroundStyle(.secondary)
+                                Text("词典参考").font(.caption2).foregroundStyle(DeskTheme.muted)
                             } else if result.origin == .word && hasSentence {
-                                Text("单词参考").font(.caption2).foregroundStyle(.secondary)
+                                Text("单词参考").font(.caption2).foregroundStyle(DeskTheme.muted)
                             }
                         }
                     }
                     if hasSentence || isRegion {
-                        if result != nil { Divider().padding(.vertical, 2) }
+                        if result != nil { BookRule().padding(.vertical, 2) }
                         Text(LookupTranslation.markedSentence(passage) ?? AttributedString(isRegion ? passage.text : passage.context))
-                            .font(.callout).foregroundStyle(.secondary)
+                            .font(.system(.callout, design: .serif)).foregroundStyle(DeskTheme.muted)
                         if let translation = result?.sentenceTranslation {
                             Text(translation).font(.callout)
                         }
@@ -70,7 +70,7 @@ struct ResultCard: View {
                     translationStatus
                 }.frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
             }
-            Divider()
+            BookRule()
             HStack(spacing: 12) {
                 Button { speak(passage.text, source.minimalIdentifier) } label: { Image(systemName: "speaker.wave.2") }
                     .accessibilityLabel("朗读").help("朗读原文")
@@ -89,9 +89,11 @@ struct ResultCard: View {
                     Label(notebook.contains(passage) ? "已加入生词本" : "加入生词本",
                           systemImage: notebook.contains(passage) ? "bookmark.fill" : "bookmark")
                 }.disabled(result == nil || notebook.contains(passage) || phase == .translating)
-            }.buttonStyle(.plain).controlSize(.small).foregroundStyle(.secondary)
+            }.buttonStyle(.plain).controlSize(.small).foregroundStyle(DeskTheme.muted)
         }
         .padding(16).frame(width: 390, height: isRegion ? 276 : 246)
+        .foregroundStyle(DeskTheme.ink).tint(DeskTheme.wax).background(DeskTheme.sheet)
+        .overlay(alignment: .top) { Rectangle().fill(DeskTheme.binding).frame(height: 3) }
         .task {
             let availability = await LanguageAvailability().status(from: source, to: target)
             guard !Task.isCancelled else { return }
@@ -127,7 +129,7 @@ struct ResultCard: View {
         case .failed:
             Button("系统翻译未完成 · 重试") { focusForDownload(); start() }.controlSize(.small)
         case .unsupported:
-            Text("系统翻译暂不支持这个语言组合。").font(.caption).foregroundStyle(.secondary)
+            Text("系统翻译暂不支持这个语言组合。").font(.caption).foregroundStyle(DeskTheme.muted)
         case .checking, .done:
             EmptyView()
         }

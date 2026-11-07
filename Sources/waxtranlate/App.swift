@@ -153,6 +153,7 @@ import AVFoundation
                 Button("关闭") { [weak self] in self?.reset() }
             }
         }.padding().frame(width: 330)
+            .foregroundStyle(DeskTheme.ink).tint(DeskTheme.wax).background(DeskTheme.sheet)
         show(message, at: point)
     }
 

@@ -1,12 +1,13 @@
-"""Shared typography and quiet surfaces for the Windows reader."""
+"""Paper, wood and type for the Windows reader."""
 from html import escape
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QDir, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import QLabel
 
 APP_NAME = "WaxTranslate"
+STATIONERY = Path(__file__).with_name("stationery")
 
 
 def label(text, role):
@@ -52,7 +53,7 @@ def nav_icon(book=False, *, settings=False, home=False):
             path.moveTo(8.5, y)
             path.lineTo(end, y)
     icon = QIcon()
-    for state, color in ((QIcon.Off, "#56645d"), (QIcon.On, "#fffdf5")):
+    for state, color in ((QIcon.Off, "#eadac0"), (QIcon.On, "#fff3df")):
         pix = QPixmap(72, 72)
         pix.fill(Qt.transparent)
         painter = QPainter(pix)
@@ -67,106 +68,106 @@ def nav_icon(book=False, *, settings=False, home=False):
 
 
 def apply_theme(app):
+    QDir.addSearchPath("stationery", str(STATIONERY))
     fonts = Path(__file__).with_name("fonts")
     for filename in ("Spectral-Regular.ttf", "Spectral-SemiBold.ttf"):
         QFontDatabase.addApplicationFont(str(fonts / filename))
     app.setFont(QFont("Microsoft YaHei UI", 10))
     palette = app.palette()
     for role, color in (
-        (QPalette.Window, "#f9f8f3"), (QPalette.WindowText, "#172d25"),
-        (QPalette.Base, "#fffefa"), (QPalette.Text, "#263b32"),
-        (QPalette.Button, "#f6f6ef"), (QPalette.ButtonText, "#284336"),
-        (QPalette.Highlight, "#c8dccc"), (QPalette.HighlightedText, "#173b29"),
-        (QPalette.PlaceholderText, "#68746b"), (QPalette.Link, "#315f49"),
+        (QPalette.Window, "#f6ecd6"), (QPalette.WindowText, "#382b24"),
+        (QPalette.Base, "#fcf7e9"), (QPalette.Text, "#382b24"),
+        (QPalette.Button, "#f4ead4"), (QPalette.ButtonText, "#49352b"),
+        (QPalette.Highlight, "#e5c5aa"), (QPalette.HighlightedText, "#37231e"),
+        (QPalette.PlaceholderText, "#796c5c"), (QPalette.Link, "#853c33"),
     ):
         palette.setColor(role, QColor(color))
     app.setPalette(palette)
     app.setStyleSheet("""
-        QWidget {color:#23382e; font-size:13px;}
+        QWidget {color:#382b24; font-size:13px;}
         QWidget#desk, QWidget#home, QWidget#readingPage, QWidget#library, QWidget#settingsSurface,
-        QScrollArea#settingsPage, QScrollArea#lookupHome {background:#f9f8f3;}
+        QScrollArea#settingsPage, QScrollArea#lookupHome {
+            background:#f6ecd6 url(stationery:parchment.jpg) repeat; border:0;}
         QLabel {background:transparent; border:0;}
-        QLabel[role="heading"] {color:#172d25; font-size:27px; font-weight:600;}
-        QLabel[role="subhead"] {color:#20392c; font-size:15px; font-weight:600;}
-        QLabel[role="meta"] {color:#5f6e62; font-size:12px;}
-        QLabel[role="warning"] {color:#923f24; font-size:13px;}
-        QLabel[role="settingsSection"] {color:#546858; font-size:13px; font-weight:600;}
-        QLabel[role="shortcut"] {color:#526357; background:#eef1e9; border:1px solid #d5ded2;
-            border-radius:4px; padding:2px 5px; font-family:'Segoe UI'; font-size:11px;}
+        QLabel[role="heading"], QLabel#pageTitle {color:#382820;
+            font: bold 29px 'SimSun','Microsoft YaHei UI';}
+        QLabel[role="subhead"] {color:#382b24; font-size:15px; font-weight:600;}
+        QLabel[role="meta"] {color:#695a4a; font-size:12px;}
+        QLabel[role="warning"] {color:#913a27; font-size:13px;}
+        QLabel[role="settingsSection"] {color:#623f31; font-size:14px; font-weight:600;}
+        QLabel[role="shortcut"] {color:#645140; background:#f1e5cb; border:1px solid #ccba98;
+            border-radius:3px; padding:2px 5px; font:12px 'Consolas';}
 
-        /* Navigation shares the paper surface. The selected destination carries the ink. */
-        QFrame#sidebar {background:#eeefe7; border:0; border-right:1px solid #d9ded1;}
-        QFrame#sidebar[compact="true"] {border-right:0; border-bottom:1px solid #d9ded1;}
-        QFrame#brandBadge {background:#fbfaf4; border:1px solid #d6dccf; border-radius:10px;}
-        QLabel[role="brand"] {color:#1c3629; font-family:'Spectral','Georgia'; font-size:19px; font-weight:600;}
-        QLabel[role="engine"] {color:#5c6b61; font-size:11px;}
-        QFrame#railRule {background:#d5dbcf; border:0; max-height:1px;}
-        QPushButton[role="nav"] {text-align:left; background:transparent; color:#45564b;
-            border:1px solid transparent; border-radius:8px; padding:9px 12px; min-height:18px; font-size:14px;}
-        QPushButton[role="nav"]:hover {background:#e0e6da; color:#193b2a;}
-        QPushButton[role="nav"]:checked {background:#294c3b; border-color:#294c3b; color:#fffdf5; font-weight:600;}
-        QPushButton[role="nav"]:checked:hover {background:#315642;}
-        QPushButton[role="nav"]:focus {border-color:#7d967f;}
+        QFrame#sidebar {background:#3f2b22 url(stationery:walnut.jpg) repeat;
+            border:0; border-right:3px double #b99e73;}
+        QFrame#sidebar[compact="true"] {border-right:0; border-bottom:3px double #b99e73;}
+        QFrame#brandBadge {background:#f4e8cc; border:1px solid #bd9d6b; border-radius:17px;}
+        QLabel[role="brand"] {color:#fff1d8; font:600 19px 'Spectral','Georgia';}
+        QLabel[role="engine"] {color:#e1d0b5; font-size:11px;}
+        QFrame#railRule {background:#8b7057; border:0; max-height:1px;}
+        QPushButton[role="nav"] {text-align:left; color:#f3e6d0; background:transparent;
+            border:1px solid transparent; border-radius:3px; padding:9px 12px; min-height:18px; font-size:14px;}
+        QPushButton[role="nav"]:hover {background:#5c4133; color:#fff5e5;}
+        QPushButton[role="nav"]:checked {background:#7b3731; border:1px solid #aa6e57;
+            border-left:3px solid #daba83; color:#fff2d7; font-weight:600;}
+        QPushButton[role="nav"]:checked:hover {background:#89423a;}
+        QPushButton[role="nav"]:focus {border-color:#f1d79e;}
 
-        /* Controls */
-        QPushButton {color:#284234; background:#fffefa; border:1px solid #cdd6c9;
-            border-radius:7px; padding:6px 12px; min-height:18px;}
-        QPushButton:hover {background:#edf2e9; border-color:#95ac97;}
-        QPushButton:pressed {background:#dde8d9; border-color:#718f75;}
-        QPushButton:focus, QCheckBox:focus {border-color:#527c63;}
-        QPushButton:disabled {color:#737d73; background:#f0f1eb; border-color:#dfe4d9;}
-        QPushButton[role="primary"] {background:#274b38; color:#fffefa; border-color:#274b38; font-weight:600;}
-        QPushButton[role="primary"]:hover {background:#365e45; border-color:#365e45;}
-        QPushButton[role="primary"]:pressed {background:#183a2a;}
-        QPushButton[role="primary"]:disabled {background:#ebeee6; border-color:#d8dfd2; color:#697969;}
-        QPushButton[role="quiet"] {background:transparent; color:#47604e; border:1px solid transparent; padding:4px 8px;}
-        QPushButton[role="quiet"]:hover {background:#e7ede2; color:#21432f;}
-        QPushButton[role="sample"] {background:#e7eee2; color:#2a5036; border:1px solid #d2decf;
-            border-radius:6px; padding:3px 8px; min-height:16px; font-size:12px;}
-        QPushButton[role="sample"]:hover {background:#dbe8d7;}
-        QPushButton[role="sample"]:focus, QPushButton[role="quiet"]:focus {border-color:#6c9174;}
-        QPushButton[role="primary"]:focus {border-color:#cca76c;}
-        QLineEdit#search {background:#fffefa; color:#263b32; border:1px solid #d3dace;
-            border-radius:8px; padding:8px 12px; selection-background-color:#d8e7d7;}
-        QLineEdit#search:focus, QComboBox#settingsChoice:focus {border-color:#65876d;}
-        QComboBox#settingsChoice {background:#f4f6ee; color:#2c4c37; border:1px solid #d2dbcb;
-            border-radius:7px; padding:4px 9px; font-size:13px; min-height:23px;}
+        QPushButton {color:#4d382b; background:#faf2df; border:1px solid #bca582;
+            border-radius:4px; padding:6px 12px; min-height:18px;}
+        QPushButton:hover {background:#f0e2c4; border-color:#9a7851;}
+        QPushButton:pressed {background:#e3d0ac; border-color:#815e43;}
+        QPushButton:focus {border-color:#883d34;}
+        QPushButton:disabled {color:#857969; background:#f1e9d7; border-color:#d6c8b0;}
+        QPushButton[role="primary"] {background:#803c34; color:#fff6e4; border-color:#70332d; font-weight:600;}
+        QPushButton[role="primary"]:hover {background:#95483e; border-color:#78362f;}
+        QPushButton[role="primary"]:pressed {background:#68302b;}
+        QPushButton[role="primary"]:disabled {background:#e9dfcb; border-color:#cebea2; color:#796e5b;}
+        QPushButton[role="quiet"] {background:transparent; color:#6f4d3e; border:1px solid transparent; padding:4px 8px;}
+        QPushButton[role="quiet"]:hover {background:#eadcc0; color:#513728;}
+        QPushButton[role="sample"] {background:#f4e6c9; color:#683d30; border:1px solid #c9b18d;
+            border-radius:3px; padding:3px 8px; min-height:16px; font-size:12px;}
+        QPushButton[role="sample"]:hover {background:#e9d8b4;}
+        QPushButton[role="sample"]:focus, QPushButton[role="quiet"]:focus {border-color:#883d34;}
+        QPushButton[role="primary"]:focus {border-color:#dbb576;}
+        QLineEdit#search {background:#fcf6e6; color:#382b24; border:1px solid #c5b28f;
+            border-radius:4px; padding:8px 12px; selection-background-color:#e5c5aa;}
+        QLineEdit#search:focus, QComboBox#settingsChoice:focus {border-color:#8b4134;}
+        QComboBox#settingsChoice {background:#f3e8d0; color:#4c3528; border:1px solid #bfaa88;
+            border-radius:3px; padding:4px 9px; font-size:13px; min-height:23px;}
         QComboBox#settingsChoice::drop-down {border:0; width:20px;}
-        QComboBox#settingsChoice QAbstractItemView {background:#fffefa; border:1px solid #ced7c9;
-            selection-background-color:#dce9d9; selection-color:#1d3526;}
-        QMenu {background:#fffefa; color:#263b32; border:1px solid #d2d9cc; padding:4px;}
-        QMenu::item {padding:6px 18px; border-radius:4px;}
-        QMenu::item:selected {background:#e4ecdf; color:#1d3b28;}
-        QToolTip {background:#203a2d; color:#fffdf5; border:0; padding:5px 7px;}
+        QComboBox#settingsChoice QAbstractItemView, QMenu {background:#faf1dc; color:#382b24;
+            border:1px solid #bca582; selection-background-color:#e5c5aa; selection-color:#37231e;}
+        QMenu {padding:4px;}
+        QMenu::item {padding:6px 18px; border-radius:2px;}
+        QMenu::item:selected {background:#e9d7b5; color:#482c21;}
+        QToolTip {background:#442f25; color:#fff3dc; border:0; padding:5px 7px;}
 
-        /* Reading sheets, vocabulary and preferences */
-        QFrame#readingSheet, QFrame#entrySheet, QFrame#settingsGroup {
-            background:#fffefa; border:1px solid #d7ddcf; border-radius:14px;}
+        QFrame#readingSheet, QFrame#entrySheet, QFrame#settingsGroup, QFrame#emptyBook {
+            background:#fcf6e6; border:1px solid #c1ab86; border-radius:4px;}
         QFrame#editor {background:transparent; border:0;}
-        QFrame#translationPane {background:#eff3e9; border:0; border-top-right-radius:13px;}
+        QFrame#translationPane {background:#f3e8ce; border:0; border-top-right-radius:4px;}
         QFrame#binding {border:0; background:qlineargradient(x1:0,y1:0,x2:1,y2:0,
-            stop:0 #e6e9df, stop:0.35 #cfd8c9, stop:1 #e9eee4);}
-        QFrame#hairline {background:#dbe0d4; border:0; min-height:1px; max-height:1px;}
-        QLabel[role="sourceLanguage"] {font:600 24px 'Spectral','Georgia'; color:#253d2b;}
-        QLabel[role="targetLanguage"] {font-size:18px; font-weight:600; color:#3c5846;}
-        QPlainTextEdit#input, QPlainTextEdit#translation {background:transparent; border:0; padding:0;
-            selection-background-color:#c9decd; selection-color:#193726;}
-        QPlainTextEdit#input {font-family:'Spectral','Georgia','Microsoft YaHei UI'; font-size:19px; color:#213b2b;}
-        QPlainTextEdit#translation {font-size:16px; color:#314b3a;}
-        QFrame#emptyBook {background:#eef2e8; border:1px solid #d5dfce; border-radius:14px;}
-        QTextBrowser#entry {background:transparent; border:0; padding:8px 11px;
-            selection-background-color:#d7e6d8; selection-color:#193726;}
-        QListWidget#words {background:#fffefa; border:1px solid #d7ddcf; border-radius:10px;
-            padding:3px; outline:0;}
-        QListWidget#words::item {padding:6px; border-radius:5px;}
-        QListWidget#words::item:selected {background:#e1ebdd; color:#1d3727;}
-        QListWidget#words:focus {border-color:#809c85;}
+            stop:0 #e1d3b6, stop:0.38 #bb9f77, stop:1 #eee0c2);}
+        QFrame#hairline {background:#d2c1a1; border:0; min-height:1px; max-height:1px;}
+        QLabel[role="sourceLanguage"] {font:600 24px 'Spectral','Georgia'; color:#58362c;}
+        QLabel[role="targetLanguage"] {font:bold 21px 'SimSun','Microsoft YaHei UI'; color:#58362c;}
+        QPlainTextEdit#input, QPlainTextEdit#translation, QTextBrowser#entry {background:transparent; border:0;
+            padding:0; selection-background-color:#e9cbab; selection-color:#37231e;}
+        QPlainTextEdit#input {font-family:'Spectral','Georgia','Microsoft YaHei UI'; font-size:19px; color:#382b24;}
+        QPlainTextEdit#translation {font-size:16px; color:#49382e;}
+        QTextBrowser#entry {padding:8px 11px;}
+        QListWidget#words {background:#faf1db; border:1px solid #c1ab86; border-radius:4px; padding:3px; outline:0;}
+        QListWidget#words::item {padding:6px; border-radius:3px;}
+        QListWidget#words::item:selected {background:#ecd7b6; color:#442a22;}
+        QListWidget#words:focus {border-color:#8b4134;}
         QScrollBar:vertical {background:transparent; width:9px; margin:2px 1px;}
-        QScrollBar::handle:vertical {background:#becbbb; min-height:24px; border-radius:3px;}
-        QScrollBar::handle:vertical:hover {background:#95aa94;}
+        QScrollBar::handle:vertical {background:#c4ae8d; min-height:24px; border-radius:3px;}
+        QScrollBar::handle:vertical:hover {background:#a48a66;}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {height:0;}
         QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {background:transparent;}
     """)
+
 
 
 def plain(text):
@@ -174,13 +175,13 @@ def plain(text):
 
 
 DOCUMENT_STYLE = """
-    p {margin:0; font-family:'Microsoft YaHei UI'; color:#303a34;}
-    .word {font-family:'Spectral','Georgia','Microsoft YaHei UI'; font-size:28px; font-weight:600; color:#1c3629; margin-bottom:3px;}
-    .details {font-size:12px; color:#53675b; margin-bottom:6px;}
-    .gloss {font-size:17px; line-height:133%; color:#283e31; margin-bottom:4px;}
-    .source {font-family:'Spectral','Georgia','Microsoft YaHei UI'; font-size:17px; line-height:128%; color:#46584d; margin-top:4px;}
-    .hit {font-weight:600; color:#244b32; background-color:#e2ecda;}
-    .translation {font-size:14px; line-height:130%; color:#29332e; margin-top:7px;}
+    p {margin:0; font-family:'Microsoft YaHei UI'; color:#382b24;}
+    .word {font-family:'Spectral','Georgia','Microsoft YaHei UI'; font-size:28px; font-weight:600; color:#512e26; margin-bottom:3px;}
+    .details {font-size:12px; color:#705a48; margin-bottom:6px;}
+    .gloss {font-size:17px; line-height:133%; color:#382b24; margin-bottom:4px;}
+    .source {font-family:'Spectral','Georgia','Microsoft YaHei UI'; font-size:17px; line-height:128%; color:#594636; margin-top:4px;}
+    .hit {font-weight:600; color:#673126; background-color:#ead4ae;}
+    .translation {font-size:14px; line-height:130%; color:#3f3027; margin-top:7px;}
     .message {font-size:14px; line-height:140%;}
 """
 
@@ -199,7 +200,7 @@ def result_html(passage, gloss, sentence, details, prefix="", suffix=""):
         word = plain(passage.word)
         heading = f"<p class='word'>{word}</p>"
     content = (heading + f"<p class='details'>{plain(details)}</p><p class='gloss'>{plain(gloss)}</p>"
-               + f"<hr style='background-color:#dfe5df'><p class='source'>{prefix}{source}{suffix}</p>")
+               + f"<hr style='background-color:#ccb894'><p class='source'>{prefix}{source}{suffix}</p>")
     if sentence:
         content += f"<p class='translation'>{plain(sentence)}</p>"
     return content
