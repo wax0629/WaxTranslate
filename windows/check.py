@@ -904,7 +904,7 @@ class Checks(unittest.TestCase):
                 user.mouse_event(2, 0, 0, 0, 0)
                 user.mouse_event(4, 0, 0, 0, 0)
                 wait_until(lambda: speak.called)
-                speak.assert_called_once_with(card.listen, "bank", True)
+                speak.assert_called_once_with(card.listen, "bank", True, "en")
                 self.assertTrue(card.isVisible())
             button = window.card.copy
             center = button.mapToGlobal(button.rect().center())
