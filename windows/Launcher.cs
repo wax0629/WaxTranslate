@@ -10,21 +10,24 @@ using System.Windows.Forms;
 internal static class Launcher
 {
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
+        bool background = args.Length == 1 && args[0] == "--background";
         string root = AppDomain.CurrentDomain.BaseDirectory;
         string python = Path.Combine(root, "runtime", "pythonw.exe");
         string script = Path.Combine(root, "windows", "app.py");
         try
         {
-            Process.Start(new ProcessStartInfo(python, "\"" + script + "\"") {
+            string arguments = "\"" + script + "\"" + (background ? " --background" : "");
+            Process.Start(new ProcessStartInfo(python, arguments) {
                 UseShellExecute = false, WorkingDirectory = root
             });
             return 0;
         }
         catch (Exception error)
         {
-            MessageBox.Show("请完整解压便携包后再启动。\n" + error.Message, "WaxTranslate");
+            if (!background)
+                MessageBox.Show("请完整解压便携包后再启动。\n" + error.Message, "WaxTranslate");
             return 1;
         }
     }

@@ -6,10 +6,10 @@ import sqlite3
 from pathlib import Path
 import sys
 
-from PySide6.QtCore import QPoint, QPointF, QProcess, QRect, QSettings, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPen
+from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QSettings, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QCursor, QDesktopServices, QIcon, QPainter, QPen
 from PySide6.QtSvgWidgets import QSvgWidget
-from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QCheckBox, QComboBox, QFrame, QHBoxLayout,
+from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QFrame, QHBoxLayout,
                                QMenu, QPushButton, QStackedWidget, QStyle, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 from notebook import Notebook
@@ -19,6 +19,8 @@ from popup import Card
 from speech import SpeechPlayer
 from library import Library
 from reader import Passage, recognize
+from settings_page import SettingsPage
+from startup import LoginStartup
 from theme import APP_NAME, apply_theme, label, nav_icon
 from translation import UnsupportedLanguage
 from workspace import TextWorkspace
@@ -131,7 +133,7 @@ class Window(QWidget):
     finished = Signal(int, object, object)
     online_finished = Signal(int, object)
 
-    def __init__(self, notebook=None):
+    def __init__(self, notebook=None, login_startup=None):
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.setObjectName("desk")
@@ -149,6 +151,7 @@ class Window(QWidget):
         self.reading_from_editor = False
         self.notebook = notebook or Notebook()
         self.settings = QSettings(str(self.notebook.path.with_name("preferences.ini")), QSettings.IniFormat)
+        self.login_startup = login_startup if login_startup is not None else LoginStartup()
         self.overlay = None
         self.ticket = 0
         # A paragraph translation can continue while the reader looks up a word.
@@ -178,8 +181,10 @@ class Window(QWidget):
         self.tabs = QStackedWidget()
         outer.addWidget(self.tabs, 1)
         group = QButtonGroup(self)
-        for index, name in enumerate(("翻译", "生词本")):
-            nav = QPushButton(nav_icon(book=bool(index)), name)
+        for index, name in enumerate(("翻译", "生词本", "设置")):
+            if index == 2:
+                rail.addStretch()
+            nav = QPushButton(nav_icon(book=index == 1, settings=index == 2), name)
             nav.setCheckable(True)
             nav.setProperty("role", "nav")
             nav.setIconSize(QSize(21, 21))
@@ -187,7 +192,6 @@ class Window(QWidget):
             rail.addWidget(nav)
         group.idClicked.connect(self.tabs.setCurrentIndex)
         self.tabs.currentChanged.connect(lambda index: group.button(index).setChecked(True))
-        rail.addStretch()
         self.engine_label = label("本地英译中", "meta")
         rail.addWidget(self.engine_label)
 
@@ -198,6 +202,23 @@ class Window(QWidget):
         self.tabs.addWidget(home)
         self.library = Library(self.notebook, self.player)
         self.tabs.addWidget(self.library)
+        self.preferences = SettingsPage()
+        self.tabs.addWidget(self.preferences)
+        self.tabs.currentChanged.connect(self.tab_changed)
+        self.trigger = self.preferences.trigger
+        self.auto_online = self.preferences.auto_online
+        for control, key, default in ((self.trigger, "gesture", "left"),
+                                      (self.preferences.close_behavior, "closeBehavior", "tray")):
+            control.setCurrentIndex(max(0, control.findData(self.settings.value(key, default))))
+        self.auto_online.setChecked(self.settings.value("onlineTerms", False, type=bool))
+        self.auto_online.toggled.connect(lambda checked: self.save_preference("onlineTerms", checked))
+        self.preferences.close_behavior.currentIndexChanged.connect(
+            lambda: self.save_preference("closeBehavior", self.preferences.close_behavior.currentData()))
+        self.preferences.startup.toggled.connect(self.set_startup)
+        self.preferences.repair_startup.clicked.connect(lambda: self.set_startup(True))
+        self.preferences.remove_startup.clicked.connect(lambda: self.set_startup(False))
+        self.preferences.retry_startup.clicked.connect(self.refresh_startup)
+        self.preferences.system_startup.clicked.connect(self.open_system_startup)
         layout.addWidget(label("阅读与翻译", "heading"))
         self.workspace = TextWorkspace(self.pool)
         self.workspace.input.lookup_requested.connect(self.lookup_text)
@@ -224,14 +245,11 @@ class Window(QWidget):
         row = QHBoxLayout()
         row.addWidget(label("屏幕取词键", "meta"))
         row.addStretch()
-        self.trigger = QComboBox()
-        self.trigger.setObjectName("trigger")
-        self.trigger.setAccessibleName("屏幕取词键")
-        self.trigger.setToolTip("与其他翻译软件冲突时，可更换按键或仅在应用内查词。")
-        for title, mode in (("轻按左 Ctrl", "left"), ("轻按右 Ctrl", "right"), ("仅应用内查词", "off")):
-            self.trigger.addItem(title, mode)
-        self.trigger.setCurrentIndex(max(0, self.trigger.findData(self.settings.value("gesture", "left"))))
-        row.addWidget(self.trigger)
+        self.gesture_link = QPushButton()
+        self.gesture_link.setProperty("role", "quiet")
+        self.gesture_link.setToolTip("在设置中更改屏幕取词键")
+        self.gesture_link.clicked.connect(self.open_gesture_settings)
+        row.addWidget(self.gesture_link)
         hints.addLayout(row)
         region_row = QHBoxLayout()
         region_row.addWidget(label("拖选一段文字", "meta"))
@@ -239,10 +257,6 @@ class Window(QWidget):
         self.region_hint = label("", "key")
         region_row.addWidget(self.region_hint)
         hints.addLayout(region_row)
-        self.auto_online = QCheckBox("未收录词自动查 Wikidata（仅发送词条）")
-        self.auto_online.setChecked(self.settings.value("onlineTerms", False, type=bool))
-        self.auto_online.toggled.connect(lambda checked: self.settings.setValue("onlineTerms", checked))
-        hints.addWidget(self.auto_online)
         layout.addWidget(self.hints)
         self.hint_button.toggled.connect(self.show_hints)
         self.hint_button.setChecked(True)
@@ -254,6 +268,7 @@ class Window(QWidget):
         menu.addAction("生词本", self.open_library)
         menu.addAction("框选翻译", lambda: self.begin(True))
         menu.addSeparator()
+        menu.addAction("设置", self.open_settings)
         menu.addAction("退出", QApplication.quit)
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self.tray_clicked)
@@ -309,6 +324,52 @@ class Window(QWidget):
         self.raise_()
         self.activateWindow()
 
+    def open_settings(self):
+        self.tabs.setCurrentWidget(self.preferences)
+        self.open_home()
+
+    def open_gesture_settings(self):
+        self.open_settings()
+        self.trigger.setFocus()
+
+    def tab_changed(self, index):
+        if self.tabs.widget(index) is self.preferences:
+            self.refresh_startup()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if (event.type() == QEvent.ActivationChange and self.isActiveWindow() and hasattr(self, "preferences")
+                and self.tabs.currentWidget() is self.preferences):
+            self.refresh_startup()
+
+    def refresh_startup(self):
+        try:
+            state = self.login_startup.status()
+        except (OSError, ValueError) as error:
+            self.preferences.set_startup_state("error", f"读取启动项失败。{error}")
+            return
+        self.preferences.set_startup_state(state)
+
+    def set_startup(self, enabled):
+        try:
+            self.login_startup.set_enabled(enabled)
+        except (OSError, ValueError) as error:
+            self.refresh_startup()
+            self.preferences.set_notice(f"启动项更改失败。{error}")
+            return
+        self.refresh_startup()
+        self.preferences.set_notice("")
+
+    def open_system_startup(self):
+        if not QDesktopServices.openUrl(QUrl("ms-settings:startupapps")):
+            self.preferences.set_notice("请从 Windows 设置打开「应用 → 启动」。")
+
+    def save_preference(self, key, value):
+        self.settings.setValue(key, value)
+        self.settings.sync()
+        self.preferences.set_notice("" if self.settings.status() == QSettings.NoError
+                                    else "此更改已在本次运行生效，写入本机设置失败。")
+
     def open_library(self):
         self.tabs.setCurrentWidget(self.library)
         self.open_home()
@@ -334,18 +395,15 @@ class Window(QWidget):
 
     def update_trigger_hints(self):
         mode = self.trigger.currentData()
+        self.gesture_link.setText(self.trigger.currentText() + "  ›")
         key = {"left": "左 Ctrl", "right": "右 Ctrl"}.get(mode)
         self.region_hint.setText(f"按住{key}，左键拖动" if key else "点「开始框选」")
         self.tray.setToolTip(f"{APP_NAME} · " + (f"轻按{key}取词" if key else "仅应用内查词"))
 
     def change_trigger(self):
-        self.settings.setValue("gesture", self.trigger.currentData())
-        self.settings.sync()
+        self.save_preference("gesture", self.trigger.currentData())
         self.update_trigger_hints()
         self.invalidate()
-        if self.settings.status() != QSettings.NoError:
-            self.gesture_warning.setText("按键已切换，本次设置未能写入本机。")
-            self.gesture_warning.show()
 
     def gesture_failed(self, reason):
         self.gesture_ready = False
@@ -573,7 +631,8 @@ class Window(QWidget):
             self.card.online.setText("再查一次")
 
     def closeEvent(self, event):
-        if self.tray.isVisible():
+        if (self.preferences.close_behavior.currentData() == "tray" and self.tray.isVisible()
+                and self.tray.isSystemTrayAvailable()):
             self.hide()
             event.ignore()
         else:
@@ -596,8 +655,9 @@ class Window(QWidget):
 def main():
     from instance import activation_event
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("WaxTranslate.Desktop")
-    app = QApplication(sys.argv)
-    activation = activation_event(app)
+    background = sys.argv[1:] == ["--background"]
+    app = QApplication(sys.argv[:1] if background else sys.argv)
+    activation = activation_event(app, activate_existing=not background)
     if activation is None:
         return 0
     app.setApplicationName(APP_NAME)
@@ -607,7 +667,8 @@ def main():
     apply_theme(app)
     window = Window()
     activation.activated.connect(window.open_home)
-    window.show()
+    if not background or not window.tray.isVisible():
+        window.show()
     return app.exec()
 
 
