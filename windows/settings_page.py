@@ -133,7 +133,7 @@ class SettingsPage(QScrollArea):
         reading.addWidget(QFrame(objectName="hairline"))
         self.auto_online = Switch()
         setting_row(reading, "未收录词自动查百科", self.auto_online,
-                    "仅将所选词条发送给 Wikidata，原句和截图保留在本机。")
+                    "本机查不到时，仅将选中的英文词条发送给 Wikidata。")
         self.notice = label("", "warning")
         self.notice.setTextFormat(Qt.PlainText)
         self.notice.setWordWrap(True)

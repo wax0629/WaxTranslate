@@ -23,9 +23,10 @@ from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QRectF, QSi
 from PySide6.QtGui import QCursor, QFont, QFontDatabase, QFontMetrics, QImage, QMouseEvent, QPainter, QShortcut
 from PySide6.QtTest import QTest
 from PySide6.QtSvgWidgets import QSvgWidget
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from app import Window, app_icon, image_point, image_rect
+from home import HOME_EXAMPLE
 from notebook import Notebook
 from popup import Card
 from reader import Passage, Word, context_excerpt, passage_from_lines, recognize
@@ -68,6 +69,7 @@ class Checks(unittest.TestCase):
                 window.resize(870, 530)
                 window.show()
                 window.activateWindow()
+                next(b for b in window.sidebar.findChildren(QPushButton) if b.text() == "阅读").click()
                 wait_until(ui.example.isVisible)
                 ui.example.click()
                 wait_until(window.card.save.isVisible)
@@ -116,7 +118,7 @@ class Checks(unittest.TestCase):
             try:
                 self.assertEqual(first.trigger.currentData(), "left")
                 first.trigger.setCurrentIndex(first.trigger.findData("off"))
-                self.assertIn("开始框选", first.region_hint.text())
+                self.assertIn("开始框选", first.home.region_hint.text())
             finally:
                 first.shutdown()
                 first.deleteLater()
@@ -129,6 +131,61 @@ class Checks(unittest.TestCase):
             finally:
                 reopened.shutdown()
                 reopened.deleteLater()
+
+    def test_home_lookup_and_dashboard(self):
+        with TemporaryDirectory() as tmp, patch.object(QProcess, "start"):
+            book = Notebook(Path(tmp) / "book.sqlite")
+            window = Window(notebook=book)
+            home = window.home
+            def counts():
+                return tuple(value.text() for value in home.values)
+            try:
+                window.show()
+                self.assertIs(window.tabs.currentWidget(), home)
+                self.assertTrue(home.demo.isVisible())
+                self.assertEqual(home.keycap.text(), "左 Ctrl")
+                wait_until(lambda: counts() == ("0", "0", "0"))
+                window.workspace.input.setPlainText("An unfinished draft.")
+                home.demo.click()
+                wait_until(window.card.save.isVisible)
+                self.assertEqual(window.saved_result[0].text, HOME_EXAMPLE)
+                self.assertIn("岸", window.saved_result[1][1])
+                wait_until(lambda: counts() == ("1", "0", "0"))
+                window.card.save.click()
+                wait_until(lambda: counts() == ("1", "1", "1"))
+                window.card.close()
+                window.open_library()
+                window.library.review.click()
+                window.library.reveal.click()
+                window.library.known.click()
+                window.tabs.setCurrentWidget(home)
+                wait_until(lambda: counts() == ("1", "1", "0"))
+                window.trigger.setCurrentIndex(window.trigger.findData("right"))
+                self.assertEqual(home.keycap.text(), "右 Ctrl")
+                window.trigger.setCurrentIndex(window.trigger.findData("off"))
+                self.assertTrue(home.keycap.isHidden())
+                self.assertTrue(home.reader.isVisible())
+                home.reader.click()
+                self.assertIs(window.tabs.currentWidget(), window.reader_page)
+                self.assertEqual(window.workspace.input.toPlainText(), "An unfinished draft.")
+                window.tabs.setCurrentWidget(home)
+                with patch.object(window, "begin") as begin:
+                    home.region.click()
+                    begin.assert_called_once_with(True)
+
+                # Neither a completed region nor a superseded word is a new word lookup.
+                job = Future()
+                job.set_result((Passage(RIVER), ("选区译文", "译文", ""), None, "英语", ""))
+                window.show_result(window.ticket, QPoint(10, 10), job)
+                word = Future()
+                word.set_result((word_in(RIVER), ("句中释义", "岸", "译文"), None, "英语", "名词"))
+                window.show_result(window.ticket - 1, QPoint(10, 10), word)
+                window.stats_pool.submit(lambda: None).result(timeout=5)
+                self.assertEqual(book.home_stats(), (1, 1, 0))
+            finally:
+                window.shutdown()
+                window.hide()
+                window.deleteLater()
 
     def test_lookup_during_paragraph_translation(self):
         translating, release = Event(), Event()
@@ -470,6 +527,7 @@ class Checks(unittest.TestCase):
                 window.resize(880, 510)
                 window.show()
                 window.activateWindow()
+                window.open_reader()
                 wait_until(ui.input.hasFocus)
                 self.assertGreater(ui.output.mapTo(ui, QPoint()).x(), ui.input.mapTo(ui, QPoint()).x())
                 ui.input.setPlainText(RIVER + "\n\n" + MONEY)
@@ -494,9 +552,9 @@ class Checks(unittest.TestCase):
                 self.assertIn("岸", ui.output.toPlainText())
                 window.resize(610, 490)
                 wait_until(lambda: ui.output.mapTo(ui, QPoint()).y() > ui.input.mapTo(ui, QPoint()).y())
-                self.assertTrue(window.hints.isHidden())
-                window.hint_button.click()
-                self.assertFalse(window.hints.isHidden())
+                window.tabs.setCurrentWidget(window.home)
+                self.assertTrue(window.home.region.isVisible())
+                self.assertEqual(ui.input.toPlainText(), RIVER)
             finally:
                 window.shutdown()
                 window.hide()
@@ -859,6 +917,20 @@ class Checks(unittest.TestCase):
             self.assertEqual(window.saved_result[0].word, "MVP")
             self.assertIn("最小可行产品", window.saved_result[1][1])
             self.assertEqual(sum(action == "lookup" for action, _, _ in gestures), count + 1)
+            # Try the word on the actual landing page using the configured key.
+            window.card.close()
+            sample.hide()
+            window.open_home()
+            wait_until(window.home.demo.isVisible)
+            demo = window.home.demo
+            move_cursor(demo.mapToGlobal(demo.rect().center()))
+            wait_until(lambda: QApplication.widgetAt(QCursor.pos()) is demo)
+            user.keybd_event(right_ctrl, 0x1D, 1, 0)
+            user.keybd_event(right_ctrl, 0x1D, 3, 0)
+            wait_until(window.card.save.isVisible)
+            self.assertEqual(window.saved_result[0].text, HOME_EXAMPLE)
+            self.assertEqual(window.saved_result[0].word, "bank")
+            wait_until(lambda: window.home.values[0].text() == "3")
             window.trigger.setCurrentIndex(window.trigger.findData("off"))
             wait_until(lambda: window.active_mode == "off")
             ticket = window.ticket
@@ -916,4 +988,7 @@ if __name__ == "__main__":
         if QFontDatabase.addApplicationFont(font) == -1:
             raise RuntimeError(f"Cannot load Windows test font: {font}")
     apply_theme(app)
-    unittest.main()
+    # A developer's lookup count, notebook and preferences are personal data.
+    # The model installer paths are already resolved, so source runs can still use the real models.
+    with TemporaryDirectory() as profile, patch.dict(os.environ, {"LOCALAPPDATA": profile}):
+        unittest.main()

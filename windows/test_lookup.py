@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
-from PySide6.QtCore import QPoint, QProcess
+from PySide6.QtCore import QPoint, QProcess, QSettings
 from PySide6.QtWidgets import QApplication
 
 from app import Window, online_meanings
@@ -92,6 +92,57 @@ class LookupTests(unittest.TestCase):
             online_meanings("PostgreSQL’s")
             fetch.assert_called_once_with("PostgreSQL")
 
+    def test_default_online_lookup_only_for_unknown_english_terms(self):
+        with TemporaryDirectory() as tmp, patch.object(QProcess, "start"), \
+                patch("app.search_entities", return_value=[("Q42", "百科说明", "zh")]) as fetch:
+            window = Window(Notebook(Path(tmp) / "book.sqlite"))
+            card = window.card
+            point = QPoint(40, 40)
+            try:
+                self.assertTrue(window.auto_online.isChecked())
+                window.lookup_text(selected("Codex reviewed my patch.", "Codex"), point)
+                wait_for(card.save.isVisible)
+                self.assertIn("编程", card.text.toPlainText())
+                card.close()
+                window.submit(point, passage=Passage("Please translate the following sentence."))
+                wait_for(card.copy.isVisible)
+                card.close()
+                for text, word in (("Read account number 839403257 here.", "839403257"),
+                                   ("The page includes the label 检查完成 beside the illustration.", "检查完成")):
+                    window.lookup_text(selected(text, word), point)
+                    wait_for(card.online.isVisible)
+                    self.assertIsNone(window.online_job)
+                    card.close()
+                fetch.assert_not_called()
+
+                window.lookup_text(selected("The private project uses BlorpQuxV9.", "BlorpQuxV9"), point)
+                wait_for(card.save.isVisible)
+                fetch.assert_called_once_with("BlorpQuxV9")
+                self.assertIn("百科说明", card.text.toPlainText())
+                window.stats_pool.submit(lambda: None).result(timeout=5)
+                # Codex, the selected Chinese label, and the novel name. The
+                # paragraph, pure number and follow-up Wikidata result add no lookup.
+                self.assertEqual(window.notebook.home_stats()[0], 3)
+            finally:
+                window.shutdown()
+                window.deleteLater()
+
+    def test_online_preference_upgrade_and_restart(self):
+        with TemporaryDirectory() as tmp, patch.object(QProcess, "start"):
+            book = Notebook(Path(tmp) / "book.sqlite")
+            legacy = QSettings(str(book.path.with_name("preferences.ini")), QSettings.IniFormat)
+            legacy.setValue("gesture", "right")
+            legacy.sync()
+            for initial in (True, False, True):
+                window = Window(book)
+                try:
+                    self.assertEqual(window.auto_online.isChecked(), initial)
+                    self.assertEqual(window.trigger.currentData(), "right")
+                    window.auto_online.setChecked(not initial)
+                finally:
+                    window.shutdown()
+                    window.deleteLater()
+
     def test_unknown_online_and_notebook(self):
         with TemporaryDirectory() as tmp, patch.object(QProcess, "start"):
             book = Notebook(Path(tmp) / "book.sqlite")
@@ -100,6 +151,7 @@ class LookupTests(unittest.TestCase):
             card = window.card
             item = selected("Please inspect BlorpQuxV9.", "BlorpQuxV9")
             try:
+                window.auto_online.setChecked(False)
                 with patch("app.search_entities", return_value=[("Q42", "新条目", "zh")]) as fetch:
                     window.lookup_text(item, point)
                     wait_for(card.online.isVisible)

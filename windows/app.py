@@ -5,14 +5,16 @@ import json
 import sqlite3
 from pathlib import Path
 import sys
+import time
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QSettings, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QCursor, QDesktopServices, QIcon, QPainter, QPen
 from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QFrame, QHBoxLayout,
-                               QMenu, QPushButton, QStackedWidget, QStyle, QSystemTrayIcon, QVBoxLayout, QWidget)
+                               QMenu, QPushButton, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 from notebook import Notebook
+from home import HOME_EXAMPLE, HomePage
 from lookup import UNKNOWN, explain, reference_word, sentence_translation
 from online_terms import search_entities
 from popup import Card
@@ -132,6 +134,7 @@ def online_meanings(word):
 class Window(QWidget):
     finished = Signal(int, object, object)
     online_finished = Signal(int, object)
+    stats_ready = Signal(object, object, object)
 
     def __init__(self, notebook=None, login_startup=None):
         super().__init__()
@@ -154,8 +157,11 @@ class Window(QWidget):
         self.login_startup = login_startup if login_startup is not None else LoginStartup()
         self.overlay = None
         self.ticket = 0
+        self.stopping = False
         # A paragraph translation can continue while the reader looks up a word.
         self.pool = ThreadPoolExecutor(max_workers=2)
+        # Serialize dashboard reads and writes without delaying the reading card.
+        self.stats_pool = ThreadPoolExecutor(max_workers=1)
         self.pending = None
         self.finished.connect(self.show_result)
         self.compact = None
@@ -174,17 +180,18 @@ class Window(QWidget):
         avatar.setAccessibleName(APP_NAME)
         avatar.setFixedSize(31, 31)
         brand.addWidget(avatar)
-        brand.addWidget(label(APP_NAME, "brand"))
+        self.wordmark = label(APP_NAME, "brand")
+        brand.addWidget(self.wordmark)
         brand.addStretch()
         rail.addLayout(brand)
         rail.addSpacing(26)
         self.tabs = QStackedWidget()
         outer.addWidget(self.tabs, 1)
         group = QButtonGroup(self)
-        for index, name in enumerate(("翻译", "生词本", "设置")):
-            if index == 2:
+        for index, name in enumerate(("首页", "阅读", "生词本", "设置")):
+            if index == 3:
                 rail.addStretch()
-            nav = QPushButton(nav_icon(book=index == 1, settings=index == 2), name)
+            nav = QPushButton(nav_icon(home=index == 0, book=index == 2, settings=index == 3), name)
             nav.setCheckable(True)
             nav.setProperty("role", "nav")
             nav.setIconSize(QSize(21, 21))
@@ -195,11 +202,19 @@ class Window(QWidget):
         self.engine_label = label("本地英译中", "meta")
         rail.addWidget(self.engine_label)
 
-        home = QWidget(objectName="home")
-        layout = QVBoxLayout(home)
+        self.home = HomePage()
+        self.tabs.addWidget(self.home)
+        self.home.demo_requested.connect(self.try_home_word)
+        self.home.region_requested.connect(lambda: self.begin(True))
+        self.home.reader_requested.connect(self.open_reader)
+        self.home.settings_requested.connect(self.open_gesture_settings)
+        self.home.stats_requested.connect(self.refresh_home)
+        self.stats_ready.connect(self.home.set_stats)
+        self.reader_page = QWidget(objectName="readingPage")
+        layout = QVBoxLayout(self.reader_page)
         layout.setContentsMargins(27, 22, 27, 20)
         layout.setSpacing(12)
-        self.tabs.addWidget(home)
+        self.tabs.addWidget(self.reader_page)
         self.library = Library(self.notebook, self.player)
         self.tabs.addWidget(self.library)
         self.preferences = SettingsPage()
@@ -210,7 +225,7 @@ class Window(QWidget):
         for control, key, default in ((self.trigger, "gesture", "left"),
                                       (self.preferences.close_behavior, "closeBehavior", "tray")):
             control.setCurrentIndex(max(0, control.findData(self.settings.value(key, default))))
-        self.auto_online.setChecked(self.settings.value("onlineTerms", False, type=bool))
+        self.auto_online.setChecked(self.settings.value("onlineTerms", True, type=bool))
         self.auto_online.toggled.connect(lambda checked: self.save_preference("onlineTerms", checked))
         self.preferences.close_behavior.currentIndexChanged.connect(
             lambda: self.save_preference("closeBehavior", self.preferences.close_behavior.currentData()))
@@ -225,42 +240,8 @@ class Window(QWidget):
         self.workspace.input.textChanged.connect(self.editor_changed)
         self.workspace.example.clicked.connect(self.demo)
         layout.addWidget(self.workspace, 1)
-        quick = QHBoxLayout()
-        self.hint_button = QPushButton("屏幕翻译")
-        self.hint_button.setIconSize(QSize(11, 11))
-        self.hint_button.setProperty("role", "disclosure")
-        self.hint_button.setCheckable(True)
-        self.hint_button.setToolTip("显示或收起取词与框选手势")
-        quick.addWidget(self.hint_button)
-        quick.addStretch()
-        region = QPushButton("开始框选")
-        region.setProperty("role", "quiet")
-        region.clicked.connect(lambda: self.begin(True))
-        quick.addWidget(region)
-        layout.addLayout(quick)
-        self.hints = QWidget()
-        hints = QVBoxLayout(self.hints)
-        hints.setContentsMargins(0, 0, 0, 0)
-        hints.setSpacing(7)
-        row = QHBoxLayout()
-        row.addWidget(label("屏幕取词键", "meta"))
-        row.addStretch()
-        self.gesture_link = QPushButton()
-        self.gesture_link.setProperty("role", "quiet")
-        self.gesture_link.setToolTip("在设置中更改屏幕取词键")
-        self.gesture_link.clicked.connect(self.open_gesture_settings)
-        row.addWidget(self.gesture_link)
-        hints.addLayout(row)
-        region_row = QHBoxLayout()
-        region_row.addWidget(label("拖选一段文字", "meta"))
-        region_row.addStretch()
-        self.region_hint = label("", "key")
-        region_row.addWidget(self.region_hint)
-        hints.addLayout(region_row)
-        layout.addWidget(self.hints)
-        self.hint_button.toggled.connect(self.show_hints)
-        self.hint_button.setChecked(True)
         self.tray = QSystemTrayIcon(QApplication.windowIcon(), self)
+        self.gesture_warning = self.home.warning
         self.update_trigger_hints()
         self.trigger.currentIndexChanged.connect(self.change_trigger)
         menu = QMenu(self)
@@ -274,13 +255,8 @@ class Window(QWidget):
         self.tray.activated.connect(self.tray_clicked)
         if self.tray.isSystemTrayAvailable():
             self.tray.show()
-        self.gesture_warning = label("", "warning")
-        self.gesture_warning.setWordWrap(True)
-        layout.addWidget(self.gesture_warning)
-        self.gesture_warning.hide()
         self.gesture_ready = False
         self.active_mode = None
-        self.stopping = False
         self.gestures = QProcess(self)
         self.gestures.readyReadStandardOutput.connect(self.read_gestures)
         self.gestures.errorOccurred.connect(lambda error: self.gesture_failed(self.gestures.errorString()))
@@ -289,7 +265,6 @@ class Window(QWidget):
                             ["-u", str(Path(__file__).with_name("gestures.py").resolve()), self.trigger.currentData()])
         area = QApplication.primaryScreen().availableGeometry()
         self.resize(min(872, area.width() - 24), min(535, area.height() - 48))
-        self.workspace.input.setFocus()
         QApplication.instance().aboutToQuit.connect(self.shutdown)
 
     def resizeEvent(self, event):
@@ -309,15 +284,10 @@ class Window(QWidget):
             self.sidebar.setFixedWidth(172)
             self.rail.setContentsMargins(12, 24, 12, 17)
         self.engine_label.setVisible(not compact)
-        self.hint_button.setChecked(not compact)
+        self.wordmark.setVisible(not compact)
         self.sidebar.setProperty("compact", compact)
         self.sidebar.style().unpolish(self.sidebar)
         self.sidebar.style().polish(self.sidebar)
-
-    def show_hints(self, expanded):
-        self.hints.setVisible(expanded)
-        arrow = QStyle.SP_ArrowDown if expanded else QStyle.SP_ArrowRight
-        self.hint_button.setIcon(self.style().standardIcon(arrow))
 
     def open_home(self):
         self.showNormal()
@@ -328,6 +298,10 @@ class Window(QWidget):
         self.tabs.setCurrentWidget(self.preferences)
         self.open_home()
 
+    def open_reader(self):
+        self.tabs.setCurrentWidget(self.reader_page)
+        self.workspace.input.setFocus()
+
     def open_gesture_settings(self):
         self.open_settings()
         self.trigger.setFocus()
@@ -335,6 +309,23 @@ class Window(QWidget):
     def tab_changed(self, index):
         if self.tabs.widget(index) is self.preferences:
             self.refresh_startup()
+        elif self.tabs.widget(index) is self.reader_page:
+            self.workspace.input.setFocus()
+
+    def refresh_home(self, *, lookup_at=None):
+        visible = self.home.isVisible()
+        if not self.stopping and (lookup_at is not None or visible):
+            self.stats_pool.submit(self.update_home_stats, lookup_at, visible)
+
+    def update_home_stats(self, lookup_at, visible):
+        try:
+            if lookup_at is not None:
+                self.notebook.record_lookup(lookup_at)
+            if visible:
+                self.stats_ready.emit(*self.notebook.home_stats())
+        except (sqlite3.Error, OSError):
+            if visible:
+                self.stats_ready.emit(None, None, None)
 
     def changeEvent(self, event):
         super().changeEvent(event)
@@ -386,6 +377,7 @@ class Window(QWidget):
             return
         self.card.save.setText("已收藏")
         self.card.save.setEnabled(False)
+        self.refresh_home()
         if self.library.isVisible():
             self.library.refresh()
 
@@ -394,10 +386,9 @@ class Window(QWidget):
             self.open_home()
 
     def update_trigger_hints(self):
-        mode = self.trigger.currentData()
-        self.gesture_link.setText(self.trigger.currentText() + "  ›")
+        mode = self.trigger.currentData() if self.gesture_warning.isHidden() else "off"
+        self.home.set_mode(mode)
         key = {"left": "左 Ctrl", "right": "右 Ctrl"}.get(mode)
-        self.region_hint.setText(f"按住{key}，左键拖动" if key else "点「开始框选」")
         self.tray.setToolTip(f"{APP_NAME} · " + (f"轻按{key}取词" if key else "仅应用内查词"))
 
     def change_trigger(self):
@@ -411,6 +402,7 @@ class Window(QWidget):
         if not self.stopping and self.gesture_warning.isHidden():
             self.gesture_warning.setText(f"无法监听屏幕取词键（{reason}）。可双击原文查词或点「开始框选」。")
             self.gesture_warning.show()
+            self.update_trigger_hints()
             if self.overlay is not None and self.overlay.from_ctrl:
                 self.overlay.close()
 
@@ -419,6 +411,8 @@ class Window(QWidget):
             action, origin, end = json.loads(bytes(self.gestures.readLine()))
             if action == "ready":
                 self.gesture_ready = True
+                self.gesture_warning.hide()
+                self.update_trigger_hints()
                 self.active_mode = origin
                 self.card.dismiss_on_deactivate = False
                 self.watch_card()
@@ -488,6 +482,12 @@ class Window(QWidget):
             self.overlay.close()
             self.overlay = None
 
+    def try_home_word(self):
+        self.invalidate()
+        start = HOME_EXAMPLE.index("bank")
+        self.submit(self.home.demo.mapToGlobal(self.home.demo.rect().center()),
+                    passage=Passage(HOME_EXAMPLE, (start, start + 4)))
+
     def demo(self):
         text = "They sat on the river bank and watched the water."
         editor = self.workspace.input
@@ -513,7 +513,11 @@ class Window(QWidget):
         if point is None:
             point = QCursor.pos()
         editor = self.workspace.input
-        if not region and QApplication.widgetAt(point) is editor.viewport():
+        under_pointer = QApplication.widgetAt(point) if not region else None
+        if under_pointer is self.home.demo:
+            self.try_home_word()
+            return
+        if under_pointer is editor.viewport():
             if not editor.lookup_point(QPointF(editor.viewport().mapFromGlobal(point))):
                 self.invalidate()
                 self.card.show_message("原文查词", "请指向一个单词，或将光标放在词中按 Alt+Enter。", point)
@@ -591,7 +595,9 @@ class Window(QWidget):
         self.saved_result = (passage, result) if passage.selection and not unknown else None
         self.card.show_result(passage, *result, point, excerpt=excerpt, language=language, pos=pos,
                               can_save=not unknown, can_search=can_search)
-        if unknown and self.auto_online.isChecked():
+        if passage.selection and any(c.isalpha() for c in passage.word):
+            self.refresh_home(lookup_at=time.time())
+        if unknown and self.auto_online.isChecked() and any(c.isascii() and c.isalpha() for c in passage.word):
             self.search_online()
 
     def search_online(self):
@@ -650,6 +656,7 @@ class Window(QWidget):
         self.workspace.reset_result()
         self.pool.shutdown(wait=True, cancel_futures=True)
         self.online_pool.shutdown(wait=False, cancel_futures=True)
+        self.stats_pool.shutdown(wait=True)
 
 
 def main():
