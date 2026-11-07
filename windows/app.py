@@ -18,7 +18,8 @@ from popup import Card
 from library import Library
 from reader import Passage, recognize
 from theme import APP_NAME, apply_theme, label, nav_icon
-from translation import translate_lookup
+from translation import UnsupportedLanguage, source_language, translate_lookup
+from word_details import part_of_speech
 from workspace import TextWorkspace
 
 
@@ -113,8 +114,10 @@ class Selection(QWidget):
 def analyze(image, point, passage):
     if passage is None:
         passage = asyncio.run(recognize(image, point))
+    language = source_language(passage.text)
     result, excerpt = translate_lookup(passage)
-    return passage, result, excerpt
+    pos = part_of_speech(passage) if passage.selection else ""
+    return passage, result, excerpt, language, pos
 
 
 class Window(QWidget):
@@ -437,12 +440,15 @@ class Window(QWidget):
         if ticket != self.ticket:
             return
         try:
-            passage, result, excerpt = job.result()
+            passage, result, excerpt, language, pos = job.result()
+        except UnsupportedLanguage as error:
+            self.card.show_original(error.language, error.text, point)
+            return
         except Exception as error:
             self.card.show_message("需要处理", str(error), point)
             return
         self.saved_result = (passage, result) if passage.selection else None
-        self.card.show_result(passage, *result, point, excerpt=excerpt)
+        self.card.show_result(passage, *result, point, excerpt=excerpt, language=language, pos=pos)
 
     def closeEvent(self, event):
         if self.tray.isVisible():

@@ -6,10 +6,38 @@ from pathlib import Path
 import re
 
 import ctranslate2
+import pycld2
 import sentencepiece
 
 from install_model import MODEL, PACKAGE
 from reader import Passage, context_excerpt
+
+
+class UnsupportedLanguage(ValueError):
+    def __init__(self, language, text):
+        self.language = language
+        self.text = text
+        super().__init__(f"识别为{language}。当前离线模型支持英语译为简体中文。")
+
+
+def source_language(text):
+    """Return a supported, detected source or leave short/ambiguous input unconfirmed."""
+    try:
+        reliable, _, matches = pycld2.detect(text, isPlainText=True)
+    except pycld2.error:
+        return ""
+    name, code, percent, _ = matches[0]
+    if not reliable or percent < 80 or code == "un":
+        return ""
+    # Isolated Latin words (e.g. "description") can be shared by languages.
+    if re.search(r"[A-Za-zÀ-ɏ]", text) and len(re.findall(r"[^\W\d_]+", text)) < 3:
+        return ""
+    if code == "en":
+        return "英语"
+    languages = {"fr": "法语", "de": "德语", "es": "西班牙语", "it": "意大利语", "pt": "葡萄牙语",
+                 "nl": "荷兰语", "ru": "俄语", "ja": "日语", "ko": "韩语", "zh": "中文",
+                 "zh-Hant": "繁体中文", "ar": "阿拉伯语", "pl": "波兰语"}
+    raise UnsupportedLanguage(languages.get(code, name.title()), text)
 
 
 @lru_cache(maxsize=1)
@@ -115,5 +143,9 @@ def translate_text(text, stop):
     for part in paragraphs:
         if stop.is_set():
             raise CancelledError()
-        result.append(translate(Passage(part))[1] if re.search("[A-Za-z]", part) else part)
+        if re.search("[A-Za-z]", part):
+            source_language(part)
+            result.append(translate(Passage(part))[1])
+        else:
+            result.append(part)
     return "".join(result)

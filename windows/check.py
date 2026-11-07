@@ -13,8 +13,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from PySide6.QtCore import QPoint, QPointF, QProcess, QRect, QRectF, QSize, Qt
-from PySide6.QtGui import QCursor, QFont, QFontDatabase, QFontMetrics, QImage, QPainter, QShortcut
+from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QRectF, QSize, Qt
+from PySide6.QtGui import QCursor, QFont, QFontDatabase, QFontMetrics, QImage, QMouseEvent, QPainter, QShortcut
 from PySide6.QtTest import QTest
 from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import QApplication, QLabel
@@ -25,6 +25,7 @@ from popup import Card
 from reader import Passage, Word, context_excerpt, passage_from_lines, recognize
 from theme import apply_theme
 from translation import translate, translate_lookup
+from word_details import part_of_speech
 from workspace import TextWorkspace
 
 
@@ -52,6 +53,89 @@ def wait_until(predicate):
 
 
 class Checks(unittest.TestCase):
+    def test_word_details_in_context(self):
+        source = "They record a record."
+        for start, expected in [(source.index("record"), "动词"), (source.rindex("record"), "名词")]:
+            self.assertEqual(part_of_speech(Passage(source, (start, start + 6))), expected)
+        self.assertEqual(part_of_speech(Passage("record", (0, 6))), "")
+        with patch.object(QProcess, "start"):
+            window = Window()
+            card = window.card
+            point = QApplication.primaryScreen().availableGeometry().topLeft() + QPoint(5, 5)
+            try:
+                window.submit(point, passage=word_in(RIVER))
+                wait_until(card.save.isVisible)
+                self.assertIn("英语 · 名词", card.text.toPlainText())
+                window.invalidate()
+                source = "La méthode proposée permet de mesurer la température dans cet environnement."
+                window.submit(point, passage=Passage(source))
+                wait_until(lambda: card.copy.isVisible() and card.copy.text() == "复制原文")
+                self.assertEqual(card.caption.text(), "法语原文")
+                self.assertFalse(card.save.isVisible())
+                card.copy.click()
+                self.assertEqual(QApplication.clipboard().text(), source)
+                window.invalidate()
+                window.submit(point, passage=Passage("record", (0, 6)))
+                wait_until(card.save.isVisible)
+                self.assertIn("按英语查词 · 词性待定", card.text.toPlainText())
+                window.invalidate()
+                window.submit(point, passage=Passage(RIVER))
+                wait_until(card.copy.isVisible)
+                self.assertIn("英语 → 简体中文", card.text.toPlainText())
+                self.assertNotIn("词性", card.text.toPlainText())
+            finally:
+                window.shutdown()
+                window.deleteLater()
+
+    def test_dragged_position_survives_result_and_expand(self):
+        card = Card()
+        area = QApplication.primaryScreen().availableGeometry()
+        point = area.topLeft() + QPoint(3, 4)
+        try:
+            card.show_message("本机英译中", "正在读取并翻译…", point)
+            QApplication.processEvents()
+            start = card.pos()
+            press = card.grip.mapToGlobal(card.grip.rect().center())
+            delta = QPoint(32, 24)
+            for kind, location, button, buttons in [
+                (QEvent.MouseButtonPress, press, Qt.LeftButton, Qt.LeftButton),
+                (QEvent.MouseMove, press + delta, Qt.NoButton, Qt.LeftButton),
+                (QEvent.MouseButtonRelease, press + delta, Qt.LeftButton, Qt.NoButton),
+            ]:
+                event = QMouseEvent(kind, QPointF(card.grip.mapFromGlobal(location)), QPointF(location),
+                                    button, buttons, Qt.NoModifier)
+                QApplication.sendEvent(card.grip, event)
+            self.assertEqual(card.pos(), start + delta)
+            passage = word_in(RIVER[:-1] + "; meanwhile the rest of the group returned home.")
+            full, excerpt = translate_lookup(passage)
+            card.show_result(passage, *full, point, excerpt=excerpt, language="英语", pos="名词")
+            self.assertEqual(card.pos(), start + delta)
+            card.expand.click()
+            self.assertEqual(card.pos(), start + delta)
+            self.assertIn(passage.text, card.text.toPlainText())
+            # Selecting actual printed letters must not arm dragging.
+            cursor = card.text.document().find("bank")
+            cursor.setPosition(cursor.selectionStart())
+            first = card.text.cursorRect(cursor).center() + QPoint(1, 0)
+            cursor.setPosition(cursor.position() + 3)
+            last = card.text.cursorRect(cursor).center()
+            view = card.text.viewport()
+            for kind, location, button, buttons in [
+                (QEvent.MouseButtonPress, first, Qt.LeftButton, Qt.LeftButton),
+                (QEvent.MouseMove, last, Qt.NoButton, Qt.LeftButton),
+                (QEvent.MouseButtonRelease, last, Qt.LeftButton, Qt.NoButton),
+            ]:
+                event = QMouseEvent(kind, QPointF(location), QPointF(view.mapToGlobal(location)),
+                                    button, buttons, Qt.NoModifier)
+                QApplication.sendEvent(view, event)
+            self.assertIn("an", card.text.textCursor().selectedText())
+            self.assertEqual(card.pos(), start + delta)
+            card.close()
+            card.show_message("本机英译中", "正在读取并翻译…", point)
+            self.assertEqual(card.pos(), start)
+        finally:
+            card.close()
+
     def test_lookup_context(self):
         for source, word, short, meaning in [
             ("The Code Review plugin shows a pull request’s description, changed files, comments, and checks.",
@@ -495,6 +579,19 @@ class Checks(unittest.TestCase):
                 user.GetPhysicalCursorPos(ctypes.byref(cursor))
                 return user.GetAncestor(user.WindowFromPhysicalPoint(cursor), 2)
 
+            card = window.card
+            before_drag = card.pos()
+            grip = card.grip.mapToGlobal(card.grip.rect().center())
+            dy = -45 if before_drag.y() - area.top() > 60 else 45
+            move_cursor(grip)
+            wait_until(lambda: native_target() == int(card.winId()) and QApplication.widgetAt(QCursor.pos()) is card.grip)
+            user.mouse_event(2, 0, 0, 0, 0)
+            wait_until(lambda: card.press_position is not None)
+            move_cursor(grip + QPoint(0, dy))
+            wait_until(lambda: abs(card.y() - before_drag.y()) > 20)
+            user.mouse_event(4, 0, 0, 0, 0)
+            wait_until(lambda: card.press_position is None)
+            self.assertTrue(card.isVisible())
             button = window.card.copy
             center = button.mapToGlobal(button.rect().center())
             move_cursor(center)

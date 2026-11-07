@@ -10,19 +10,20 @@ from tempfile import TemporaryDirectory
 import urllib.request
 import zipfile
 
-from install_model import FILES, MODEL, PACKAGE, install
+from install_model import FILES, MODEL, PACKAGE, POS_ARCHIVE, install, install_word_tags
 
 SRC = Path(__file__).resolve().parent
 PYTHON_ZIP = "python-3.12.10-embed-amd64.zip"
 PYTHON_SHA = "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
 APP_FILES = ("app.py", "gestures.py", "library.py", "notebook.py", "popup.py", "reader.py", "translation.py",
-             "instance.py", "theme.py", "workspace.py", "install_model.py", "waxtranslate.ico")
+             "instance.py", "theme.py", "workspace.py", "word_details.py", "install_model.py", "waxtranslate.ico")
 
 
 def build(output, archive=None):
     if sys.version_info[:2] != (3, 12) or sys.maxsize < 2**32 or sys.platform != "win32":
         raise SystemExit("Build with 64-bit Python 3.12 on Windows.")
     install()
+    install_word_tags()
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=output.parent) as temp:
@@ -57,6 +58,8 @@ def build(output, archive=None):
             dest = root / "models" / PACKAGE / name
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(MODEL / name, dest)
+        shutil.copy2(POS_ARCHIVE, root / "models" / POS_ARCHIVE.name)
+        shutil.copy2(SRC / "licenses/english-pos.txt", root / "models/english-pos-LICENSE.txt")
         compiler = Path(os.environ["WINDIR"]) / "Microsoft.NET/Framework64/v4.0.30319/csc.exe"
         subprocess.run([str(compiler), "/nologo", "/target:winexe", "/platform:x64", "/optimize+",
                         "/r:System.Windows.Forms.dll", "/codepage:65001", "/win32icon:" + str(SRC / "waxtranslate.ico"),

@@ -11,7 +11,7 @@ from winrt.windows.media.ocr import OcrEngine
 from winrt.windows.storage.streams import DataWriter
 
 
-ENGLISH_WORD = re.compile(r"[A-Za-z0-9]+(?:[-’'][A-Za-z0-9]+)*")
+WORD_TOKEN = re.compile(r"[^\W_]+(?:[-’'][^\W_]+)*")
 
 
 @dataclass
@@ -34,7 +34,7 @@ class Passage:
 def context_excerpt(passage):
     """Suggest a contiguous clause containing this occurrence for a second sense check."""
     text = passage.text
-    if not passage.selection or len(ENGLISH_WORD.findall(text)) <= 12:
+    if not passage.selection or len(WORD_TOKEN.findall(text)) <= 12:
         return None
     a, b = passage.selection
     left, right = 0, len(text)
@@ -54,7 +54,7 @@ def context_excerpt(passage):
         right = b + boundary.start()
     excerpt = text[left:right]
     omitted = text[:left] + " " + text[right:]
-    if len(ENGLISH_WORD.findall(excerpt)) < 4 or len(ENGLISH_WORD.findall(omitted)) < 4:
+    if len(WORD_TOKEN.findall(excerpt)) < 4 or len(WORD_TOKEN.findall(omitted)) < 4:
         return None
     if any(excerpt.count(opener) != excerpt.count(closer) for opener, closer in ("()", "[]", "{}")):
         return None
@@ -77,14 +77,14 @@ def line_rect(words):
 
 def word_at_point(word, point):
     if "/" not in word.text:
-        return ENGLISH_WORD.search(word.text)
+        return WORD_TOKEN.search(word.text)
     # Windows supplies one ink box for e.g. "read/write", with no glyph boxes
     # or source font. Scale proportional advances into that box before hit-testing.
     font = QFont("Segoe UI")
     font.setPixelSize(64)
     metrics = QFontMetricsF(font)
     position = (point.x() - word.rect.left()) / word.rect.width() * metrics.horizontalAdvance(word.text)
-    for match in ENGLISH_WORD.finditer(word.text):
+    for match in WORD_TOKEN.finditer(word.text):
         left = metrics.horizontalAdvance(word.text[:match.start()])
         right = metrics.horizontalAdvance(word.text[:match.end()])
         if left <= position < right:

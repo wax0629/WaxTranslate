@@ -1,0 +1,29 @@
+English averaged-perceptron model and inference feature definitions
+
+Model: NLTK Data, averaged_perceptron_tagger_eng (English, JSON)
+Source: https://github.com/nltk/nltk_data/tree/304a3c5432dd2fe08ae8b436dc6eec54c3593445/packages/taggers
+Archive SHA-256: 6025f530624335c67d6547d44757b357b4e79bae030a0383e9887a92c1718f0b
+Package license: MIT, as declared in averaged_perceptron_tagger_eng.xml
+Upstream model: https://github.com/sloria/textblob-aptagger
+Feature definitions: https://github.com/nltk/nltk/blob/3.9.2/nltk/tag/perceptron.py
+NLTK modifications Copyright 2015 The NLTK Project
+
+Copyright 2013 Matthew Honnibal
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
