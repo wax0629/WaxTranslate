@@ -1,9 +1,11 @@
 """Run only on an isolated Windows desktop. Exercise the user-facing executable."""
 import ctypes
 from ctypes import wintypes as wt
+import os
 from pathlib import Path
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 import time
 from unittest.mock import patch
 from uuid import uuid4
@@ -62,6 +64,7 @@ def launch(command):
 
 def check(root):
     from instance import EVENT_NAME
+    from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
     app = QApplication([])
@@ -71,6 +74,7 @@ def check(root):
     user.FindWindowW.restype = wt.HWND
     user.IsIconic.argtypes = (wt.HWND,)
     user.IsWindowVisible.argtypes = (wt.HWND,)
+    user.GetWindowLongW.argtypes = (wt.HWND, ctypes.c_int)
     user.PostMessageW.argtypes = (wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM)
     user.GetWindowThreadProcessId.argtypes = (wt.HWND, ctypes.POINTER(wt.DWORD))
     kernel = ctypes.windll.kernel32
@@ -78,6 +82,7 @@ def check(root):
     kernel.OpenProcess.restype = wt.HANDLE
     kernel.TerminateProcess.argtypes = (wt.HANDLE, wt.UINT)
     kernel.CloseHandle.argtypes = (wt.HANDLE,)
+    kernel.WaitForSingleObject.argtypes = (wt.HANDLE, wt.DWORD)
     kernel.OpenEventW.argtypes = (wt.DWORD, wt.BOOL, wt.LPCWSTR)
     kernel.OpenEventW.restype = wt.HANDLE
     exe = root / "WaxTranslate.exe"
@@ -94,42 +99,67 @@ def check(root):
 
     command = registered_command()
     assert command == f'"{exe.resolve()}" --background', f"Expected the portable launcher, got {command!r}"
-    launcher_pid = launch(command)
-    pid, = wait_for(lambda: python_children(launcher_pid), "the login launcher's child")
-    try:
-        wait_for(lambda: python_children(pid), "the background app's gesture listener")
-        if has_tray:
-            assert not visible_main(), "Login startup showed the main window"
-        else:
-            wait_for(visible_main, "visible fallback without a system tray")
-        repeat = launch(command)
-        wait_for(lambda: not python_children(repeat), "the second background launch to exit")
-        if has_tray:
-            assert not visible_main(), "Repeated login launch raised the hidden app"
-        launch([exe])
-        window = wait_for(visible_main, "the manually activated window")
-        active_pid = wt.DWORD()
-        user.GetWindowThreadProcessId(window, ctypes.byref(active_pid))
-        assert active_pid.value == pid, "A second main instance opened"
-        assert user.PostMessageW(window, 0x0112, 0xF020, 0)  # WM_SYSCOMMAND / SC_MINIMIZE
-        wait_for(lambda: user.IsIconic(window), "the main window to minimize")
-        repeat = launch(command)
-        wait_for(lambda: not python_children(repeat), "the redundant login launch to exit")
-        assert user.IsIconic(window), "Background launch restored a minimized app"
-        launch([exe])
-        wait_for(lambda: not user.IsIconic(window), "manual launch to restore the window")
-        assert user.FindWindowW(None, title) == window
-        startup = "hidden tray startup" if has_tray else "visible fallback (no system tray)"
-        print(f"Verified {startup}, quiet repeat login and manual activation of the same PID.", flush=True)
-    finally:
-        # The isolated runner has no user data or other instance. Ending this
-        # exact child also exercises the gesture listener's parent-pipe cleanup.
-        process = kernel.OpenProcess(1, False, pid)
-        if process:
-            kernel.TerminateProcess(process, 0)
-            kernel.CloseHandle(process)
-        wait_for(lambda: not user.FindWindowW(None, title), "the isolated instance to exit")
+    for login in (False, True):
+        if login:
+            # A fresh login uses the real registered command and the alternate
+            # explicit close setting, in this test's own temporary profile.
+            prefs = QSettings(str(Path(os.environ["LOCALAPPDATA"]) / "WaxTranslate/preferences.ini"), QSettings.IniFormat)
+            prefs.setValue("closeBehavior", "quit")
+            prefs.sync()
+            assert prefs.status() == QSettings.NoError
+        launcher_pid = launch(command if login else [exe])
+        pid, = wait_for(lambda: python_children(launcher_pid), "the launcher's child")
+        process = kernel.OpenProcess(0x00100001, False, pid)  # SYNCHRONIZE | PROCESS_TERMINATE
+        assert process
+        try:
+            wait_for(lambda: python_children(pid), "the app's background gesture listener")
+            if has_tray:
+                assert not visible_main(), "Cold startup showed the main window"
+            else:
+                wait_for(visible_main, "visible fallback without a system tray")
+            repeat = launch(command)
+            wait_for(lambda: not python_children(repeat), "the redundant background launch to exit")
+            if has_tray:
+                assert not visible_main(), "Repeated login launch raised the hidden app"
+            launch([exe])
+            window = wait_for(visible_main, "the manually activated window")
+            active_pid = wt.DWORD()
+            user.GetWindowThreadProcessId(window, ctypes.byref(active_pid))
+            assert active_pid.value == pid, "A second main instance opened"
+            style = user.GetWindowLongW(window, -16)
+            ex_style = user.GetWindowLongW(window, -20)
+            assert bool(ex_style & 0x80) == has_tray, f"Unexpected WS_EX_TOOLWINDOW: {ex_style:#x}"
+            if has_tray:
+                assert not ex_style & 0x40000, f"Unexpected WS_EX_APPWINDOW: {ex_style:#x}"
+            assert style & 0x70000 == 0x70000, f"Missing resize/minimize/maximize style: {style:#x}"
+            if not login:
+                def stowed():
+                    return not user.IsWindowVisible(window) if has_tray else user.IsIconic(window)
+
+                assert user.PostMessageW(window, 0x0112, 0xF020, 0)  # WM_SYSCOMMAND / SC_MINIMIZE
+                wait_for(stowed, "minimize into the tray or ordinary taskbar")
+                repeat = launch(command)
+                wait_for(lambda: not python_children(repeat), "the repeat background launch to exit")
+                assert stowed(), "Background launch reopened the minimized window"
+                launch([exe])
+                wait_for(lambda: visible_main() == window and not user.IsIconic(window), "restore the same window")
+            assert user.PostMessageW(window, 0x0010, 0, 0)  # WM_CLOSE
+            if login or not has_tray:
+                assert kernel.WaitForSingleObject(process, 10000) == 0, "The app did not exit"
+            else:
+                wait_for(lambda: not user.IsWindowVisible(window), "close into the tray by default")
+                assert kernel.WaitForSingleObject(process, 0) == 258, "Close unexpectedly exited"
+        finally:
+            try:
+                if kernel.WaitForSingleObject(process, 0) == 258:
+                    kernel.TerminateProcess(process, 0)
+                    assert kernel.WaitForSingleObject(process, 10000) == 0
+            finally:
+                kernel.CloseHandle(process)
+    print(f"Verified both cold-start commands, taskbar styles, minimize/close and single-instance restore "
+          f"(system tray available: {has_tray}).", flush=True)
 
 
 if __name__ == "__main__":
-    check(Path(sys.argv[1]))
+    with TemporaryDirectory() as profile, patch.dict(os.environ, {"LOCALAPPDATA": profile}):
+        check(Path(sys.argv[1]))

@@ -1,8 +1,8 @@
 """Preferences for the Windows reader. The window owns persistence and system actions."""
 from PySide6.QtCore import QPointF, QRectF, QSignalBlocker, Qt
-from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QPushButton,
-                               QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen, QPolygonF
+from PySide6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout,
+                               QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
 
 from theme import label
 
@@ -12,7 +12,7 @@ class Switch(QCheckBox):
 
     def __init__(self):
         super().__init__()
-        self.setFixedSize(44, 32)
+        self.setFixedSize(48, 34)
         self.setCursor(Qt.PointingHandCursor)
 
     def hitButton(self, point):
@@ -22,20 +22,26 @@ class Switch(QCheckBox):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         if self.hasFocus():
-            painter.setPen(QPen(QColor("#365f91"), 1.5))
-            painter.drawRoundedRect(QRectF(1, 2, 42, 28), 14, 14)
+            painter.setPen(QPen(QColor("#587667"), 1.5))
+            painter.drawRoundedRect(QRectF(1, 2, 46, 30), 15, 15)
         if not self.isEnabled():
-            fill, border = "#ecece7", "#d8d8d1"
+            top, bottom, border = "#edeee8", "#e2e5db", "#ced5c7"
         elif self.isChecked():
-            fill, border = "#48725b", "#48725b"
+            top, bottom, border = "#3c6250", "#284b3b", "#284b3b"
         else:
-            fill, border = "#dedfd8", "#c5c7be"
-        painter.setBrush(QColor(fill))
+            top, bottom, border = "#dfe4d9", "#cfd7c9", "#899b88"
+        track = QLinearGradient(0, 6, 0, 28)
+        track.setColorAt(0, QColor(top))
+        track.setColorAt(1, QColor(bottom))
+        painter.setBrush(track)
         painter.setPen(QPen(QColor(border), 1))
-        painter.drawRoundedRect(QRectF(4, 5.5, 36, 21), 10.5, 10.5)
+        painter.drawRoundedRect(QRectF(4, 6, 40, 22), 11, 11)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(Qt.white)
-        painter.drawEllipse(QRectF(22 if self.isChecked() else 7, 8.5, 15, 15))
+        thumb = QRectF(25 if self.isChecked() else 7, 9, 16, 16)
+        painter.setBrush(QColor(24, 46, 31, 38))
+        painter.drawEllipse(thumb.translated(0, 1))
+        painter.setBrush(QColor("#fffef7"))
+        painter.drawEllipse(thumb)
 
 
 class Choice(QComboBox):
@@ -73,14 +79,53 @@ def setting_row(layout, title, control, description=""):
     layout.addLayout(row)
 
 
-def setting_group(layout, title):
-    layout.addWidget(label(title, "settingsSection"))
-    panel = QFrame(objectName="settingsGroup")
-    box = QVBoxLayout(panel)
-    box.setContentsMargins(16, 12, 16, 12)
-    box.setSpacing(11)
-    layout.addWidget(panel)
-    return box
+class SectionMark(QWidget):
+    def __init__(self, window):
+        super().__init__()
+        self.window_mark = window
+        self.setFixedSize(32, 32)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#e5ece3"))
+        painter.drawRoundedRect(self.rect(), 9, 9)
+        painter.setPen(QPen(QColor("#365a49"), 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setBrush(Qt.NoBrush)
+        if self.window_mark:
+            painter.drawRoundedRect(QRectF(7.5, 9, 17, 14), 2, 2)
+            painter.drawLine(QPointF(8, 13), QPointF(24, 13))
+        else:
+            painter.drawPolygon(QPolygonF([QPointF(10, 6.5), QPointF(23.5, 17), QPointF(17.8, 17.8),
+                                           QPointF(20.5, 24), QPointF(17.2, 25.3), QPointF(14.6, 19.3),
+                                           QPointF(10.4, 23)]))
+
+
+class PreferenceSection(QWidget):
+    def __init__(self, title, *, window_mark=False):
+        super().__init__()
+        self.row = QBoxLayout(QBoxLayout.LeftToRight, self)
+        self.row.setContentsMargins(0, 0, 0, 0)
+        self.row.setSpacing(12)
+        self.category = QWidget()
+        heading = QHBoxLayout(self.category)
+        heading.setSpacing(7)
+        heading.addWidget(SectionMark(window_mark))
+        heading.addWidget(label(title, "settingsSection"))
+        heading.addStretch()
+        self.row.addWidget(self.category, 0, Qt.AlignTop)
+        panel = QFrame(objectName="settingsGroup")
+        self.options = QVBoxLayout(panel)
+        self.options.setContentsMargins(18, 17, 18, 17)
+        self.options.setSpacing(14)
+        self.row.addWidget(panel, 1)
+
+    def set_compact(self, compact):
+        self.category.setMinimumWidth(0 if compact else 120)
+        self.category.layout().setContentsMargins(0, 0 if compact else 14, 0, 0)
+        self.row.setDirection(QBoxLayout.TopToBottom if compact else QBoxLayout.LeftToRight)
 
 
 class SettingsPage(QScrollArea):
@@ -93,12 +138,14 @@ class SettingsPage(QScrollArea):
         content = QWidget(objectName="settingsSurface")
         self.setWidget(content)
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(27, 22, 27, 20)
-        layout.setSpacing(8)
+        layout.setContentsMargins(30, 26, 30, 23)
+        layout.setSpacing(14)
         layout.addWidget(label("设置", "heading"))
-        layout.addSpacing(7)
+        layout.addWidget(QFrame(objectName="hairline"))
 
-        system = setting_group(layout, "启动与窗口")
+        self.system = PreferenceSection("启动与窗口", window_mark=True)
+        layout.addWidget(self.system)
+        system = self.system.options
         self.startup = Switch()
         setting_row(system, "开机启动", self.startup, "登录 Windows 后在系统托盘待命。")
         self.startup_status = label("", "warning")
@@ -123,9 +170,9 @@ class SettingsPage(QScrollArea):
         self.close_behavior.addItem("收起到托盘", "tray")
         self.close_behavior.addItem("退出应用", "quit")
         setting_row(system, "关闭主窗口时", self.close_behavior)
-        layout.addSpacing(8)
-
-        reading = setting_group(layout, "取词与翻译")
+        self.reading = PreferenceSection("取词与翻译")
+        layout.addWidget(self.reading)
+        reading = self.reading.options
         self.trigger = Choice()
         for text, mode in (("轻按左 Ctrl", "left"), ("轻按右 Ctrl", "right"), ("仅应用内查词", "off")):
             self.trigger.addItem(text, mode)
@@ -141,6 +188,14 @@ class SettingsPage(QScrollArea):
         layout.addWidget(self.notice)
         layout.addStretch(1)
         self.set_startup_state("off")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        compact = self.viewport().width() < 650
+        self.system.set_compact(compact)
+        self.reading.set_compact(compact)
+        margin = 16 if self.viewport().width() < 520 else 30
+        self.widget().layout().setContentsMargins(margin, 18 if compact else 26, margin, 23)
 
     def set_startup_state(self, state, message=""):
         with QSignalBlocker(self.startup):

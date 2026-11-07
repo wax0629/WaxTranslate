@@ -54,6 +54,7 @@ def build(output, archive=None):
         (root / "windows").mkdir()
         for name in APP_FILES:
             shutil.copy2(SRC / name, root / "windows" / name)
+        shutil.copytree(SRC / "fonts", root / "windows/fonts")
         brand = Path("Assets/Brand/barrette.svg")
         (root / brand.parent).mkdir(parents=True)
         shutil.copy2(SRC.parent / brand, root / brand)

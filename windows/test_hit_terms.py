@@ -170,7 +170,12 @@ class HitTests(unittest.TestCase):
         editor.lookup_requested.connect(lambda passage, _: read.append(passage))
         cursor = editor.document().find("ChatGPT")
         cursor.setPosition(cursor.selectionEnd())
+        # Larger reading fonts can wrap the final word below the initial
+        # viewport. Test a visible word, just as a pointer lookup requires.
+        editor.setTextCursor(cursor)
+        editor.ensureCursorVisible()
         edge = QPointF(editor.cursorRect(cursor).center())
+        self.assertTrue(editor.viewport().rect().contains((edge + QPointF(3, 0)).toPoint()))
         self.assertTrue(editor.lookup_point(edge + QPointF(3, 0)))
         self.assertEqual(read[0].word, "ChatGPT")
         self.assertFalse(editor.lookup_point(edge + QPointF(20, 0)))

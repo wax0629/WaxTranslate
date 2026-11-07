@@ -1,7 +1,7 @@
 """In-window translation for typed or pasted text."""
 from threading import Event
 
-from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtCore import QEvent, QRectF, Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut, QTextCursor, QTextLine, QTextOption
 from PySide6.QtWidgets import (QApplication, QBoxLayout, QCheckBox, QFrame, QHBoxLayout, QPlainTextEdit,
                                QPushButton, QSizePolicy, QVBoxLayout, QWidget)
@@ -161,27 +161,36 @@ class TextWorkspace(QWidget):
         self.completed.connect(self.show_result)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(9)
+        sheet = QFrame(objectName="readingSheet")
+        layout.addWidget(sheet)
+        spread = QVBoxLayout(sheet)
+        spread.setContentsMargins(1, 1, 1, 1)
+        spread.setSpacing(0)
         self.panes = QBoxLayout(QBoxLayout.LeftToRight)
-        self.panes.setSpacing(10)
-        layout.addLayout(self.panes, 1)
+        self.panes.setSpacing(0)
+        spread.addLayout(self.panes, 1)
         self.input = ReadingEditor(objectName="input")
-        self.input.setPlaceholderText("粘贴英文文章，点一下单词查释义…")
+        self.input.setPlaceholderText("在这里粘贴英文文章…")
         self.input.setAccessibleName("英文原文")
         self.output = QPlainTextEdit(objectName="translation")
         self.output.setAccessibleName("简体中文译文")
         self.output.setReadOnly(True)
-        for name, editor, panel in (("英文原文", self.input, "editor"),
-                                    ("简体中文译文", self.output, "translationPane")):
+        self.binding = QFrame(objectName="binding")
+        self.binding.setMinimumSize(1, 1)
+        self.headers = []
+        for name, editor, panel in (("English", self.input, "editor"),
+                                    ("简体中文", self.output, "translationPane")):
             frame = QFrame(objectName=panel)
             box = QVBoxLayout(frame)
-            box.setContentsMargins(15, 12, 15, 10)
-            box.setSpacing(9)
-            tools = QWidget()
-            tools.setFixedHeight(26)
-            header = QHBoxLayout(tools)
+            box.setContentsMargins(16, 12, 16, 13)
+            box.setSpacing(10)
+            toolbar = QWidget()
+            self.headers.append(toolbar)
+            header = QHBoxLayout(toolbar)
             header.setContentsMargins(0, 0, 0, 0)
-            header.addWidget(label(name, "language"))
+            header.setSpacing(6)
+            language = label(name, "sourceLanguage" if editor is self.input else "targetLanguage")
+            header.addWidget(language)
             header.addStretch()
             if editor is self.input:
                 self.example = QPushButton("试读示例")
@@ -196,7 +205,15 @@ class TextWorkspace(QWidget):
                 self.example.clicked.connect(self.start_reading)
                 header.addWidget(self.example)
                 header.addWidget(self.lookup_hint)
-            box.addWidget(tools)
+            else:
+                self.copy = QPushButton("复制译文")
+                self.copy.setProperty("role", "quiet")
+                self.copy.setToolTip("复制整段译文 (Ctrl+Shift+C)")
+                self.copy.clicked.connect(self.copy_result)
+                header.addWidget(self.copy)
+                self.panes.addWidget(self.binding)
+            box.addWidget(toolbar)
+            box.addWidget(QFrame(objectName="hairline"))
             editor.setTabChangesFocus(True)
             editor.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
             editor.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -205,19 +222,18 @@ class TextWorkspace(QWidget):
             editor.document().setDocumentMargin(0)
             box.addWidget(editor, 1)
             self.panes.addWidget(frame, 1)
+        spread.addWidget(QFrame(objectName="hairline"))
         actions = QHBoxLayout()
+        actions.setContentsMargins(15, 10, 15, 10)
+        actions.setSpacing(9)
         self.submit = QPushButton("翻译")
         self.submit.setProperty("role", "primary")
         self.submit.clicked.connect(self.submit_or_cancel)
         actions.addWidget(self.submit)
-        self.shortcut_hint = label("Ctrl + Enter", "meta")
+        self.shortcut_hint = label("Ctrl + Enter", "shortcut")
         actions.addWidget(self.shortcut_hint)
         actions.addStretch()
-        self.copy = QPushButton("复制译文")
-        self.copy.setToolTip("复制整段译文 (Ctrl+Shift+C)")
-        self.copy.clicked.connect(self.copy_result)
-        actions.addWidget(self.copy)
-        layout.addLayout(actions)
+        spread.addLayout(actions)
         run = QShortcut(self)
         run.setKeys([QKeySequence("Ctrl+Return"), QKeySequence("Ctrl+Enter")])
         run.setContext(Qt.WidgetWithChildrenShortcut)
@@ -242,10 +258,26 @@ class TextWorkspace(QWidget):
         if not self.user_chose_mode:
             self.lookup_hint.setChecked(True)
 
+    def event(self, event):
+        if event.type() == QEvent.LayoutRequest and self.headers:
+            # Give both sides of the spread one baseline, including when a
+            # font change or the sample-to-reading switch changes a button's hint.
+            height = max(34, *(h.layout().sizeHint().height() for h in self.headers))
+            for toolbar in self.headers:
+                if toolbar.minimumHeight() != height:
+                    toolbar.setMinimumHeight(height)
+        return super().event(event)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        direction = QBoxLayout.LeftToRight if event.size().width() >= 600 else QBoxLayout.TopToBottom
-        self.panes.setDirection(direction)
+        horizontal = event.size().width() >= 600
+        self.panes.setDirection(QBoxLayout.LeftToRight if horizontal else QBoxLayout.TopToBottom)
+        if horizontal:
+            self.binding.setMinimumSize(4, 1)
+            self.binding.setMaximumSize(4, 16777215)
+        else:
+            self.binding.setMinimumSize(1, 1)
+            self.binding.setMaximumSize(16777215, 1)
 
     def reset_result(self):
         previous, self.pending = self.pending, None

@@ -10,8 +10,8 @@ import time
 from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QSettings, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QCursor, QDesktopServices, QIcon, QPainter, QPen
 from PySide6.QtSvgWidgets import QSvgWidget
-from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QFrame, QHBoxLayout,
-                               QMenu, QPushButton, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QFrame, QHBoxLayout, QLayout,
+                               QMenu, QPushButton, QSizePolicy, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 from notebook import Notebook
 from home import HOME_EXAMPLE, HomePage
@@ -171,20 +171,26 @@ class Window(QWidget):
         sidebar = self.sidebar = QFrame(objectName="sidebar")
         outer.addWidget(sidebar)
         rail = self.rail = QBoxLayout(QBoxLayout.TopToBottom, sidebar)
-        rail.setContentsMargins(12, 24, 12, 17)
-        rail.setSpacing(5)
-        brand = QHBoxLayout()
-        brand.setContentsMargins(2, 0, 0, 0)
+        rail.setSpacing(6)
+        lockup = self.brand_lockup = QWidget()
+        lockup.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        brand = QHBoxLayout(lockup)
+        brand.setContentsMargins(0, 0, 0, 0)
+        brand.setSpacing(8)
+        badge = QFrame(objectName="brandBadge")
+        badge.setFixedSize(35, 37)
+        badge_layout = QVBoxLayout(badge)
+        badge_layout.setContentsMargins(3, 3, 3, 3)
         avatar = QSvgWidget(str(Path(__file__).resolve().parents[1] / "Assets/Brand/barrette.svg"))
         avatar.setObjectName("brandMark")
         avatar.setAccessibleName(APP_NAME)
-        avatar.setFixedSize(31, 31)
-        brand.addWidget(avatar)
+        badge_layout.addWidget(avatar)
+        brand.addWidget(badge)
         self.wordmark = label(APP_NAME, "brand")
+        self.wordmark.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         brand.addWidget(self.wordmark)
-        brand.addStretch()
-        rail.addLayout(brand)
-        rail.addSpacing(26)
+        rail.addWidget(lockup)
+        rail.addSpacing(16)
         self.tabs = QStackedWidget()
         outer.addWidget(self.tabs, 1)
         group = QButtonGroup(self)
@@ -194,12 +200,17 @@ class Window(QWidget):
             nav = QPushButton(nav_icon(home=index == 0, book=index == 2, settings=index == 3), name)
             nav.setCheckable(True)
             nav.setProperty("role", "nav")
-            nav.setIconSize(QSize(21, 21))
+            nav.setCursor(Qt.PointingHandCursor)
+            nav.setIconSize(QSize(20, 20))
             group.addButton(nav, index)
             rail.addWidget(nav)
         group.idClicked.connect(self.tabs.setCurrentIndex)
         self.tabs.currentChanged.connect(lambda index: group.button(index).setChecked(True))
-        self.engine_label = label("本地英译中", "meta")
+        self.rail_rule = QFrame(objectName="railRule")
+        self.rail_rule.setFixedHeight(1)
+        rail.addWidget(self.rail_rule)
+        self.engine_label = label("本地英译中", "engine")
+        self.engine_label.setContentsMargins(10, 6, 0, 0)
         rail.addWidget(self.engine_label)
 
         self.home = HomePage()
@@ -211,11 +222,11 @@ class Window(QWidget):
         self.home.stats_requested.connect(self.refresh_home)
         self.stats_ready.connect(self.home.set_stats)
         self.reader_page = QWidget(objectName="readingPage")
-        layout = QVBoxLayout(self.reader_page)
-        layout.setContentsMargins(27, 22, 27, 20)
-        layout.setSpacing(12)
+        layout = self.reading_layout = QVBoxLayout(self.reader_page)
+        layout.setSpacing(17)
         self.tabs.addWidget(self.reader_page)
         self.library = Library(self.notebook, self.player)
+        self.library.reader_requested.connect(self.open_reader)
         self.tabs.addWidget(self.library)
         self.preferences = SettingsPage()
         self.tabs.addWidget(self.preferences)
@@ -253,8 +264,7 @@ class Window(QWidget):
         menu.addAction("退出", QApplication.quit)
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self.tray_clicked)
-        if self.tray.isSystemTrayAvailable():
-            self.tray.show()
+        self.sync_tray_window()
         self.gesture_ready = False
         self.active_mode = None
         self.gestures = QProcess(self)
@@ -264,12 +274,23 @@ class Window(QWidget):
         self.gestures.start(str(Path(sys.executable).with_name("pythonw.exe")),
                             ["-u", str(Path(__file__).with_name("gestures.py").resolve()), self.trigger.currentData()])
         area = QApplication.primaryScreen().availableGeometry()
-        self.resize(min(872, area.width() - 24), min(535, area.height() - 48))
+        size = QSize(min(960, area.width() - 24), min(640, area.height() - 48))
+        # The desktop rail plus two reading columns can have a larger minimum
+        # width than the breakpoint itself. Use the compact layout's minimum
+        # so the very first show and a subsequent drag can both cross it.
+        self.shell.setSizeConstraint(QLayout.SetNoConstraint)
+        self.ensurePolished()
+        self.arrange_shell(True)
+        self.setMinimumSize(self.minimumSizeHint().boundedTo(size))
+        self.arrange_shell(size.width() < 740)
+        self.resize(size)
         QApplication.instance().aboutToQuit.connect(self.shutdown)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        compact = event.size().width() < 700
+        self.arrange_shell(event.size().width() < 740)
+
+    def arrange_shell(self, compact):
         if self.compact == compact:
             return
         self.compact = compact
@@ -277,20 +298,39 @@ class Window(QWidget):
         self.rail.setDirection(QBoxLayout.LeftToRight if compact else QBoxLayout.TopToBottom)
         self.sidebar.setMinimumSize(0, 0)
         self.sidebar.setMaximumSize(16777215, 16777215)
-        if compact:
-            self.sidebar.setFixedHeight(56)
-            self.rail.setContentsMargins(13, 6, 13, 6)
-        else:
-            self.sidebar.setFixedWidth(172)
-            self.rail.setContentsMargins(12, 24, 12, 17)
-        self.engine_label.setVisible(not compact)
         self.wordmark.setVisible(not compact)
+        if compact:
+            self.sidebar.setFixedHeight(60)
+            self.rail.setContentsMargins(14, 7, 14, 7)
+            self.reading_layout.setContentsMargins(19, 18, 19, 18)
+        else:
+            self.sidebar.setFixedWidth(max(188, self.brand_lockup.sizeHint().width() + 29))
+            self.rail.setContentsMargins(14, 26, 14, 19)
+            self.reading_layout.setContentsMargins(30, 25, 30, 23)
+        self.rail_rule.setVisible(not compact)
+        self.engine_label.setVisible(not compact)
         self.sidebar.setProperty("compact", compact)
         self.sidebar.style().unpolish(self.sidebar)
         self.sidebar.style().polish(self.sidebar)
 
+    def sync_tray_window(self):
+        """Keep a normal, reachable window on desktops without a notification area."""
+        available = self.tray.isSystemTrayAvailable()
+        if available and not self.tray.isVisible():
+            self.tray.show()
+        kind = Qt.Tool if available else Qt.Window
+        if self.windowType() != kind:
+            # On Windows Qt.Tool supplies WS_EX_TOOLWINDOW. Explicit caption
+            # hints keep resizing and the minimize/maximize buttons available.
+            self.setWindowFlags(kind | Qt.WindowTitleHint | Qt.WindowSystemMenuHint
+                                | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
+        return available
+
     def open_home(self):
-        self.showNormal()
+        self.sync_tray_window()
+        if self.isMinimized():
+            self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
+        self.show()
         self.raise_()
         self.activateWindow()
 
@@ -329,9 +369,22 @@ class Window(QWidget):
 
     def changeEvent(self, event):
         super().changeEvent(event)
+        if event.type() == QEvent.WindowStateChange and self.isMinimized() and hasattr(self, "tray"):
+            # Finish the native minimize transition before hiding the window.
+            QTimer.singleShot(0, self.finish_minimize)
         if (event.type() == QEvent.ActivationChange and self.isActiveWindow() and hasattr(self, "preferences")
                 and self.tabs.currentWidget() is self.preferences):
             self.refresh_startup()
+
+    def finish_minimize(self):
+        if self.stopping or not self.isMinimized():
+            return
+        if self.sync_tray_window():
+            self.hide()
+        elif not self.isVisible():
+            # The tray disappeared while the tool window was open. Changing
+            # its native type hides it; put it back on the regular taskbar.
+            self.showMinimized()
 
     def refresh_startup(self):
         try:
@@ -382,7 +435,7 @@ class Window(QWidget):
             self.library.refresh()
 
     def tray_clicked(self, reason):
-        if reason == QSystemTrayIcon.Trigger:
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
             self.open_home()
 
     def update_trigger_hints(self):
@@ -676,7 +729,7 @@ def main():
     apply_theme(app)
     window = Window()
     activation.activated.connect(window.open_home)
-    if not background or not window.tray.isVisible():
+    if not window.tray.isVisible():
         window.show()
     return app.exec()
 
