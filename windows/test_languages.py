@@ -2,10 +2,11 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtCore import QPointF
+from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtGui import QFont, QFontMetrics, QImage, QPainter
 from winrt.windows.globalization import Language
 from winrt.windows.media.ocr import OcrEngine
@@ -13,14 +14,20 @@ from winrt.windows.media.ocr import OcrEngine
 from app import analyze
 from languages import NAMES, OCR_TAGS, UnsupportedLanguage, detect_source
 from notebook import Notebook
-from reader import Passage, WORD_TOKEN, recognize, sentence_at
+from reader import Passage, WORD_TOKEN, Word, passage_from_lines, recognize, sentence_at, word_spans
 from translation import translate_text
+from workspace import ReadingEditor, utf16_length
 
 
 SAMPLES = {
     "fr": ("Le chat dort dans la maison de ma sœur.", "chat"),
     "de": ("Die Katze schläft auf dem Sofa im Wohnzimmer.", "Katze"),
     "es": ("El gato duerme en la casa de mi hermana.", "gato"),
+    "ja": ("猫は椅子の上で寝ています。", "猫"),
+    "ko": ("고양이가 소파에서 자고 있습니다.", "고양이"),
+    "it": ("Il gatto dorme sul divano in salotto.", "gatto"),
+    "pt": ("O gato da minha irmã está dormindo no sofá da sala.", "gato"),
+    "ru": ("Кошка спит на диване в гостиной.", "Кошка"),
 }
 
 
@@ -28,7 +35,7 @@ class LanguageTests(unittest.TestCase):
     def test_automatic_paragraphs_and_word_alignment(self):
         paragraphs = "\n\n".join(sentence for sentence, _ in SAMPLES.values())
         result = translate_text(paragraphs, Event()).split("\n\n")
-        self.assertEqual(len(result), 3)
+        self.assertEqual(len(result), len(SAMPLES))
         for (code, (source, word)), chinese in zip(SAMPLES.items(), result):
             with self.subTest(code=code):
                 self.assertIn("猫", chinese)
@@ -41,9 +48,40 @@ class LanguageTests(unittest.TestCase):
                 self.assertIn("猫", gloss)
                 self.assertEqual(chinese, sentence)
         with self.assertRaises(UnsupportedLanguage):
-            translate_text("Il metodo proposto permette di misurare la temperatura in questo ambiente.", Event())
+            translate_text("De voorgestelde methode maakt het mogelijk om de temperatuur in deze omgeving te meten.", Event())
+
+    def test_east_asian_editor_and_ocr_word_offsets(self):
+        for code, text, word in (("ja", "🐾猫がいる。図書館で図書館の本を読む。", "図書館"),
+                                 ("ko", "🐾 고양이가 잔다. 도서관에서 도서관으로 간다.", "도서관")):
+            with self.subTest(code=code):
+                editor = ReadingEditor()
+                self.addCleanup(editor.deleteLater)
+                editor.setPlainText(text)
+                reads = []
+                editor.lookup_requested.connect(lambda passage, _: reads.append(passage))
+                start = text.rindex(word)
+                self.assertTrue(editor.lookup_at(utf16_length(text[:start + 1])))
+                read = reads.pop()
+                self.assertEqual(read.word, word)
+                self.assertEqual(read.selection[0], read.text.rindex(word))
+                self.assertNotIn("🐾", read.text)
+                self.assertIn("图书馆", analyze(None, None, Passage(word), code)[1][1])
+
+        # Japanese OCR may give each character its own box. Korean OCR often
+        # includes a noun and particle in one box. Both must retain occurrence.
+        for code, chunks, hit in (("ja", ["図", "書", "館", "で", "図", "書", "館", "の", "本"], 5),
+                                  ("ko", ["도서관에서", "도서관으로", "간다."], 1)):
+            words = [Word(t, QRectF(i * 60, 0, 60, 20)) for i, t in enumerate(chunks)]
+            p = passage_from_lines([words], QPointF(60 * hit + 12, 10), code)
+            self.assertEqual(p.word, "図書館" if code == "ja" else "도서관")
+            self.assertEqual(p.selection[0], p.text.rindex(p.word))
+        korean = "고양이가"
+        self.assertEqual([korean[a:b] for a, b in word_spans(korean)], ["고양이", "가"])
 
     def test_short_words_and_saved_languages(self):
+        for word, expected in (("ありがとう", "谢"), ("감사합니다", "谢"), ("고양이", "猫"), ("Привет", "好|哈[罗啰]")):
+            with self.subTest(word=word):
+                self.assertRegex(translate_text(word, Event()), expected)
         for code, word in (("fr", "pain"), ("de", "Brot"), ("es", "pan")):
             with self.subTest(code=code):
                 self.assertFalse(detect_source(word))
@@ -73,11 +111,11 @@ class LanguageTests(unittest.TestCase):
                                    if p.begin < selected_start + len(word.encode()) and p.end > selected_start])
 
     def test_screen_word_and_region_with_installed_ocr(self):
-        font = QFont("Segoe UI")
-        font.setPixelSize(26)
-        metrics = QFontMetrics(font)
         for code, (text, word) in SAMPLES.items():
             with self.subTest(code=code):
+                font = QFont({"ja": "Yu Gothic", "ko": "Malgun Gothic"}.get(code, "Segoe UI"))
+                font.setPixelSize(26)
+                metrics = QFontMetrics(font)
                 image = QImage(metrics.horizontalAdvance(text) + 40, 90, QImage.Format_RGB32)
                 image.fill(0xffffffff)
                 painter = QPainter(image)
@@ -90,9 +128,30 @@ class LanguageTests(unittest.TestCase):
                 if installed is None:
                     with self.assertRaisesRegex(ValueError, NAMES[code] + "安装文字识别"):
                         asyncio.run(recognize(image, hit, code))
+                    if code in ("ja", "ko", "ru"):
+                        continue  # These scripts require their own system OCR.
                 for setting in (("", code) if installed else ("",)):
                     read, result, _, language, _ = analyze(image, hit, None, setting)
                     self.assertEqual((read.word.casefold(), language), (word.casefold(), NAMES[code]))
                     self.assertIn("猫", result[1])
                     _, region, _, _, _ = analyze(image, None, None, setting)
                     self.assertIn("猫", region[1])
+
+    def test_auto_ocr_retries_an_installed_script_after_empty_latin_pass(self):
+        image, point = object(), QPointF(18, 12)
+        for code in ("ja", "ko", "ru"):
+            with self.subTest(code=code):
+                source, word = SAMPLES[code]
+                start = source.index(word)
+                expected = Passage(source, (start, start + len(word)))
+                engines = SimpleNamespace(
+                    available_recognizer_languages=[Language("en-US"), Language(OCR_TAGS[code])],
+                    try_create_from_language=lambda lang: lang.language_tag)
+                with patch("reader.OcrEngine", engines), patch("reader.read_passage", side_effect=[
+                        ValueError("未识别到文字"), expected]) as read:
+                    result = asyncio.run(recognize(image, point))
+                self.assertEqual(result.source_code, code)
+                self.assertEqual(result.word, word)
+                self.assertEqual([c.args for c in read.await_args_list],
+                                 [(Language("en-US").language_tag, image, point),
+                                  (Language(OCR_TAGS[code]).language_tag, image, point)])

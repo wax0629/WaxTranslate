@@ -4,7 +4,7 @@ import re
 from lexicon import lookup_info
 from reader import Passage
 from terminology import resolve_term
-from languages import NAMES, UnsupportedLanguage, detect_source
+from languages import NAMES, SHORT_CYRILLIC, UnsupportedLanguage, detect_source
 from translation import translate, translate_lookup
 from word_details import part_of_speech
 
@@ -59,9 +59,17 @@ def explain(passage):
         code = ""
     else:
         unsupported = None
-    passage.source_code = code
     language = NAMES.get(code, "")
+    if not code and not unsupported and SHORT_CYRILLIC.fullmatch(passage.text.strip()):
+        code = "ru"
+        language = "按俄语查词" if passage.selection else "按俄语翻译"
+    passage.source_code = code
     if code and code != "en":
+        if code in ("ja", "ko") and passage.word.isascii() and passage.word:
+            term = resolve_term(passage, passage.context)
+            if term:
+                origin, gloss, pos = term
+                return (origin, gloss, ""), None, language + "语境", pos
         return translate(passage), None, language, ""
     if not passage.selection:
         result, excerpt = translate_lookup(passage)

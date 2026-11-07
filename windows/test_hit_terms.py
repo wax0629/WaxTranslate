@@ -75,7 +75,7 @@ class HitTests(unittest.TestCase):
             # Measure the boxes supplied by this system's English OCR.
             with patch("reader.passage_from_lines", wraps=passage_from_lines) as record:
                 asyncio.run(recognize(image))
-                lines, _ = record.call_args.args
+                lines, _, _ = record.call_args.args
             for token in ("C++", "Node.js", ".NET"):
                 word = next(word for line in lines for word in line if token in word.text)
                 point = QPointF(word.rect.center().x(), word.rect.top() - 0.25 * word.rect.height())

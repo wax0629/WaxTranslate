@@ -362,10 +362,10 @@ class Checks(unittest.TestCase):
                 wait_until(card.save.isVisible)
                 self.assertIn("英语 · 名词", card.text.toPlainText())
                 window.invalidate()
-                source = "Il metodo proposto permette di misurare la temperatura in questo ambiente."
+                source = "De voorgestelde methode maakt het mogelijk om de temperatuur in deze omgeving te meten."
                 window.submit(point, passage=Passage(source))
                 wait_until(lambda: card.copy.isVisible() and card.copy.text() == "复制原文")
-                self.assertEqual(card.caption.text(), "意大利语原文")
+                self.assertEqual(card.caption.text(), "荷兰语原文")
                 self.assertFalse(card.save.isVisible())
                 card.copy.click()
                 self.assertEqual(QApplication.clipboard().text(), source)
@@ -1037,6 +1037,8 @@ if __name__ == "__main__":
         font = os.path.join(os.environ["WINDIR"], "Fonts", "segoeui.ttf")
         if QFontDatabase.addApplicationFont(font) == -1:
             raise RuntimeError(f"Cannot load Windows test font: {font}")
+        for face in ("YuGothR.ttc", "malgun.ttf"):
+            QFontDatabase.addApplicationFont(str(Path(font).with_name(face)))
     apply_theme(app)
     # A developer's lookup count, notebook and preferences are personal data.
     # The model installer paths are already resolved, so source runs can still use the real models.

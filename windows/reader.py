@@ -3,6 +3,7 @@
 import re
 from dataclasses import dataclass, field
 from math import hypot
+from threading import local
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QFont, QFontMetricsF, QImage
@@ -11,19 +12,58 @@ from winrt.windows.graphics.imaging import BitmapAlphaMode, BitmapPixelFormat, S
 from winrt.windows.media.ocr import OcrEngine
 from winrt.windows.storage.streams import DataWriter
 
-from languages import NAMES, OCR_TAGS, UnsupportedLanguage, detect_source
+from languages import CYRILLIC, HANGUL, KANA, NAMES, OCR_TAGS, UnsupportedLanguage, detect_source
 
 
 # Keep a Latin identifier selectable in mixed text such as “看懂ChatGPT的输出”.
 # Periods and underscores inside an identifier belong to it; surrounding
 # punctuation and a slash separating alternatives do not.
-CJK = "\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af"
+CJK = "\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uff66-\uff9f\uac00-\ud7af"
 # Pasted PDFs may represent an accent as a separate combining mark. Keep it
 # with the base letter without normalizing away the original character offsets.
 ALNUM = rf"(?:[^\W_{CJK}][\u0300-\u036f]*)"
 WORD_TOKEN = re.compile(rf"(?i:\.net)(?:[0-9]+)?(?![A-Za-z_])|"
                         rf"[cC](?:\+\+(?:[0-9]+)?|#)|[fF]#|"
                         rf"{ALNUM}+(?:[-‐‑’'_.]{ALNUM}+)*|[{CJK}]+")
+_segmenters = local()
+
+
+def korean_morphemes(word):
+    if not hasattr(_segmenters, "korean"):
+        from mecab import MeCab
+        _segmenters.korean = MeCab()
+    return _segmenters.korean.parse(word)
+
+
+def word_spans(text, source_code=""):
+    japanese = source_code == "ja" or (not source_code and KANA.search(text))
+    for match in WORD_TOKEN.finditer(text):
+        if japanese and re.fullmatch(rf"[{CJK}]+", match.group()):
+            if not hasattr(_segmenters, "japanese"):
+                from janome.tokenizer import Tokenizer
+                _segmenters.japanese = Tokenizer(wakati=True)
+            start = match.start()
+            for surface in _segmenters.japanese.tokenize(match.group()):
+                end = start + len(surface)
+                if any(c.isalpha() for c in surface):
+                    yield start, end
+                start = end
+            continue
+        if source_code in ("", "ko") and HANGUL.search(match.group()):
+            # Nouns and their case particles are written together. Keep
+            # conjugated verbs intact and split only tagged trailing particles.
+            end = match.end()
+            particles = []
+            for morph in reversed(korean_morphemes(match.group())):
+                if not morph.feature.pos.startswith("J") or not morph.span.start:
+                    break
+                start = match.start() + morph.span.start
+                particles.append((start, end))
+                end = start
+            yield match.start(), end
+            yield from reversed(particles)
+            continue
+        yield match.span()
 
 
 @dataclass
@@ -51,7 +91,7 @@ class Passage:
 def sentence_at(text, start, end):
     """Keep the sentence and the exact selected occurrence across soft line wraps."""
     left, right = 0, len(text)
-    for boundary in re.finditer(r"""[.!?]["”')]*\s+|\n[ \t]*\n""", text):
+    for boundary in re.finditer(r"""[。！？]+[」』”）]*\s*|[.!?]["”')]*\s+|\n[ \t]*\n""", text):
         if boundary.group().startswith(".") and re.search(
                 r"\b(?:Fig|Eq|Dr|Prof|e\.g|i\.e)$", text[max(0, boundary.start() - 6):boundary.start()], re.I):
             continue
@@ -161,17 +201,34 @@ def word_at_point(word, point):
     return None
 
 
-def passage_from_lines(lines, point):
+def join_ocr_words(words, code, anchor=None):
+    parts = []
+    length = anchor_start = 0
+    for word in words:
+        # Japanese OCR often gives one box per character. Keep adjacent
+        # Latin words separate, e.g. a product name in Japanese prose.
+        if parts and (code != "ja" or (parts[-1][-1:].isascii() and word.text[:1].isascii())):
+            parts.append(" ")
+            length += 1
+        if word is anchor:
+            anchor_start = length
+        parts.append(word.text)
+        length += len(word.text)
+    return "".join(parts), anchor_start
+
+
+def passage_from_lines(lines, point, source_code=""):
     if not lines:
         raise ValueError("未识别到文字。请重新框选清晰、可见的原文。")
     if point is None:
-        return Passage("\n".join(" ".join(w.text for w in line) for line in lines))
+        return Passage("\n".join(join_ocr_words(line, source_code)[0] for line in lines))
 
     hit = nearest_box(point, (((i, j), word.rect) for i, line in enumerate(lines) for j, word in enumerate(line)))
     if hit is None:
         raise ValueError("光标附近没有可确定的词。请移近想查的词，或点主窗口的「开始框选」。")
     anchor, column = hit
-    match = word_at_point(lines[anchor][column], point)
+    hit_word = lines[anchor][column]
+    match = word_at_point(hit_word, point)
     if not match:
         raise ValueError("请指向一个词。")
     rects = [line_rect(line) for line in lines]
@@ -197,16 +254,21 @@ def passage_from_lines(lines, point):
             current = rects[index]
 
     indices = neighbors(-1)[::-1] + [anchor] + neighbors(1)
-    pieces = []
-    offset = 0
-    for i in indices:
-        for j, word in enumerate(lines[i]):
-            if (i, j) == hit:
-                start = offset + match.start()
-                end = offset + match.end()
-            pieces.append(word.text)
-            offset += len(word.text) + 1
-    return sentence_at(" ".join(pieces), start, end)
+    text, offset = join_ocr_words((word for i in indices for word in lines[i]), source_code, hit_word)
+    if source_code in ("ja", "ko") and re.fullmatch(rf"[{CJK}]+", match.group()):
+        # Locate the pointed character in its OCR box, then recover the word
+        # across box boundaries using the same segmentation as the editor.
+        metrics = QFontMetricsF(QFont("Yu Gothic UI" if source_code == "ja" else "Malgun Gothic", 24))
+        advance = metrics.horizontalAdvance(hit_word.text)
+        x = (point.x() - hit_word.rect.left()) * advance / max(1, hit_word.rect.width())
+        char = next((n for n in range(len(hit_word.text))
+                     if metrics.horizontalAdvance(hit_word.text[:n + 1]) > x), len(hit_word.text) - 1)
+        position = offset + char
+        for a, b in word_spans(text, source_code):
+            if a <= position < b:
+                return sentence_at(text, a, b)
+        raise ValueError("请指向一个词。")
+    return sentence_at(text, offset + match.start(), offset + match.end())
 
 
 async def ocr_lines(engine, image):
@@ -238,37 +300,59 @@ async def ocr_lines(engine, image):
 
 
 async def recognize(image, point=None, source_code=""):
-    code = source_code or "en"
-    engine = OcrEngine.try_create_from_language(Language(OCR_TAGS[code]))
-    if engine is None and not source_code:
-        # All supported sources use Latin script. Start with any installed
-        # supported recognizer when English is unavailable.
-        for language in OcrEngine.available_recognizer_languages:
-            if language.language_tag.split("-")[0].lower() in NAMES:
-                engine = OcrEngine.try_create_from_language(language)
-                if engine is not None:
-                    break
-    if engine is None:
-        raise ValueError(f"请在 Windows 设置 → 时间和语言 → 语言和区域中，为{NAMES[code]}安装文字识别，或在阅读页粘贴原文。")
-    passage = await read_passage(engine, image, point)
-    passage.source_code = source_code
-    if not source_code:
+    installed = {lang.language_tag.split("-")[0].lower(): lang for lang in OcrEngine.available_recognizer_languages}
+
+    async def read(code):
+        language = installed.get(code) or Language(OCR_TAGS[code])
+        engine = OcrEngine.try_create_from_language(language)
+        if engine is None:
+            raise ValueError(f"请在 Windows 设置 → 时间和语言 → 语言和区域中，为{NAMES[code]}安装文字识别，或在阅读页粘贴原文。")
+        return await read_passage(engine, image, point)
+
+    if source_code:
+        passage = await read(source_code)
+        passage.source_code = source_code
+        return passage
+
+    first = next((code for code in NAMES if code in installed), "en")
+    try:
+        passage = await read(first)
+    except ValueError as error:
+        initial_error = error
+        passage = None
+    if passage:
         try:
             detected = detect_source(passage.text)
         except UnsupportedLanguage:
-            return passage
-        if detected and detected != engine.recognizer_language.language_tag.split("-")[0].lower():
-            matched = OcrEngine.try_create_from_language(Language(OCR_TAGS[detected]))
-            if matched is not None:
+            detected = ""
+        if detected:
+            if detected != first and detected in installed:
                 try:
-                    passage = await read_passage(matched, image, point)
+                    passage = await read(detected)
                 except ValueError:
                     pass  # The first pass already found the requested occurrence.
             passage.source_code = detected
-    return passage
+            return passage
+
+    # A Latin OCR engine may produce nothing or punctuation over kana,
+    # Hangul or Cyrillic. Retry installed recognizers for those scripts only.
+    for code, script in (("ja", KANA), ("ko", HANGUL), ("ru", CYRILLIC)):
+        if code == first or code not in installed:
+            continue
+        try:
+            candidate = await read(code)
+            if script.search(candidate.text) and detect_source(candidate.text) == code:
+                candidate.source_code = code
+                return candidate
+        except ValueError:
+            continue
+    if passage:
+        return passage
+    raise initial_error
 
 
 async def read_passage(engine, image, point):
+    code = engine.recognizer_language.language_tag.split("-")[0].lower()
     limit = OcrEngine.max_image_dimension
     frame, hit = image, point
     if max(frame.width(), frame.height()) > limit:
@@ -277,7 +361,7 @@ async def read_passage(engine, image, point):
             hit = QPointF(point.x() * frame.width() / image.width(), point.y() * frame.height() / image.height())
     lines = await ocr_lines(engine, frame)
     try:
-        return passage_from_lines(lines, hit)
+        return passage_from_lines(lines, hit, code)
     except ValueError:
         if point is None:
             raise
@@ -296,4 +380,4 @@ async def read_passage(engine, image, point):
     top = max(0, min(image.height() - height, int(point.y()) - height // 2))
     crop = image.copy(left, top, width, height)
     crop = crop.scaled(2 * width, 2 * height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-    return passage_from_lines(await ocr_lines(engine, crop), (point - QPointF(left, top)) * 2)
+    return passage_from_lines(await ocr_lines(engine, crop), (point - QPointF(left, top)) * 2, code)

@@ -32,6 +32,23 @@ jobs:
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'new profile'
           & "$env:PORTABLE_APP\runtime\python.exe" windows\check_launcher.py "$env:PORTABLE_APP"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Enable Japanese and Korean OCR fixtures when available
+        shell: pwsh
+        timeout-minutes: 3
+        continue-on-error: true
+        run: |
+          foreach ($tag in 'ja-JP', 'ko-KR') {
+            $name = "Language.OCR~~~$tag~0.0.1.0"
+            try {
+              $cap = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
+              if ($cap.State -eq 'NotPresent') {
+                Add-WindowsCapability -Online -Name $name -ErrorAction Stop | Out-Host
+              }
+              Get-WindowsCapability -Online -Name $name | Select-Object Name, State
+            } catch {
+              Write-Warning "$tag OCR unavailable on this runner. $_"
+            }
+          }
       - name: Test packaged desktop at 100% and 150% Qt scale
         shell: pwsh
         run: |
