@@ -15,6 +15,7 @@ from unittest.mock import patch
 from PySide6.QtCore import QPoint, QPointF, QProcess, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QCursor, QFont, QFontDatabase, QFontMetrics, QImage, QPainter, QShortcut
 from PySide6.QtTest import QTest
+from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import QApplication, QLabel
 
 from app import Window, app_icon, image_point, image_rect
@@ -123,6 +124,7 @@ class Checks(unittest.TestCase):
             book = Notebook(path)
             window = Window(notebook=book)
             self.assertFalse(app_icon().isNull())
+            self.assertTrue(window.findChild(QSvgWidget, "brandMark").renderer().isValid())
             try:
                 window.demo()
                 wait_until(lambda: window.card.save.isVisible())
