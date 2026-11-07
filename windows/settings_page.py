@@ -1,5 +1,5 @@
 """Preferences for the Windows reader. The window owns persistence and system actions."""
-from PySide6.QtCore import QRectF, QSignalBlocker, Qt
+from PySide6.QtCore import QPointF, QRectF, QSignalBlocker, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QPushButton,
                                QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
@@ -36,6 +36,20 @@ class Switch(QCheckBox):
         painter.setPen(Qt.NoPen)
         painter.setBrush(Qt.white)
         painter.drawEllipse(QRectF(22 if self.isChecked() else 7, 8.5, 15, 15))
+
+
+class Choice(QComboBox):
+    def __init__(self):
+        super().__init__(objectName="settingsChoice")
+        self.setCursor(Qt.PointingHandCursor)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(QPen(QColor("#53695b"), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        x, y = self.width() - 11, self.height() / 2
+        painter.drawPolyline([QPointF(x - 3, y - 1.5), QPointF(x, y + 1.5), QPointF(x + 3, y - 1.5)])
 
 
 def setting_row(layout, title, control, description=""):
@@ -105,14 +119,14 @@ class SettingsPage(QScrollArea):
         actions.addStretch()
         system.addWidget(self.startup_actions)
         system.addWidget(QFrame(objectName="hairline"))
-        self.close_behavior = QComboBox(objectName="settingsChoice")
+        self.close_behavior = Choice()
         self.close_behavior.addItem("收起到托盘", "tray")
         self.close_behavior.addItem("退出应用", "quit")
         setting_row(system, "关闭主窗口时", self.close_behavior)
         layout.addSpacing(8)
 
         reading = setting_group(layout, "取词与翻译")
-        self.trigger = QComboBox(objectName="settingsChoice")
+        self.trigger = Choice()
         for text, mode in (("轻按左 Ctrl", "left"), ("轻按右 Ctrl", "right"), ("仅应用内查词", "off")):
             self.trigger.addItem(text, mode)
         setting_row(reading, "屏幕取词键", self.trigger)
