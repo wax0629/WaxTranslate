@@ -25,7 +25,7 @@ from startup import LoginStartup
 from theme import APP_NAME, apply_theme, label, ui_icon
 from languages import UnsupportedLanguage
 from workspace import TextWorkspace
-from window_frame import HTCAPTION, caption_hit, configure_frame
+from window_frame import configure_frame, frame_result
 
 
 def image_point(point, logical_size, image_size):
@@ -178,29 +178,26 @@ class Window(QWidget):
         self.wordmark = label(APP_NAME, "brand")
         self.wordmark.setAccessibleName(APP_NAME)
         rail.addWidget(self.wordmark)
-        rail.addSpacing(24)
+        self.nav_buttons = []
         self.tabs = QStackedWidget()
         outer.addWidget(self.tabs, 1)
         group = QButtonGroup(self)
-        for index, name in enumerate(("首页", "阅读", "生词本", "设置")):
-            if index == 3:
-                rail.addStretch()
-                divider = QFrame(objectName="navDivider")
-                divider.setFixedSize(1, 23)
-                rail.addWidget(divider)
-            nav = QPushButton("" if index == 3 else name)
+        pages = (("查词记录", "history"), ("对照翻译", "book"), ("生词本", "bookmark"), ("设置", "settings"))
+        for index, (name, icon) in enumerate(pages):
+            nav = QPushButton(name)
             nav.setAccessibleName(name)
-            if index == 3:
-                nav.setIcon(ui_icon("settings", "#191917"))
-                nav.setToolTip(name)
-                nav.setFixedWidth(45)
-            nav.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+            nav.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
             nav.setCheckable(True)
             nav.setProperty("role", "nav")
             nav.setCursor(Qt.PointingHandCursor)
-            nav.setIconSize(QSize(23, 23))
+            nav.setIconSize(QSize(16, 16))
+            self.nav_buttons.append((nav, ui_icon(icon, "#383831")))
             group.addButton(nav, index)
             rail.addWidget(nav)
+        rail.addStretch()
+        divider = QFrame(objectName="navDivider")
+        divider.setFixedSize(1, 17)
+        rail.addWidget(divider)
         controls = QHBoxLayout()
         controls.setSpacing(0)
         rail.addLayout(controls)
@@ -253,7 +250,7 @@ class Window(QWidget):
         self.preferences.remove_startup.clicked.connect(lambda: self.set_startup(False))
         self.preferences.retry_startup.clicked.connect(self.refresh_startup)
         self.preferences.system_startup.clicked.connect(self.open_system_startup)
-        layout.addWidget(label("阅读与翻译", "heading"))
+        layout.addWidget(label("对照翻译", "heading"))
         self.workspace = TextWorkspace(self.pool)
         self.workspace.set_source_language(self.preferences.source_language.currentData())
         self.preferences.source_language.currentIndexChanged.connect(self.change_language)
@@ -290,13 +287,13 @@ class Window(QWidget):
         self.ensurePolished()
         self.arrange_shell(True)
         self.setMinimumSize(self.minimumSizeHint().boundedTo(size))
-        self.arrange_shell(size.width() < 740)
+        self.arrange_shell(size.width() < 820)
         self.resize(size)
         QApplication.instance().aboutToQuit.connect(self.shutdown)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.arrange_shell(event.size().width() < 740)
+        self.arrange_shell(event.size().width() < 820)
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -322,8 +319,13 @@ class Window(QWidget):
         if self.compact == compact:
             return
         self.compact = compact
-        self.wordmark.setStyleSheet(f"font-size:{18 if compact else 27}px;")
-        self.sidebar.setFixedHeight(46 if compact else 50)
+        self.wordmark.setStyleSheet(f"font-size:{16 if compact else 26}px; padding-right:{4 if compact else 16}px;")
+        self.sidebar.setFixedHeight(46 if compact else 55)
+        self.rail.setSpacing(4 if compact else 6)
+        for button, icon in self.nav_buttons:
+            button.setIcon(QIcon() if compact else icon)
+            button.setFixedHeight(30 if compact else 34)
+            button.setStyleSheet(f"font-size:{13 if compact else 14}px; padding:0 {7 if compact else 11}px;")
         if compact:
             self.rail.setContentsMargins(12, 0, 8, 0)
             self.reading_layout.setContentsMargins(18, 18, 18, 18)
@@ -343,8 +345,10 @@ class Window(QWidget):
         return available
 
     def nativeEvent(self, event_type, message):
-        if event_type == b"windows_generic_MSG" and hasattr(self, "sidebar") and caption_hit(self, message):
-            return True, HTCAPTION
+        if event_type == b"windows_generic_MSG" and hasattr(self, "sidebar"):
+            result = frame_result(self, message)
+            if result is not None:
+                return True, result
         return super().nativeEvent(event_type, message)
 
     def showEvent(self, event):
@@ -505,7 +509,7 @@ class Window(QWidget):
         self.gesture_ready = False
         self.card.dismiss_on_deactivate = True
         if not self.stopping and self.gesture_warning.isHidden():
-            self.gesture_warning.setText(f"无法监听屏幕取词键（{reason}）。可在阅读页双击查词，或点「框选翻译」。")
+            self.gesture_warning.setText(f"无法监听屏幕取词键（{reason}）。可在「对照翻译」双击查词，或点「框选翻译」。")
             self.gesture_warning.show()
             self.update_trigger_hints()
             if self.overlay is not None and self.overlay.from_ctrl:

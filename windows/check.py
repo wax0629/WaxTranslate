@@ -72,9 +72,15 @@ class Checks(unittest.TestCase):
                 self.assertGreaterEqual(window.wordmark.width(), window.wordmark.fontMetrics().horizontalAdvance("WaxTranslate"))
                 home = window.home
                 self.assertFalse(window.backdrop.isNull())
-                for width, height in ((1080, 675), (570, 485), (540, 610), (540, 800)):
+                nav = [b for b in window.sidebar.findChildren(QPushButton) if b.property("role") == "nav"]
+                self.assertEqual([b.text() for b in nav], ["查词记录", "对照翻译", "生词本", "设置"])
+                for width, height in ((1080, 675), (820, 500), (740, 480), (570, 485), (540, 610), (540, 800)):
                     window.resize(width, height)
                     QApplication.processEvents()
+                    self.assertGreaterEqual(window.wordmark.width(), window.wordmark.sizeHint().width())
+                    for button in nav:
+                        self.assertTrue(window.sidebar.rect().contains(button.geometry()))
+                        self.assertGreaterEqual(button.width(), button.sizeHint().width())
                     for control in (home.total, home.activity, home.instructions, home.region):
                         bounds = QRect(control.mapTo(home, QPoint()), control.size())
                         self.assertTrue(home.rect().contains(bounds), (width, height, bounds))
@@ -84,12 +90,15 @@ class Checks(unittest.TestCase):
                         self.assertLess(home.sheet.mapTo(home, home.sheet.rect().topRight()).x(), width * 0.65)
                 window.resize(570, 485)
                 self.assertLessEqual(window.width(), 572)
-                next(b for b in window.sidebar.findChildren(QPushButton) if b.text() == "阅读").click()
-                self.assertIs(window.tabs.currentWidget(), window.reader_page)
-                next(b for b in window.sidebar.findChildren(QPushButton) if b.text() == "生词本").click()
+                for index, button in enumerate(nav):
+                    button.setFocus()
+                    QTest.keyClick(button, Qt.Key_Space)
+                    self.assertEqual(window.tabs.currentIndex(), index)
+                    self.assertTrue(button.isChecked())
+                nav[2].click()
                 self.assertIs(window.tabs.currentWidget(), window.library)
                 read = next(button for button in window.library.empty.findChildren(QPushButton)
-                            if button.text() == "打开阅读页")
+                            if button.text() == "打开对照翻译")
                 read.setFocus()
                 QTest.keyClick(read, Qt.Key_Space)
                 self.assertIs(window.tabs.currentWidget(), window.reader_page)
@@ -107,7 +116,7 @@ class Checks(unittest.TestCase):
                 window.resize(870, 530)
                 window.show()
                 window.activateWindow()
-                next(b for b in window.sidebar.findChildren(QPushButton) if b.text() == "阅读").click()
+                next(b for b in window.sidebar.findChildren(QPushButton) if b.text() == "对照翻译").click()
                 wait_until(ui.example.isVisible)
                 ui.example.click()
                 wait_until(window.card.save.isVisible)
