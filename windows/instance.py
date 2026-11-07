@@ -5,17 +5,23 @@ from PySide6.QtCore import QWinEventNotifier
 from shiboken6 import VoidPtr
 
 
-def activation_event(app):
+EVENT_NAME = r"Local\WaxTranslate.Activate.1"
+
+
+def activation_event(app, *, activate_existing=True):
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.CreateEventW.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR)
     kernel.CreateEventW.restype = wintypes.HANDLE
     kernel.SetEvent.argtypes = kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
-    handle = kernel.CreateEventW(None, False, False, r"Local\WaxTranslate.Activate.1")
+    handle = kernel.CreateEventW(None, False, False, EVENT_NAME)
     if not handle:
         raise ctypes.WinError(ctypes.get_last_error())
     if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
-        kernel.SetEvent(handle)
-        kernel.CloseHandle(handle)
+        try:
+            if activate_existing and not kernel.SetEvent(handle):
+                raise ctypes.WinError(ctypes.get_last_error())
+        finally:
+            kernel.CloseHandle(handle)
         return None
     notifier = QWinEventNotifier(VoidPtr(handle), app)
 

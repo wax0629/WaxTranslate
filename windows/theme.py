@@ -14,14 +14,19 @@ def label(text, role):
     return widget
 
 
-def nav_icon(book=False):
+def nav_icon(book=False, *, settings=False):
     pix = QPixmap(48, 48)
     pix.fill(Qt.transparent)
     p = QPainter(pix)
     p.setRenderHint(QPainter.Antialiasing)
     p.scale(2, 2)
     p.setPen(QPen(QColor("#55534b"), 1.55, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-    if book:
+    if settings:
+        for y, x in ((6, 9), (12, 15), (18, 10)):
+            p.drawLine(QPointF(3.5, y), QPointF(x - 2, y))
+            p.drawLine(QPointF(x + 2, y), QPointF(20.5, y))
+            p.drawEllipse(QPointF(x, y), 2, 2)
+    elif book:
         path = QPainterPath()
         path.moveTo(12, 6)
         path.quadTo(7, 3, 3.5, 5.5)
@@ -45,13 +50,17 @@ def apply_theme(app):
     app.setFont(QFont("Microsoft YaHei UI", 10))
     app.setStyleSheet("""
         QWidget {color:#272722; font-size:13px;}
-        QWidget#desk, QWidget#home, QWidget#library {background:#fbfaf7;}
+        QWidget#desk, QWidget#home, QWidget#library, QWidget#settingsSurface, QScrollArea#settingsPage {
+            background:#fbfaf7;}
+        QFrame#settingsGroup {background:#fff; border:1px solid #e2dfd6; border-radius:12px;}
+        QFrame#settingsGroup QFrame#hairline {min-height:1px;}
         QFrame#sidebar {background:#f0eee7; border:0; border-right:1px solid #e3e0d8;}
         QFrame#sidebar[compact="true"] {border-right:0; border-bottom:1px solid #e3e0d8;}
         QLabel {background:transparent; border:0;}
         QLabel[role="brand"] {font-family:'Segoe UI'; font-weight:650; font-size:18px;}
         QLabel[role="heading"] {font-size:24px; font-weight:650;}
         QLabel[role="subhead"] {font-size:14px; font-weight:600;}
+        QLabel[role="settingsSection"] {color:#536459; font-size:12px; font-weight:600;}
         QLabel[role="meta"] {color:#69685f; font-size:12px;}
         QLabel[role="language"] {color:#58594f; font-size:12px; font-weight:600;}
         QLabel[role="key"] {color:#56564e; background:#f2f1eb; border:1px solid #e2dfd6;
@@ -69,9 +78,10 @@ def apply_theme(app):
         QLineEdit#search {background:white; color:#272722; border:1px solid #dedbd2;
             border-radius:7px; padding:6px 10px;}
         QLineEdit#search:focus {border-color:#6589ab;}
-        QComboBox#trigger {background:#f2f3ef; color:#3d5044; border:1px solid #dfe3db;
-            border-radius:6px; padding:3px 8px; font-size:12px;}
-        QComboBox#trigger:focus {border-color:#6b8d7d;}
+        QComboBox#settingsChoice {background:#f2f3ef; color:#3d5044; border:1px solid #dfe3db;
+            border-radius:6px; padding:3px 8px; font-size:12px; min-height:22px;}
+        QComboBox#settingsChoice:focus {border-color:#6b8d7d;}
+        QComboBox#settingsChoice::drop-down {border:0; width:20px;}
         QListWidget#words {padding:4px; outline:0;}
         QListWidget#words::item {padding:6px; border-radius:5px;}
         QListWidget#words::item:selected {background:#efeee7; color:#242620;}
