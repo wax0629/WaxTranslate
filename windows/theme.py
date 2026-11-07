@@ -55,11 +55,11 @@ def apply_theme(app):
         QLabel[role="key"] {color:#56564e; background:#f2f1eb; border:1px solid #e2dfd6;
             border-radius:5px; padding:2px 7px; font-size:12px;}
         QLabel[role="warning"] {color:#963f26;}
-        QFrame#translationPane, QFrame#editor, QFrame#cardShell, QTextBrowser#entry, QListWidget#words {
+        QFrame#translationPane, QFrame#editor, QTextBrowser#entry, QListWidget#words {
             background:white; border:1px solid #e2dfd6; border-radius:12px;}
         QFrame#translationPane {background:#f4f4ed;}
         QFrame#hairline {background:#e6e3da; border:0; max-height:1px;}
-        QPlainTextEdit#input, QPlainTextEdit#translation, QTextBrowser#result {background:transparent; border:0; padding:0;
+        QPlainTextEdit#input, QPlainTextEdit#translation {background:transparent; border:0; padding:0;
             selection-background-color:#d8e6f6; selection-color:#202128;}
         QPlainTextEdit#input {font-family:'Segoe UI','Microsoft YaHei UI'; font-size:16px;}
         QPlainTextEdit#translation {font-size:16px;}
@@ -79,14 +79,13 @@ def apply_theme(app):
         QPushButton[role="primary"] {background:#292b27; color:white; border-color:#292b27; font-weight:600;}
         QPushButton[role="primary"]:hover {background:#45473f;}
         QPushButton[role="primary"]:disabled {color:#77756e; background:#eeede7; border-color:#e5e3db;}
-        QPushButton[role="quiet"], QPushButton[role="close"] {background:transparent;
+        QPushButton[role="quiet"] {background:transparent;
             border:1px solid transparent; color:#56574e; padding:4px 8px;}
-        QPushButton[role="quiet"]:hover, QPushButton[role="close"]:hover {background:#eeede7; color:#20211e;}
+        QPushButton[role="quiet"]:hover {background:#eeede7; color:#20211e;}
         QPushButton[role="disclosure"] {background:transparent; border:1px solid transparent; padding:3px 0;
             color:#393a35; font-size:13px; font-weight:600;}
         QPushButton[role="disclosure"]:hover {color:#171814;}
         QPushButton[role="disclosure"]:focus {border-color:#6589ab;}
-        QPushButton[role="close"] {font-family:'Segoe UI'; font-size:18px; padding:0; min-height:0;}
         QPushButton[role="nav"] {text-align:left; background:transparent; border:1px solid transparent;
             border-radius:8px; padding:8px 10px; color:#57574e;}
         QPushButton[role="nav"]:hover {background:#e9e7df;}
