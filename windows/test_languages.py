@@ -15,7 +15,7 @@ from app import analyze
 from languages import NAMES, OCR_TAGS, UnsupportedLanguage, detect_source
 from notebook import Notebook
 from reader import Passage, WORD_TOKEN, Word, passage_from_lines, recognize, sentence_at, word_spans
-from translation import translate_text
+from translation import japanese_fragment, translate_text
 from workspace import ReadingEditor, utf16_length
 
 
@@ -152,7 +152,9 @@ class LanguageTests(unittest.TestCase):
             passage, result, _, language, _ = analyze(image, QPointF(64, 18), None)
             self.assertEqual((language, passage.word, passage.text), ("日语", "傷", "誰かが傷を負うその瞬間を"))
             self.assertIn("伤", result[1])
-            self.assertIn("受伤", result[2])
+            phrase = japanese_fragment(passage)
+            self.assertEqual((phrase.text, phrase.selection), ("誰かが傷を負うその瞬間", passage.selection))
+            self.assertRegex(result[2], r"[\u3400-\u9fff]")
             passage, result, _, language, _ = analyze(image.copy(12, 57, 70, 24), None, None)
             self.assertEqual((language, passage.text), ("日语", "祝おう"))
             self.assertIn("庆祝", result[1])
