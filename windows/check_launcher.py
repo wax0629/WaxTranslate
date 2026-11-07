@@ -62,6 +62,69 @@ def launch(command):
         return launcher.pid
 
 
+def verify_frame(window):
+    # This is the independent Windows runner's interactive desktop.
+    user = ctypes.windll.user32
+    user.GetWindowRect.argtypes = (wt.HWND, ctypes.POINTER(wt.RECT))
+    user.ClientToScreen.argtypes = (wt.HWND, ctypes.POINTER(wt.POINT))
+    user.SendMessageW.argtypes = (wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM)
+    user.SetWindowPos.argtypes = (wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wt.UINT)
+    user.IsZoomed.argtypes = (wt.HWND,)
+    dwm = ctypes.windll.dwmapi
+    dwm.DwmGetWindowAttribute.argtypes = (wt.HWND, wt.DWORD, ctypes.c_void_p, wt.DWORD)
+
+    def bounds():
+        rect = wt.RECT()
+        assert user.GetWindowRect(window, ctypes.byref(rect))
+        return rect
+
+    def location(x, y):
+        return (y & 0xffff) << 16 | (x & 0xffff)
+
+    def drag(x, y, dx, dy):
+        assert user.SetCursorPos(x, y)
+        time.sleep(0.1)
+        user.mouse_event(2, 0, 0, 0, 0)
+        try:
+            for step in range(1, 5):
+                time.sleep(0.08)
+                assert user.SetCursorPos(x + dx * step // 4, y + dy * step // 4)
+        finally:
+            user.mouse_event(4, 0, 0, 0, 0)
+
+    old = wt.POINT()
+    assert user.GetCursorPos(ctypes.byref(old))
+    try:
+        assert user.SetWindowPos(window, None, 40, 55, 640, 460, 0x0004)
+        first = bounds()
+        origin = wt.POINT()
+        assert user.ClientToScreen(window, ctypes.byref(origin))
+        # Only the native resize border should separate the client from each edge.
+        assert abs((origin.y - first.top) - (origin.x - first.left)) <= 2
+        def small_corners():
+            preference = wt.DWORD()
+            assert dwm.DwmGetWindowAttribute(window, 33, ctypes.byref(preference), 4) == 0
+            return preference.value == 3  # DWMWCP_ROUNDSMALL
+
+        wait_for(small_corners, "small corners after the native window appears")
+        x, y = origin.x + 26, origin.y + 20
+        assert user.SendMessageW(window, 0x84, 0, location(x, y)) == 2  # HTCAPTION on the wordmark
+        drag(x, y, 44, 24)
+        wait_for(lambda: bounds().left >= first.left + 20, "dragging the combined title bar")
+        moved = bounds()
+        x, y = moved.right - 2, (moved.top + moved.bottom) // 2
+        assert user.SendMessageW(window, 0x84, 0, location(x, y)) == 11  # HTRIGHT
+        drag(x, y, 40, 0)
+        wait_for(lambda: bounds().right >= moved.right + 15, "resizing the native border")
+        assert user.PostMessageW(window, 0x00A3, 2, location(moved.left + 40, moved.top + 20))
+        wait_for(lambda: user.IsZoomed(window), "maximizing from the combined title bar")
+        assert user.PostMessageW(window, 0x0112, 0xF120, 0)  # SC_RESTORE
+        wait_for(lambda: not user.IsZoomed(window), "restoring ordinary window bounds")
+        wait_for(small_corners, "small corners after restoring from maximized")
+    finally:
+        user.SetCursorPos(old.x, old.y)
+
+
 def check(root):
     from instance import EVENT_NAME
     from PySide6.QtCore import QSettings
@@ -132,7 +195,10 @@ def check(root):
             if has_tray:
                 assert not ex_style & 0x40000, f"Unexpected WS_EX_APPWINDOW: {ex_style:#x}"
             assert style & 0x70000 == 0x70000, f"Missing resize/minimize/maximize style: {style:#x}"
+            assert not (style & 0x00C00000), f"Unwanted native caption: {style:#x}"
             if not login:
+                verify_frame(window)
+
                 def stowed():
                     return not user.IsWindowVisible(window) if has_tray else user.IsIconic(window)
 

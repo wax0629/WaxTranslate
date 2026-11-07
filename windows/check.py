@@ -25,7 +25,6 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from app import Window, app_icon, image_point, image_rect
-from home import HOME_EXAMPLE, HOME_WORD, SAVE_HINT
 from notebook import Notebook
 from popup import Card
 from reader import Passage, Word, context_excerpt, passage_from_lines, recognize
@@ -72,26 +71,22 @@ class Checks(unittest.TestCase):
                 self.assertTrue(QFontDatabase.hasFamily("Spectral"))
                 self.assertGreaterEqual(window.wordmark.width(), window.wordmark.fontMetrics().horizontalAdvance("WaxTranslate"))
                 home = window.home
-                self.assertFalse(home.example.portrait.isNull())
+                self.assertFalse(window.backdrop.isNull())
                 for width, height in ((1080, 675), (570, 485), (540, 610), (540, 800)):
                     window.resize(width, height)
                     QApplication.processEvents()
-                    for control in (home.title, home.instructions, home.trial, home.key_settings, home.demo):
-                        bounds = QRect(control.mapTo(home.viewport(), QPoint()), control.size())
-                        self.assertTrue(home.viewport().rect().contains(bounds), (width, height, bounds))
-                    self.assertGreaterEqual(home.instructions.height(), home.instructions.heightForWidth(home.instructions.width()))
-                    self.assertFalse(home.trial.geometry().intersects(home.key_settings.geometry()))
-                    for task in (home.region, home.read_tool, home.notebook):
-                        self.assertGreaterEqual(task.hint.height(), task.hint.heightForWidth(task.hint.width()))
-                    self.assertEqual(home.region.y() < home.notebook.y(), width < 720)
+                    for control in (home.total, home.activity, home.instructions, home.region):
+                        bounds = QRect(control.mapTo(home, QPoint()), control.size())
+                        self.assertTrue(home.rect().contains(bounds), (width, height, bounds))
+                    self.assertGreaterEqual(home.instructions.width(), home.instructions.sizeHint().width())
+                    self.assertFalse(home.instructions.geometry().intersects(home.region.geometry()))
+                    if width > 900:
+                        self.assertLess(home.sheet.mapTo(home, home.sheet.rect().topRight()).x(), width * 0.65)
                 window.resize(570, 485)
-                wait_until(lambda: window.compact is True and window.home.viewport().width() > window.width() - 32)
                 self.assertLessEqual(window.width(), 572)
-                self.assertEqual(window.home.horizontalScrollBar().maximum(), 0)
-                window.home.read_tool.click()
+                next(b for b in window.sidebar.findChildren(QPushButton) if b.text() == "阅读").click()
                 self.assertIs(window.tabs.currentWidget(), window.reader_page)
-                window.tabs.setCurrentWidget(window.home)
-                window.home.findChild(QPushButton, "openNotebook").click()
+                next(b for b in window.sidebar.findChildren(QPushButton) if b.text() == "生词本").click()
                 self.assertIs(window.tabs.currentWidget(), window.library)
                 read = next(button for button in window.library.empty.findChildren(QPushButton)
                             if button.text() == "打开阅读页")
@@ -161,7 +156,7 @@ class Checks(unittest.TestCase):
             try:
                 self.assertEqual(first.trigger.currentData(), "left")
                 first.trigger.setCurrentIndex(first.trigger.findData("off"))
-                self.assertIn("点击开始框选", first.home.region.hint.text())
+                self.assertIn("双击单词", first.home.instructions.text())
             finally:
                 first.shutdown()
                 first.deleteLater()
@@ -180,48 +175,38 @@ class Checks(unittest.TestCase):
             book = Notebook(Path(tmp) / "book.sqlite")
             window = Window(notebook=book)
             home = window.home
-            hint = home.notebook.hint.text
             try:
                 window.show()
                 self.assertIs(window.tabs.currentWidget(), home)
-                self.assertTrue(home.demo.isVisible())
+                wait_until(lambda: home.total.text() == "0" and home.empty.isVisible())
+                self.assertEqual(home.table.rowCount(), 0)
                 self.assertIn("左 Ctrl", home.instructions.text())
-                self.assertIn("左 Ctrl", home.region.hint.text())
-                self.assertEqual(home.mode_label.text(), "屏幕取词")
-                wait_until(lambda: hint() == SAVE_HINT)
-                edge = home.demo.mapToGlobal(QPoint(-2, home.demo.height() // 2))
-                with patch.object(QApplication, "widgetAt", return_value=home.example), \
-                        patch.object(window, "try_home_word") as try_word:
-                    window.begin(False, edge)
-                    try_word.assert_called_once()
-                window.workspace.input.setPlainText("An unfinished draft.")
-                home.trial.setFocus()
-                QTest.keyClick(home.trial, Qt.Key_Space)
+                window.open_reader()
+                editor = window.workspace.input
+                editor.setPlainText(RIVER)
+                editor.setTextCursor(editor.document().find("bank"))
+                editor.lookup_cursor()
                 wait_until(window.card.save.isVisible)
-                self.assertEqual(window.saved_result[0].text, HOME_EXAMPLE)
-                self.assertEqual(window.saved_result[0].word, HOME_WORD)
-                self.assertTrue(window.saved_result[1][1])
-                wait_until(lambda: "今日查词 1 次" in hint() and "收藏生词" in hint())
+                self.assertEqual(window.saved_result[0], word_in(RIVER))
                 window.card.save.click()
-                wait_until(lambda: hint() == "今日查词 1 次，已收藏 1 条，待复习 1 条。")
                 window.card.close()
+                window.tabs.setCurrentWidget(home)
+                wait_until(lambda: home.total.text() == "1" and home.table.isVisible() and "已收藏 1" in home.activity.text())
+                self.assertEqual(home.table.item(0, 0).text(), "bank")
+                self.assertIn("岸", home.table.item(0, 1).text())
+                self.assertEqual(home.table.item(0, 2).text(), "英语")
                 window.open_library()
                 window.library.review.click()
                 window.library.reveal.click()
                 window.library.known.click()
                 window.tabs.setCurrentWidget(home)
-                wait_until(lambda: hint() == "今日查词 1 次，已收藏 1 条，待复习 0 条。")
+                wait_until(lambda: "待复习 0" in home.activity.text())
                 window.trigger.setCurrentIndex(window.trigger.findData("right"))
                 self.assertIn("右 Ctrl", home.instructions.text())
-                self.assertIn("右 Ctrl", home.region.hint.text())
                 window.trigger.setCurrentIndex(window.trigger.findData("off"))
-                self.assertEqual(home.mode_label.text(), "应用内查词")
-                self.assertIn("双击生词", home.instructions.text())
-                self.assertNotIn("Ctrl", home.instructions.text() + home.region.hint.text())
-                home.read_tool.click()
-                self.assertIs(window.tabs.currentWidget(), window.reader_page)
-                self.assertEqual(window.workspace.input.toPlainText(), "An unfinished draft.")
-                window.tabs.setCurrentWidget(home)
+                self.assertIn("双击单词", home.instructions.text())
+                self.assertNotIn("Ctrl", home.instructions.text())
+                self.assertEqual(editor.toPlainText(), RIVER)
                 with patch.object(window, "begin") as begin:
                     home.region.click()
                     begin.assert_called_once_with(True)
@@ -544,7 +529,8 @@ class Checks(unittest.TestCase):
             self.assertEqual(card.text.verticalScrollBar().maximum(), 0)
             self.assertIn(source, card.text.toPlainText())
             doc = card.text.document()
-            first = doc.find("bank", doc.find("bank"))
+            self.assertEqual(card.headword.text(), "bank")
+            first = doc.find("bank")
             second = doc.find("bank", first)
             self.assertEqual(first.charFormat().background().style(), Qt.NoBrush)
             self.assertNotEqual(second.charFormat().background().style(), Qt.NoBrush)
@@ -975,29 +961,14 @@ class Checks(unittest.TestCase):
             self.assertEqual(window.saved_result[0].word, "MVP")
             self.assertIn("最小可行产品", window.saved_result[1][1])
             self.assertEqual(sum(action == "lookup" for action, _, _ in gestures), count + 1)
-            # Try the word on the actual landing page using the configured key.
+            # Completed screen lookups should appear when returning from the tray.
             window.card.close()
             sample.hide()
             window.open_home()
             self.assertTrue(QTest.qWaitForWindowExposed(window))
-            wait_until(lambda: window.isActiveWindow() and "今日查词 2 次" in window.home.notebook.hint.text())
-            demo = window.home.demo
-            # On first show Win32 positions the top-level window and Qt switches
-            # to the compact rail on small/high-DPI desktops. Aim at the actual
-            # painted word after that layout settles, as a reader would.
-            QTest.qWait(180)
-            target = demo.mapToGlobal(demo.rect().center())
-            move_cursor(target)
-            wait_until(lambda: native_target() == int(window.winId()) and QApplication.widgetAt(QCursor.pos()) is demo)
-            home_ticket = window.ticket
-            user.keybd_event(right_ctrl, 0x1D, 1, 0)
-            user.keybd_event(right_ctrl, 0x1D, 3, 0)
-            wait_until(lambda: window.ticket != home_ticket and window.card.save.isVisible())
-            self.assertTrue(window.card.save.isVisible(),
-                            (window.card.text.toPlainText(), target, demo.mapToGlobal(demo.rect().center())))
-            self.assertEqual(window.saved_result[0].text, HOME_EXAMPLE)
-            self.assertEqual(window.saved_result[0].word, HOME_WORD)
-            wait_until(lambda: "今日查词 3 次" in window.home.notebook.hint.text())
+            wait_until(lambda: window.isActiveWindow() and window.home.total.text() == "2")
+            self.assertEqual([window.home.table.item(i, 0).text() for i in range(2)], ["MVP", "bank"])
+            self.assertIn("最小可行产品", window.home.table.item(0, 1).text())
             window.trigger.setCurrentIndex(window.trigger.findData("off"))
             wait_until(lambda: window.active_mode == "off")
             ticket = window.ticket

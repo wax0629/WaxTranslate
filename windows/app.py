@@ -7,13 +7,13 @@ from pathlib import Path
 import sys
 import time
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QSettings, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QCursor, QDesktopServices, QIcon, QPainter, QPen
+from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QRectF, QSettings, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QCursor, QDesktopServices, QIcon, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QFrame, QHBoxLayout, QLayout,
                                QMenu, QPushButton, QSizePolicy, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 from notebook import Notebook
-from home import HOME_EXAMPLE, HOME_WORD, HomePage
+from home import HomePage
 from lookup import UNKNOWN, explain, reference_word, sentence_translation
 from online_terms import search_entities
 from popup import Card
@@ -25,6 +25,7 @@ from startup import LoginStartup
 from theme import APP_NAME, apply_theme, label, ui_icon
 from languages import UnsupportedLanguage
 from workspace import TextWorkspace
+from window_frame import HTCAPTION, caption_hit, configure_frame
 
 
 def image_point(point, logical_size, image_size):
@@ -134,12 +135,13 @@ def online_meanings(word):
 class Window(QWidget):
     finished = Signal(int, object, object)
     online_finished = Signal(int, object)
-    stats_ready = Signal(object, object, object)
+    stats_ready = Signal(object)
 
     def __init__(self, notebook=None, login_startup=None):
         super().__init__()
         self.setWindowTitle(APP_NAME)
         self.setObjectName("desk")
+        self.backdrop = QPixmap(str(Path(__file__).resolve().parents[1] / "Assets/Editorial/glance.png"))
         self.setAttribute(Qt.WA_StyledBackground)
         self.player = SpeechPlayer(self)
         self.card = Card(self.player)
@@ -199,14 +201,30 @@ class Window(QWidget):
             nav.setIconSize(QSize(23, 23))
             group.addButton(nav, index)
             rail.addWidget(nav)
+        controls = QHBoxLayout()
+        controls.setSpacing(0)
+        rail.addLayout(controls)
+        for icon, name, callback in (("minimize", "最小化", self.showMinimized),
+                                     ("maximize", "最大化", self.toggle_maximized),
+                                     ("close", "关闭", self.close)):
+            button = QPushButton(ui_icon(icon, "#242422"), "")
+            button.setProperty("role", "windowControl")
+            button.setAccessibleName(name)
+            button.setToolTip(name)
+            button.setFixedSize(32, 28)
+            button.setIconSize(QSize(16, 16))
+            button.clicked.connect(callback)
+            controls.addWidget(button)
+            if icon == "maximize":
+                self.maximize_button = button
+            elif icon == "close":
+                button.setObjectName("closeWindow")
         group.idClicked.connect(self.tabs.setCurrentIndex)
         self.tabs.currentChanged.connect(lambda index: group.button(index).setChecked(True))
 
         self.home = HomePage()
         self.tabs.addWidget(self.home)
-        self.home.demo_requested.connect(self.try_home_word)
         self.home.region_requested.connect(lambda: self.begin(True))
-        self.home.reader_requested.connect(self.open_reader)
         self.home.settings_requested.connect(self.open_gesture_settings)
         self.home.stats_requested.connect(self.refresh_home)
         self.stats_ready.connect(self.home.set_stats)
@@ -215,7 +233,6 @@ class Window(QWidget):
         layout.setSpacing(17)
         self.tabs.addWidget(self.reader_page)
         self.library = Library(self.notebook, self.player)
-        self.home.library_requested.connect(self.open_library)
         self.library.reader_requested.connect(self.open_reader)
         self.tabs.addWidget(self.library)
         self.preferences = SettingsPage()
@@ -281,6 +298,26 @@ class Window(QWidget):
         super().resizeEvent(event)
         self.arrange_shell(event.size().width() < 740)
 
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.backdrop.isNull():
+            return
+        w, h = self.backdrop.width(), self.backdrop.height()
+        scale = max(self.width() / w, self.height() / h)
+        crop_w, crop_h = self.width() / scale, self.height() / scale
+        x = max(0, min(w - crop_w, w * 0.72 - crop_w * 0.78))
+        y = max(0, min(h - crop_h, h * 0.32 - crop_h * 0.34))
+        with QPainter(self) as painter:
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            painter.drawPixmap(QRectF(self.rect()), self.backdrop, QRectF(x, y, crop_w, crop_h))
+            # Keep the unboxed statistics legible when a portrait-shaped window crops the ink.
+            wash = QLinearGradient(0, 0, self.width(), 0)
+            wash.setColorAt(0, QColor(250, 249, 246, 230))
+            compact = self.width() < 720
+            wash.setColorAt(0.49 if compact else 0.37, QColor(250, 249, 246, 202 if compact else 110))
+            wash.setColorAt(0.70, QColor(250, 249, 246, 0))
+            painter.fillRect(self.rect(), wash)
+
     def arrange_shell(self, compact):
         if self.compact == compact:
             return
@@ -300,12 +337,31 @@ class Window(QWidget):
         if available and not self.tray.isVisible():
             self.tray.show()
         kind = Qt.Tool if available else Qt.Window
-        if self.windowType() != kind:
-            # On Windows Qt.Tool supplies WS_EX_TOOLWINDOW. Explicit caption
-            # hints keep resizing and the minimize/maximize buttons available.
-            self.setWindowFlags(kind | Qt.WindowTitleHint | Qt.WindowSystemMenuHint
-                                | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint)
+        if self.windowType() != kind or not self.windowFlags() & Qt.CustomizeWindowHint:
+            self.setWindowFlags(kind | Qt.CustomizeWindowHint | Qt.WindowSystemMenuHint)
+        configure_frame(self)
         return available
+
+    def nativeEvent(self, event_type, message):
+        if event_type == b"windows_generic_MSG" and hasattr(self, "sidebar") and caption_hit(self, message):
+            return True, HTCAPTION
+        return super().nativeEvent(event_type, message)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.schedule_frame_update()
+
+    def schedule_frame_update(self):
+        # Qt applies its default corner preference when the native window is
+        # shown or restored. Apply our preference after that transition.
+        if self.isVisible() and not self.isMinimized():
+            QTimer.singleShot(0, self, lambda: configure_frame(self))
+
+    def toggle_maximized(self):
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
 
     def open_home(self):
         self.sync_tray_window()
@@ -333,23 +389,32 @@ class Window(QWidget):
         elif self.tabs.widget(index) is self.reader_page:
             self.workspace.input.setFocus()
 
-    def refresh_home(self, *, lookup_at=None):
+    def refresh_home(self, *, word="", language="", gloss="", lookup_at=None):
         visible = self.home.isVisible()
-        if not self.stopping and (lookup_at is not None or visible):
-            self.stats_pool.submit(self.update_home_stats, lookup_at, visible)
+        if not self.stopping and (word or visible):
+            self.stats_pool.submit(self.update_home_stats, visible, word, language, gloss, lookup_at)
 
-    def update_home_stats(self, lookup_at, visible):
+    def update_home_stats(self, visible, word, language, gloss, lookup_at):
         try:
             if lookup_at is not None:
-                self.notebook.record_lookup(lookup_at)
+                self.notebook.record_lookup(lookup_at, word=word, language=language, gloss=gloss)
+            elif word:
+                self.notebook.update_recent_gloss(word, language, gloss)
             if visible:
-                self.stats_ready.emit(*self.notebook.home_stats())
+                self.stats_ready.emit(self.notebook.dashboard())
         except (sqlite3.Error, OSError):
             if visible:
-                self.stats_ready.emit(None, None, None)
+                self.stats_ready.emit(None)
 
     def changeEvent(self, event):
         super().changeEvent(event)
+        if event.type() == QEvent.WindowStateChange and hasattr(self, "maximize_button"):
+            maximized = self.isMaximized()
+            name = "还原" if maximized else "最大化"
+            self.maximize_button.setIcon(ui_icon("restore" if maximized else "maximize", "#242422"))
+            self.maximize_button.setAccessibleName(name)
+            self.maximize_button.setToolTip(name)
+            self.schedule_frame_update()
         if event.type() == QEvent.WindowStateChange and self.isMinimized() and hasattr(self, "tray"):
             # Finish the native minimize transition before hiding the window.
             QTimer.singleShot(0, self.finish_minimize)
@@ -522,12 +587,6 @@ class Window(QWidget):
             self.overlay.close()
             self.overlay = None
 
-    def try_home_word(self):
-        self.invalidate()
-        start = HOME_EXAMPLE.index(HOME_WORD)
-        self.submit(self.home.demo.mapToGlobal(self.home.demo.rect().center()),
-                    passage=Passage(HOME_EXAMPLE, (start, start + len(HOME_WORD)), source_code="en"))
-
     def demo(self):
         examples = {
             "ja": ("図書館で日本語の本を読みます。", "図書館"),
@@ -565,11 +624,6 @@ class Window(QWidget):
             point = QCursor.pos()
         editor = self.workspace.input
         under_pointer = QApplication.widgetAt(point) if not region else None
-        if under_pointer is not None and self.home.isAncestorOf(under_pointer) and self.home.demo.isVisible():
-            demo = self.home.demo
-            if demo.rect().adjusted(-3, -3, 3, 3).contains(demo.mapFromGlobal(point)):
-                self.try_home_word()
-                return
         if under_pointer is editor.viewport():
             if not editor.lookup_point(QPointF(editor.viewport().mapFromGlobal(point))):
                 self.invalidate()
@@ -649,7 +703,10 @@ class Window(QWidget):
         self.card.show_result(passage, *result, point, excerpt=excerpt, language=language, pos=pos,
                               can_save=not unknown, can_search=can_search)
         if passage.selection and any(c.isalpha() for c in passage.word):
-            self.refresh_home(lookup_at=time.time())
+            # Document definitions can quote the surrounding source verbatim.
+            gloss = result[0] if unknown or result[0] == "文中定义" else result[1]
+            self.refresh_home(word=passage.word, language=passage.source_code or "en", gloss=gloss,
+                              lookup_at=time.time())
         if unknown and self.auto_online.isChecked() and any(c.isascii() and c.isalpha() for c in passage.word):
             self.search_online()
 
@@ -681,6 +738,7 @@ class Window(QWidget):
             ids = [identity for identity, _ in matches]
             result = ("Wikidata · 同名参考" if len(ids) > 1 else "Wikidata · 百科参考", gloss, local_result[2])
             self.saved_result = passage, (result[0] + " · " + " / ".join(ids), gloss, result[2])
+            self.refresh_home(word=passage.word, language=passage.source_code or "en", gloss=gloss)
             self.card.show_result(passage, *result, point, language=language, pos=pos, references=ids)
         else:
             unknown = local_result[0] == UNKNOWN

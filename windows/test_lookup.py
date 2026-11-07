@@ -122,7 +122,10 @@ class LookupTests(unittest.TestCase):
                 window.stats_pool.submit(lambda: None).result(timeout=5)
                 # Codex, the selected Chinese label, and the novel name. The
                 # paragraph, pure number and follow-up Wikidata result add no lookup.
-                self.assertEqual(window.notebook.home_stats()[0], 3)
+                total, today, _, _, recent = window.notebook.dashboard()
+                self.assertEqual((total, today), (3, 3))
+                self.assertEqual(recent[0][0], "BlorpQuxV9")
+                self.assertIn("百科说明", recent[0][2])
             finally:
                 window.shutdown()
                 window.deleteLater()

@@ -1,17 +1,15 @@
 """The compact reading card shared by word lookups and region translations."""
 from math import ceil
-from pathlib import Path
 from urllib.parse import urlencode
 
 from PySide6.QtCore import QEvent, QPoint, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPainterPath, QPen, QPixmap, QShortcut
-from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout,
                                QLabel, QPushButton, QSizePolicy, QTextBrowser, QVBoxLayout, QWidget)
 
 from languages import SUPPORTED
 from speech import ListenButton, SpeechPlayer
-from theme import APP_NAME, DOCUMENT_STYLE, plain, result_html
+from theme import APP_NAME, marked_source, plain
 
 
 def action_icon(bookmark):
@@ -20,7 +18,7 @@ def action_icon(bookmark):
     painter = QPainter(pix)
     painter.setRenderHint(QPainter.Antialiasing)
     painter.scale(3, 3)
-    painter.setPen(QPen(QColor("#faf9f6" if bookmark else "#595955"), 1.4,
+    painter.setPen(QPen(QColor("#474743"), 1.4,
                         Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     if bookmark:
         path = QPainterPath()
@@ -45,20 +43,17 @@ def action_icon(bookmark):
 
 
 CARD_STYLE = """
-    QFrame#readingCard {background:#faf9f6; border:1px solid #bcbcb6; border-radius:9px;}
-    QWidget#resultMasthead {background:#f0efea; border-bottom:1px solid #d5d4ce;
-        border-top-left-radius:8px; border-top-right-radius:8px;}
-    QWidget#resultActions {background:#faf9f6; border-top:1px solid #e6e5df;
-        border-bottom-left-radius:8px; border-bottom-right-radius:8px;}
-    QLabel#origin {background:transparent; color:#363634; font:600 12px 'Microsoft YaHei UI';}
+    QFrame#readingCard {background:#fcfbf8; border:1px solid #c7c6c0; border-radius:14px;}
+    QWidget#resultMasthead, QWidget#resultActions {background:transparent;}
+    QLabel#headword {background:transparent; color:#181816;
+        font:500 20px 'Segoe UI Variable Text','Segoe UI','Microsoft YaHei UI';}
+    QLabel#origin {background:transparent; color:#66655f; font:12px 'Microsoft YaHei UI';}
     QPushButton {font:12px 'Microsoft YaHei UI'; border:1px solid transparent; min-height:0;
-        padding:5px 8px; border-radius:5px;}
-    QPushButton#bookmark {background:#161615; color:#fffefa;}
-    QPushButton#bookmark:hover {background:#363634;}
-    QPushButton#bookmark:pressed {background:#161615;}
-    QPushButton#bookmark:disabled {background:#e6e5df; color:#595955;}
-    QPushButton#copy, QPushButton#dismiss, QPushButton#expand {background:transparent; color:#363634;}
-    QPushButton#copy:hover, QPushButton#dismiss:hover, QPushButton#expand:hover {background:#e6e5df; color:#161615;}
+        padding:4px 6px; border-radius:4px;}
+    QPushButton#bookmark, QPushButton#copy, QPushButton#dismiss, QPushButton#expand {background:transparent; color:#363634;}
+    QPushButton#bookmark:hover, QPushButton#copy:hover, QPushButton#dismiss:hover, QPushButton#expand:hover
+        {background:#e6e5df; color:#161615;}
+    QPushButton#bookmark:disabled {color:#77766e;}
     QPushButton#dismiss {font:17px 'Segoe UI'; padding:0; border-radius:10px;}
     QPushButton:focus {border-color:#555551;}
     QTextBrowser {background:transparent; border:0; padding:0;
@@ -68,6 +63,30 @@ CARD_STYLE = """
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {height:0;}
     QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {background:transparent;}
 """
+
+
+CARD_DOCUMENT = """
+    p {margin:0; color:#232320; font-family:'Segoe UI Variable Text','Segoe UI','Microsoft YaHei UI';}
+    .details {font-size:12px; color:#66655f; margin-bottom:5px;}
+    .gloss, .translation {font-size:15px; line-height:145%;}
+    .source {font-size:14px; color:#595952; line-height:140%;}
+    .hit {font-weight:600; color:#242420; background-color:#e7e6e0;}
+    .translation {margin-top:4px;}
+    .message {font-size:14px; line-height:140%;}
+    a {color:#353530;}
+"""
+
+
+class Headword(QLabel):
+    def paintEvent(self, event):
+        if self.fontMetrics().horizontalAdvance(self.text()) <= self.width():
+            super().paintEvent(event)
+            return
+        with QPainter(self) as painter:
+            painter.setPen(self.palette().windowText().color())
+            painter.drawText(self.rect(), Qt.AlignLeft | Qt.AlignVCenter,
+                             self.fontMetrics().elidedText(self.text(), Qt.ElideRight, self.width()))
+
 
 class Card(QWidget):
     dismissed = Signal()
@@ -83,7 +102,7 @@ class Card(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setStyleSheet(CARD_STYLE)
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(12, 8, 12, 16)
+        outer.setContentsMargins(8, 5, 8, 11)
         self.shell = QFrame(objectName="readingCard")
         shadow = QGraphicsDropShadowEffect(self.shell)
         shadow.setBlurRadius(16)
@@ -101,19 +120,25 @@ class Card(QWidget):
         self.grip.setToolTip("按住这里拖动浮窗")
         self.grip.setCursor(Qt.OpenHandCursor)
         header = QHBoxLayout(self.grip)
-        header.setContentsMargins(16, 7, 10, 7)
-        header.setSpacing(7)
-        mark = QSvgWidget(str(Path(__file__).resolve().parents[1] / "Assets/Brand/barrette.svg"))
-        mark.setFixedSize(22, 22)
-        mark.setAccessibleName(APP_NAME)
-        mark.setAttribute(Qt.WA_TransparentForMouseEvents)
-        header.addWidget(mark)
+        header.setContentsMargins(22, 12, 12, 0)
+        header.setSpacing(9)
+        self.headword = Headword(objectName="headword")
+        self.headword.setTextFormat(Qt.PlainText)
+        self.headword.setMinimumWidth(0)
+        self.headword.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        header.addWidget(self.headword)
         self.caption = QLabel(objectName="origin")
         self.caption.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.caption.setWordWrap(True)
         self.caption.setTextFormat(Qt.PlainText)
         header.addWidget(self.caption, 1)
         self.listen = ListenButton(player if player is not None else SpeechPlayer(self))
+        self.listen.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self.listen.setStyleSheet("""
+            QToolButton#listen {background:transparent; border:0; padding:4px 6px;}
+            QToolButton#listen:hover, QToolButton#listen:focus {background:#e6e5df;}
+            QToolButton#listen::menu-button {border:0; width:12px;}
+        """)
         header.addWidget(self.listen)
         close = QPushButton("×", objectName="dismiss")
         close.setAccessibleName("关闭翻译结果")
@@ -123,7 +148,7 @@ class Card(QWidget):
         header.addWidget(close, 0, Qt.AlignTop)
         body.addWidget(self.grip)
         reading = QVBoxLayout()
-        reading.setContentsMargins(20, 10, 20, 10)
+        reading.setContentsMargins(22, 3, 22, 10)
         reading.setSpacing(6)
         body.addLayout(reading, 1)
         self.speech_error = QLabel()
@@ -141,13 +166,13 @@ class Card(QWidget):
         self.text.anchorClicked.connect(self.open_reference)
         self.text.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.text.document().setDocumentMargin(0)
-        self.text.document().setDefaultStyleSheet(DOCUMENT_STYLE)
+        self.text.document().setDefaultStyleSheet(CARD_DOCUMENT)
         reading.addWidget(self.text, 1)
 
         self.actions = QWidget(objectName="resultActions")
         self.actions.setAttribute(Qt.WA_StyledBackground)
         footer = QHBoxLayout(self.actions)
-        footer.setContentsMargins(14, 7, 12, 7)
+        footer.setContentsMargins(15, 0, 15, 9)
         footer.setSpacing(4)
         self.save = QPushButton(action_icon(True), "收藏生词", objectName="bookmark")
         self.online = QPushButton("查百科", objectName="expand")
@@ -196,13 +221,27 @@ class Card(QWidget):
     def show_result(self, passage, origin, gloss, sentence, point, excerpt=None, language="", pos="",
                     can_save=True, can_search=False, references=(), web_search=False):
         self.listen.set_content(passage.word, passage.text, passage.source_code or "en")
-        if passage.selection:
-            details = language or "按英语查词"
-            if pos or passage.source_code in ("", "en"):
-                details += " · " + (pos or "词性待定")
-        else:
+        if not passage.selection:
             details = (language or "按英语翻译") + " → 简体中文"
-        full = result_html(passage, gloss, sentence, details)
+            translation = gloss or sentence
+            content = f"<p class='details'>{plain(details)}</p><p class='gloss'>{plain(translation)}</p>"
+            original = content + f"<hr style='background-color:#d6d5cf'><p class='source'>{plain(passage.text)}</p>"
+            self.present(origin, content, point, translation, full_context=(original, translation),
+                         expand_label="查看原文")
+            return
+        details = language or "按英语查词"
+        if pos or passage.source_code in ("", "en"):
+            details += " · " + (pos or "词性待定")
+        meaning = f"<p class='details'>{plain(details)}</p><p class='gloss'>{plain(gloss)}</p>"
+
+        def with_context(part, translated, prefix="", suffix=""):
+            content = meaning + (f"<hr style='background-color:#d6d5cf'>"
+                                 f"<p class='source'>{prefix}{marked_source(part)}{suffix}</p>")
+            if translated:
+                content += f"<p class='translation'>{plain(translated)}</p>"
+            return content
+
+        full = with_context(passage, sentence)
         links = [f'<a href="https://www.wikidata.org/wiki/{entity}">条目 {i}</a>'
                  for i, entity in enumerate(references, 1)]
         if web_search:
@@ -213,22 +252,28 @@ class Card(QWidget):
         if excerpt is None:
             original_only = not can_save and not sentence
             self.present(origin, full, point, (sentence or passage.word) if original_only else sentence or gloss,
-                         bool(passage.selection) and can_save, copy_original=original_only, can_search=can_search)
+                         can_save, copy_original=original_only, can_search=can_search, word=passage.word)
             return
         part, translated = excerpt
         start = passage.selection[0] - part.selection[0]
-        short = result_html(part, gloss, translated, details, "… " if start else "",
-                            " …" if start + len(part.text) < len(passage.text) else "")
-        self.present(origin, short, point, translated, True, (full, sentence), can_search=can_search)
+        short = with_context(part, translated, "… " if start else "",
+                             " …" if start + len(part.text) < len(passage.text) else "")
+        self.present(origin, short, point, translated, can_save, (full, sentence), can_search=can_search,
+                     word=passage.word)
 
     def present(self, caption, content, point, translation="", can_save=False, full_context=None, copy_original=False,
-                can_search=False):
+                can_search=False, word="", expand_label="查看全句"):
         self.speech_error.hide()
         self.anchor = point
         self.default_context = content, translation
         self.full_context = full_context
         self.copy_original = copy_original
+        self.expand_label = expand_label
+        self.headword.setText(word)
+        self.headword.setToolTip(word)
+        self.headword.setVisible(bool(word))
         self.caption.setText(caption)
+        self.caption.setMinimumWidth(min(112, self.caption.fontMetrics().horizontalAdvance(caption) + 2))
         self.save.setText("收藏生词")
         self.save.setEnabled(True)
         self.save.setVisible(can_save)
@@ -248,11 +293,12 @@ class Card(QWidget):
 
     def display_context(self, expanded):
         content, self.translation = self.full_context if expanded else self.default_context
-        self.expand.setText("收起" if expanded else "查看全句")
+        self.expand.setText("收起" if expanded else self.expand_label)
         self.copy.setText("复制原文" if self.copy_original else "复制")
         copy_hint = "复制原文" if self.copy_original else "复制译文"
         self.copy.setAccessibleName(copy_hint)
-        self.copy.setToolTip("复制语境译文" if self.full_context and not expanded else copy_hint)
+        self.copy.setToolTip("复制语境译文" if self.full_context and self.expand_label == "查看全句" and not expanded
+                             else copy_hint)
         self.text.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.text.setHtml(content)
         self.fit_content()
@@ -270,7 +316,8 @@ class Card(QWidget):
         area = screen.availableGeometry()
         self.setScreen(screen)
         self.ensurePolished()
-        width = min(402, area.width())
+        margins = self.layout().contentsMargins()
+        width = min(380 + margins.left() + margins.right(), area.width())
         # Lay out the real header/footer first, then measure the document at the
         # full viewport width. Short results shrink; only the text scrolls on long ones.
         self.setFixedWidth(width)
@@ -279,7 +326,7 @@ class Card(QWidget):
         chrome = self.layout().totalSizeHint().height()
         document = self.text.document()
         document.setTextWidth(self.text.contentsRect().width())
-        height = min(area.height(), 440, chrome + ceil(document.size().height()) + 2)
+        height = min(area.height(), 400 + margins.top() + margins.bottom(), chrome + ceil(document.size().height()) + 2)
         self.resize(width, height)
         self.text.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         position = self.pos() if self.user_placed else point + QPoint(5, 14)

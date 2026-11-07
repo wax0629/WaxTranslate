@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from PySide6.QtCore import QObject, QProcess, Qt, Signal
 from PySide6.QtTest import QSignalSpy, QTest
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QPushButton, QSystemTrayIcon
 import app
 import instance
 from notebook import Notebook
@@ -53,8 +53,17 @@ class LaunchModeTests(unittest.TestCase):
             try:
                 window.open_home()
                 self.assertEqual(window.windowType(), Qt.Tool)
+                window.maximize_button.click()
+                self.assertTrue(window.isMaximized())
+                self.assertEqual(window.maximize_button.accessibleName(), "还原")
+                window.maximize_button.click()
+                self.assertFalse(window.isMaximized())
+                close = window.sidebar.findChild(QPushButton, "closeWindow")
+                close.click()
+                self.assertFalse(window.isVisible())
+                window.open_home()
                 window.preferences.close_behavior.setCurrentIndex(window.preferences.close_behavior.findData("quit"))
-                window.showMinimized()
+                next(b for b in window.sidebar.findChildren(QPushButton) if b.accessibleName() == "最小化").click()
                 QApplication.processEvents()
                 self.assertFalse(window.isVisible(), "Minimize must allow reading to continue, even with quit-on-close")
                 window.tray_clicked(QSystemTrayIcon.DoubleClick)

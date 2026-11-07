@@ -29,16 +29,65 @@ class HomeStatsTests(unittest.TestCase):
             self.assertEqual([tuple(r) for r in db.execute("SELECT * FROM lookup_counter")],
                              [(1, "2030-08-05", 2)])
         self.assertEqual(reopened.record_lookup(midnight), 1)
+        self.assertEqual(reopened.dashboard(midnight), (3, 1, 0, 0, []))
         with reopened.connection() as db:
             self.assertEqual([tuple(r) for r in db.execute("SELECT * FROM lookup_counter")],
                              [(1, "2030-08-06", 1)])
 
     def test_concurrent_completed_queries(self):
         stamp = datetime(2030, 8, 5, 12).timestamp()
+        def lookup(index):
+            return self.book.record_lookup(stamp, word=f"word {index}", language="en", gloss="词")
         with ThreadPoolExecutor(max_workers=4) as pool:
-            counts = list(pool.map(self.book.record_lookup, [stamp] * 32))
+            counts = list(pool.map(lookup, range(32)))
         self.assertEqual(sorted(counts), list(range(1, 33)))
-        self.assertEqual(self.book.home_stats(stamp), (32, 0, 0))
+        total, today, _, _, recent = self.book.dashboard(stamp)
+        self.assertEqual((total, today, len(recent)), (32, 32, 6))
+        # Writers finish in a different order from submission.
+        expected = [f"word {counts.index(n)}" for n in range(32, 26, -1)]
+        self.assertEqual([word for word, _, _ in recent], expected)
+
+    def test_upgrade_counts_only_previously_recorded_day(self):
+        day = datetime(2030, 8, 5, 12).timestamp()
+        tomorrow = datetime(2030, 8, 6).timestamp()
+        self.book.path.parent.mkdir(parents=True)
+        db = sqlite3.connect(self.book.path)
+        with db:
+            db.execute("CREATE TABLE lookup_counter (id INTEGER PRIMARY KEY, day TEXT, total INTEGER)")
+            db.execute("INSERT INTO lookup_counter VALUES(1, '2030-08-05', 17)")
+        try:
+            self.assertEqual(self.book.dashboard(tomorrow), (17, 0, 0, 0, []))
+            # An older portable build still writes only the singleton counter.
+            with db:
+                db.execute("UPDATE lookup_counter SET day='2030-08-06', total=1")
+            self.assertEqual(self.book.record_lookup(tomorrow, word="本", language="ja", gloss="书"), 2)
+            # An earlier day's completion can arrive later from a queued writer.
+            self.assertEqual(self.book.record_lookup(day), 18)
+            self.assertEqual(Notebook(self.book.path).dashboard(tomorrow), (20, 2, 0, 0, [("本", "ja", "书")]))
+        finally:
+            db.close()
+
+    def test_recent_updates_and_evicts_distinct_words(self):
+        for word in ("one", "two", "three", "four", "five", "six"):
+            self.book.record_lookup(word=word, language="en", gloss="旧")
+        self.book.record_lookup(word="two", language="en", gloss="两\n其余说明")
+        self.book.record_lookup(word="two", language="fr", gloss="法语义项")
+        self.book.update_recent_gloss("six", "en", "新" * 130 + "\n其余说明")
+        self.book.update_recent_gloss("one", "en", "已淘汰的词")
+        self.assertEqual(Notebook(self.book.path).dashboard(), (8, 8, 0, 0, [
+            ("two", "fr", "法语义项"), ("two", "en", "两"), ("six", "en", "新" * 120),
+            ("five", "en", "旧"), ("four", "en", "旧"), ("three", "en", "旧")]))
+        with self.book.connection() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM recent_lookups").fetchone()[0], 6)
+
+    def test_failed_history_write_rolls_back_count_too(self):
+        self.book.record_lookup(word="one", language="en", gloss="一")
+        with self.book.connection() as db:
+            db.execute("""CREATE TRIGGER fail_recent_insert BEFORE INSERT ON recent_lookups
+                          BEGIN SELECT RAISE(ABORT, 'history write failed'); END""")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.book.record_lookup(word="two", language="en", gloss="二")
+        self.assertEqual(self.book.dashboard(), (1, 1, 0, 0, [("one", "en", "一")]))
 
     def test_old_notebook_and_review_schedule(self):
         # Only the entries table exists in a notebook from the previous release.
