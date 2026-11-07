@@ -54,6 +54,11 @@ class LookupTests(unittest.TestCase):
                 self.assertNotEqual(result[0], UNKNOWN)
         for word in ("ZQXJ", "florbalurp", "BlorpQuxV9"):
             self.assertEqual(explain(selected(f"Please inspect {word}.", word))[0][0], UNKNOWN)
+        for text, word in (("我平常用ChatGPT修改作业。", "ChatGPT"), ("この論文ではChatGPTで結果を検証した。", "ChatGPT"),
+                           ("这台CPU是新的。", "CPU")):
+            result, _, language, _ = explain(selected(text, word))
+            self.assertTrue(language.endswith("语境"))
+            self.assertEqual(result[2], "")
         for word in ("mutex", "idempotent"):
             item = selected(f"Use {word} for this call.", word)
             with patch("lookup.translate", side_effect=ValueError("model missing")):

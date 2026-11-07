@@ -84,6 +84,45 @@ class TermChecks(unittest.TestCase):
         self.assertEqual(resolve_term(Passage("QPD", (0, 3)), "Quantum Packet Delay (QPD)")[1],
                          "Quantum Packet Delay")
 
+    def test_author_defines_a_word(self):
+        for text, word, gloss in (
+                ("Here, “frobnicate” means to rearrange the cells. We frobnicate daily.",
+                 "frobnicate", "to rearrange the cells"),
+                ("Florp refers to a queue of pending jobs. Check Florp.", "Florp", "a queue of pending jobs"),
+                ("We use the term <foo> to mean an unused slot, for example in an array. Reclaim foo.",
+                 "foo", "an unused slot"),
+                ("The word ‘zim’ means ‘hello’. Say zim.", "zim", "hello")):
+            for occurrence in (0, -1):
+                with self.subTest(text=text, occurrence=occurrence):
+                    self.assertEqual(lookup(text, word, occurrence), ("文中定义", gloss, "文中用语"))
+
+    def test_word_redefinition_and_false_declarations(self):
+        source = ('Here, "Florp" means a pending job. Read Florp.\n\n'
+                  'Here, "Florp" means a completed batch. Read Florp.')
+        self.assertEqual(lookup(source, "Florp", 1)[1], "a pending job")
+        self.assertEqual(lookup(source, "Florp", 3)[1], "a completed batch")
+        for text, word in (("I think he means well.", "he"), ("She means to return.", "She"),
+                           ("By no means should we stop.", "no"), ("The process is long.", "process"),
+                           ("Does Florp refer to a slot?", "Florp"), ("I wonder what ‘zim’ means today.", "zim"),
+                           ("Florp does not mean a ready slot.", "Florp")):
+            with self.subTest(text=text):
+                self.assertIsNone(lookup(text, word))
+
+    def test_technology_names_and_ordinary_homonyms(self):
+        for text, word, kind in (
+                ("Our service is written in Rust.", "Rust", "编程语言"),
+                ("The backend was implemented in Go.", "Go", "编程语言"),
+                ("We built the interface with React components.", "React", "界面库"),
+                ("The server runs Docker containers.", "Docker", "开发工具"),
+                ("The client uses Signal for encrypted messaging.", "Signal", "应用名")):
+            with self.subTest(text=text):
+                self.assertEqual(lookup(text, word)[2], kind)
+        for text, word in (("They found rust on the gate.", "rust"), ("Go home.", "Go"),
+                           ("React quickly to changes.", "React"), ("The docker unloaded a crate.", "docker"),
+                           ("They detected a noisy signal.", "signal")):
+            with self.subTest(text=text):
+                self.assertIsNone(lookup(text, word))
+
     def test_ordinary_words_and_unverified_acronyms(self):
         for text, word in (
                 ("Let us rest in the shade.", "rest"),

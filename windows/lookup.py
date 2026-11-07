@@ -34,6 +34,16 @@ def preserves_reference(word, gloss, translated):
     return any(sense in translated for sense in re.findall(r"[\u3400-\u9fff]{2,}", gloss))
 
 
+def surrounding_script(text):
+    letters = len(re.findall(r"[A-Za-z]", text))
+    scripts = (("日语", r"[\u3040-\u30ff]"), ("韩语", r"[\uac00-\ud7af]"), ("汉字", r"[\u3400-\u9fff]"))
+    counts = [(label, len(re.findall(pattern, text))) for label, pattern in scripts]
+    count = sum(size for _, size in counts)
+    if count >= 2 and count > letters:
+        return next(label + "语境" for label, size in counts if size)
+    return ""
+
+
 def explain(passage):
     if not passage.selection:
         language = source_language(passage.text)
@@ -49,6 +59,8 @@ def explain(passage):
     # Preserve identifiers as printed. MT attention is not a definition of
     # an abbreviation or product name, even when it yields Chinese characters.
     identifier = bool(re.search(r"[a-z][A-Z]|\d|[+#_.]", word) or len(word) > 1 and word.isupper())
+    start, end = passage.selection
+    surrounding = passage.text[:start] + " " + passage.text[end:]
     english_context = True
     try:
         language = source_language(passage.text)
@@ -59,15 +71,17 @@ def explain(passage):
             raise
         language = error.language + "语境"
         english_context = False
-    start, end = passage.selection
-    has_sentence = any(c.isalnum() for c in passage.text[:start] + passage.text[end:])
+    if not language and word.isascii():
+        language = surrounding_script(surrounding)
+        english_context = not language
+    has_sentence = any(c.isalnum() for c in surrounding)
     pos = term[2] if term else (part_of_speech(passage) if english_context else "")
     if term:
         origin, gloss, _ = term
-        if origin == "文中定义" and gloss.isascii():
+        if origin == "文中定义" and not re.search(r"[\u3400-\u9fff]", gloss) and re.search("[A-Za-z]", gloss):
             translated = sentence_translation(gloss).rstrip("。.")
             if re.search(r"[\u3400-\u9fff]", translated):
-                gloss += " · " + translated
+                gloss = translated + "（机译）\n" + gloss
     elif entry:
         if common and english_context and has_sentence and not identifier:
             try:
