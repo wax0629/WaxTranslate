@@ -9,7 +9,7 @@ import ctranslate2
 import sentencepiece
 
 from install_model import MODEL, PACKAGE
-from reader import Passage
+from reader import Passage, context_excerpt
 
 
 @lru_cache(maxsize=1)
@@ -88,6 +88,21 @@ def translate(passage):
     gloss = decoded(tokenizer, single.hypotheses[0])
     gloss = gloss.rstrip("。.!！")
     return "单词参考", gloss or passage.word, sentence
+
+
+def translate_lookup(passage):
+    result = translate(passage)
+    excerpt = context_excerpt(passage)
+    if excerpt is not None:
+        try:
+            origin, gloss, sentence = translate(excerpt)
+        except (RuntimeError, ValueError):
+            return result, None
+        # Accept the shorter reading only when the model can align the same
+        # word sense to this occurrence using the excerpt alone.
+        if origin == "句中释义" and gloss == result[1] and sentence:
+            return result, (excerpt, sentence)
+    return result, None
 
 
 def translate_text(text, stop):

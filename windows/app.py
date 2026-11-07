@@ -18,7 +18,7 @@ from popup import Card
 from library import Library
 from reader import Passage, recognize
 from theme import APP_NAME, apply_theme, label, nav_icon
-from translation import translate
+from translation import translate_lookup
 from workspace import TextWorkspace
 
 
@@ -113,7 +113,8 @@ class Selection(QWidget):
 def analyze(image, point, passage):
     if passage is None:
         passage = asyncio.run(recognize(image, point))
-    return passage, translate(passage)
+    result, excerpt = translate_lookup(passage)
+    return passage, result, excerpt
 
 
 class Window(QWidget):
@@ -125,6 +126,7 @@ class Window(QWidget):
         self.setObjectName("desk")
         self.card = Card()
         self.card.dismissed.connect(self.invalidate)
+        self.card.presented.connect(self.watch_card)
         self.card.save_requested.connect(self.save_word)
         self.saved_result = None
         self.notebook = notebook or Notebook()
@@ -295,6 +297,7 @@ class Window(QWidget):
 
     def gesture_failed(self, reason):
         self.gesture_ready = False
+        self.card.dismiss_on_deactivate = True
         if not self.stopping and self.gesture_warning.isHidden():
             self.gesture_warning.setText(f"无法监听左 Ctrl（{reason}）。可点击「框选英文」。")
             self.gesture_warning.show()
@@ -306,12 +309,23 @@ class Window(QWidget):
             action, origin, end = json.loads(bytes(self.gestures.readLine()))
             if action == "ready":
                 self.gesture_ready = True
+                self.card.dismiss_on_deactivate = False
+                self.watch_card()
             elif action == "error":
                 self.gesture_failed(f"Windows 错误 {origin}")
             else:
                 self.on_gesture(action, origin, end)
 
+    def watch_card(self):
+        if self.gesture_ready and not self.stopping:
+            hwnd = int(self.card.winId()) if self.card.isVisible() else 0
+            self.gestures.write((json.dumps((self.ticket, hwnd)) + "\n").encode("ascii"))
+
     def on_gesture(self, action, origin, end):
+        if action == "dismiss":
+            if origin == self.ticket and self.card.isVisible():
+                self.card.close()
+            return
         if action in ("lookup", "start"):
             native = QPoint(*origin)
             # On Windows Qt keeps each screen's native origin but scales its size.
@@ -349,6 +363,7 @@ class Window(QWidget):
         if self.pending is not None:
             self.pending.cancel()
         self.card.hide()
+        self.watch_card()
         if self.overlay is not None:
             self.overlay.close()
             self.overlay = None
@@ -422,12 +437,12 @@ class Window(QWidget):
         if ticket != self.ticket:
             return
         try:
-            passage, (origin, gloss, sentence) = job.result()
+            passage, result, excerpt = job.result()
         except Exception as error:
             self.card.show_message("需要处理", str(error), point)
             return
-        self.saved_result = (passage, (origin, gloss, sentence)) if passage.selection else None
-        self.card.show_result(passage, origin, gloss, sentence, point)
+        self.saved_result = (passage, result) if passage.selection else None
+        self.card.show_result(passage, *result, point, excerpt=excerpt)
 
     def closeEvent(self, event):
         if self.tray.isVisible():
