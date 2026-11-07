@@ -156,6 +156,7 @@ class TextWorkspace(QWidget):
 
     def __init__(self, pool):
         super().__init__()
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         self.pool = pool
         self.source_code = ""
         self.pending = None
@@ -184,14 +185,15 @@ class TextWorkspace(QWidget):
                                     ("简体中文", self.output, "translationPane")):
             frame = QFrame(objectName=panel)
             box = QVBoxLayout(frame)
-            box.setContentsMargins(16, 12, 16, 13)
-            box.setSpacing(10)
+            box.setContentsMargins(18, 10, 18, 12)
+            box.setSpacing(8)
             toolbar = QWidget()
             self.headers.append(toolbar)
             header = QHBoxLayout(toolbar)
             header.setContentsMargins(0, 0, 0, 0)
             header.setSpacing(6)
-            language = label(name, "sourceLanguage" if editor is self.input else "targetLanguage")
+            header.addWidget(label("原文" if editor is self.input else "译文", "paneTitle"))
+            language = label(name, "language")
             header.addWidget(language)
             header.addStretch()
             if editor is self.input:
@@ -228,15 +230,17 @@ class TextWorkspace(QWidget):
             self.panes.addWidget(frame, 1)
         spread.addWidget(QFrame(objectName="hairline"))
         actions = QHBoxLayout()
-        actions.setContentsMargins(15, 10, 15, 10)
+        actions.setContentsMargins(18, 8, 18, 8)
         actions.setSpacing(9)
+        self.character_count = label("", "characterCount")
+        actions.addWidget(self.character_count)
+        actions.addStretch()
+        self.shortcut_hint = label("Ctrl + Enter", "shortcut")
+        actions.addWidget(self.shortcut_hint)
         self.submit = QPushButton("翻译")
         self.submit.setProperty("role", "primary")
         self.submit.clicked.connect(self.submit_or_cancel)
         actions.addWidget(self.submit)
-        self.shortcut_hint = label("Ctrl + Enter", "shortcut")
-        actions.addWidget(self.shortcut_hint)
-        actions.addStretch()
         spread.addLayout(actions)
         run = QShortcut(self)
         run.setKeys([QKeySequence("Ctrl+Return"), QKeySequence("Ctrl+Enter")])
@@ -282,8 +286,8 @@ class TextWorkspace(QWidget):
         horizontal = event.size().width() >= 600
         self.panes.setDirection(QBoxLayout.LeftToRight if horizontal else QBoxLayout.TopToBottom)
         if horizontal:
-            self.binding.setMinimumSize(4, 1)
-            self.binding.setMaximumSize(4, 16777215)
+            self.binding.setMinimumSize(1, 1)
+            self.binding.setMaximumSize(1, 16777215)
         else:
             self.binding.setMinimumSize(1, 1)
             self.binding.setMaximumSize(16777215, 1)
@@ -300,7 +304,9 @@ class TextWorkspace(QWidget):
         self.copy.setText("复制译文")
         self.copy.setEnabled(False)
         self.set_busy(False)
-        has_text = bool(self.input.toPlainText().strip())
+        text = self.input.toPlainText().strip()
+        has_text = bool(text)
+        self.character_count.setText(f"{len(text):,} 个字符" if has_text else "")
         self.submit.setEnabled(has_text)
         self.example.setVisible(not has_text)
         self.lookup_hint.setVisible(has_text)

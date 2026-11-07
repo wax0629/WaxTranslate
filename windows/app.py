@@ -10,7 +10,7 @@ import time
 from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QSettings, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QCursor, QDesktopServices, QIcon, QPainter, QPen
 from PySide6.QtSvgWidgets import QSvgWidget
-from PySide6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QFrame, QHBoxLayout, QLayout,
+from PySide6.QtWidgets import (QApplication, QButtonGroup, QFrame, QHBoxLayout, QLayout,
                                QMenu, QPushButton, QSizePolicy, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 from notebook import Notebook
@@ -23,7 +23,7 @@ from library import Library
 from reader import Passage, recognize
 from settings_page import SettingsPage
 from startup import LoginStartup
-from theme import APP_NAME, apply_theme, label, nav_icon
+from theme import APP_NAME, apply_theme, label, ui_icon
 from languages import UnsupportedLanguage
 from workspace import TextWorkspace
 
@@ -66,16 +66,16 @@ class Selection(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.drawPixmap(self.rect(), self.screenshot)
-        p.fillRect(self.rect(), QColor(37, 26, 20, 88))
+        p.fillRect(self.rect(), QColor(18, 31, 26, 88))
         if self.start is not None:
             p.save()
             p.setClipRect(self.selection)
             p.drawPixmap(self.rect(), self.screenshot)
             p.restore()
-            p.setPen(QPen(QColor("#f6cf88"), 2))
+            p.setPen(QPen(QColor("#ffb895"), 2))
             p.drawRect(self.selection.adjusted(0, 0, -1, -1))
         else:
-            p.fillRect(16, 16, 234, 38, QColor("#4b3024"))
+            p.fillRect(16, 16, 234, 38, QColor("#20322a"))
             p.setPen(Qt.white)
             p.drawText(QRect(16, 16, 234, 38), Qt.AlignCenter, "拖动框选原文  ·  Esc 取消")
         p.end()
@@ -167,20 +167,20 @@ class Window(QWidget):
         self.pending = None
         self.finished.connect(self.show_result)
         self.compact = None
-        outer = self.shell = QBoxLayout(QBoxLayout.LeftToRight, self)
+        outer = self.shell = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         sidebar = self.sidebar = QFrame(objectName="sidebar")
         outer.addWidget(sidebar)
-        rail = self.rail = QBoxLayout(QBoxLayout.TopToBottom, sidebar)
-        rail.setSpacing(6)
+        rail = self.rail = QHBoxLayout(sidebar)
+        rail.setSpacing(5)
         lockup = self.brand_lockup = QWidget()
         lockup.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         brand = QHBoxLayout(lockup)
         brand.setContentsMargins(0, 0, 0, 0)
         brand.setSpacing(8)
         badge = QFrame(objectName="brandBadge")
-        badge.setFixedSize(36, 36)
+        badge.setFixedSize(32, 32)
         badge_layout = QVBoxLayout(badge)
         badge_layout.setContentsMargins(4, 4, 4, 4)
         avatar = QSvgWidget(str(Path(__file__).resolve().parents[1] / "Assets/Brand/barrette.svg"))
@@ -188,32 +188,35 @@ class Window(QWidget):
         avatar.setAccessibleName(APP_NAME)
         badge_layout.addWidget(avatar)
         brand.addWidget(badge)
-        self.wordmark = label(APP_NAME, "brand")
+        self.wordmark = label(APP_NAME + "<span style='color:#bd5036'>.</span>", "brand")
+        self.wordmark.setAccessibleName(APP_NAME)
         self.wordmark.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         brand.addWidget(self.wordmark)
         rail.addWidget(lockup)
-        rail.addSpacing(16)
+        rail.addStretch()
         self.tabs = QStackedWidget()
         outer.addWidget(self.tabs, 1)
         group = QButtonGroup(self)
         for index, name in enumerate(("首页", "阅读", "生词本", "设置")):
             if index == 3:
                 rail.addStretch()
-            nav = QPushButton(nav_icon(home=index == 0, book=index == 2, settings=index == 3), name)
+                self.engine_dot = QFrame(objectName="engineDot")
+                self.engine_dot.setFixedSize(6, 6)
+                rail.addWidget(self.engine_dot)
+                self.engine_label = label("本地翻译", "engine")
+                self.engine_label.setContentsMargins(0, 0, 15, 0)
+                rail.addWidget(self.engine_label)
+            nav = QPushButton(name)
+            if index == 3:
+                nav.setIcon(ui_icon("settings"))
             nav.setCheckable(True)
             nav.setProperty("role", "nav")
             nav.setCursor(Qt.PointingHandCursor)
-            nav.setIconSize(QSize(20, 20))
+            nav.setIconSize(QSize(17, 17))
             group.addButton(nav, index)
             rail.addWidget(nav)
         group.idClicked.connect(self.tabs.setCurrentIndex)
         self.tabs.currentChanged.connect(lambda index: group.button(index).setChecked(True))
-        self.rail_rule = QFrame(objectName="railRule")
-        self.rail_rule.setFixedHeight(1)
-        rail.addWidget(self.rail_rule)
-        self.engine_label = label("本地翻译", "engine")
-        self.engine_label.setContentsMargins(10, 6, 0, 0)
-        rail.addWidget(self.engine_label)
 
         self.home = HomePage()
         self.tabs.addWidget(self.home)
@@ -228,6 +231,7 @@ class Window(QWidget):
         layout.setSpacing(17)
         self.tabs.addWidget(self.reader_page)
         self.library = Library(self.notebook, self.player)
+        self.home.library_requested.connect(self.open_library)
         self.library.reader_requested.connect(self.open_reader)
         self.tabs.addWidget(self.library)
         self.preferences = SettingsPage()
@@ -279,10 +283,8 @@ class Window(QWidget):
         self.gestures.start(str(Path(sys.executable).with_name("pythonw.exe")),
                             ["-u", str(Path(__file__).with_name("gestures.py").resolve()), self.trigger.currentData()])
         area = QApplication.primaryScreen().availableGeometry()
-        size = QSize(min(960, area.width() - 24), min(640, area.height() - 48))
-        # The desktop rail plus two reading columns can have a larger minimum
-        # width than the breakpoint itself. Use the compact layout's minimum
-        # so the very first show and a subsequent drag can both cross it.
+        size = QSize(min(1000, area.width() - 24), min(672, area.height() - 48))
+        # Let the two-column pages cross their breakpoints when the window shrinks.
         self.shell.setSizeConstraint(QLayout.SetNoConstraint)
         self.ensurePolished()
         self.arrange_shell(True)
@@ -299,24 +301,16 @@ class Window(QWidget):
         if self.compact == compact:
             return
         self.compact = compact
-        self.shell.setDirection(QBoxLayout.TopToBottom if compact else QBoxLayout.LeftToRight)
-        self.rail.setDirection(QBoxLayout.LeftToRight if compact else QBoxLayout.TopToBottom)
-        self.sidebar.setMinimumSize(0, 0)
-        self.sidebar.setMaximumSize(16777215, 16777215)
         self.wordmark.setVisible(not compact)
-        if compact:
-            self.sidebar.setFixedHeight(60)
-            self.rail.setContentsMargins(14, 7, 14, 7)
-            self.reading_layout.setContentsMargins(19, 18, 19, 18)
-        else:
-            self.sidebar.setFixedWidth(max(188, self.brand_lockup.sizeHint().width() + 32))
-            self.rail.setContentsMargins(14, 26, 14, 19)
-            self.reading_layout.setContentsMargins(30, 25, 30, 23)
-        self.rail_rule.setVisible(not compact)
+        self.engine_dot.setVisible(not compact)
         self.engine_label.setVisible(not compact)
-        self.sidebar.setProperty("compact", compact)
-        self.sidebar.style().unpolish(self.sidebar)
-        self.sidebar.style().polish(self.sidebar)
+        self.sidebar.setFixedHeight(54 if compact else 64)
+        if compact:
+            self.rail.setContentsMargins(16, 0, 16, 0)
+            self.reading_layout.setContentsMargins(18, 18, 18, 18)
+        else:
+            self.rail.setContentsMargins(32, 0, 32, 0)
+            self.reading_layout.setContentsMargins(32, 24, 32, 24)
 
     def sync_tray_window(self):
         """Keep a normal, reachable window on desktops without a notification area."""

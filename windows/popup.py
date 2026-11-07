@@ -20,7 +20,7 @@ def action_icon(bookmark):
     painter = QPainter(pix)
     painter.setRenderHint(QPainter.Antialiasing)
     painter.scale(3, 3)
-    painter.setPen(QPen(QColor("#714235" if bookmark else "#6b594b"), 1.3,
+    painter.setPen(QPen(QColor("#f8f9f3" if bookmark else "#566a5c"), 1.4,
                         Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
     if bookmark:
         path = QPainterPath()
@@ -45,22 +45,26 @@ def action_icon(bookmark):
 
 
 CARD_STYLE = """
-    QFrame#readingCard {background:#fcf5e4; border:1px solid #bda581; border-top:3px solid #853f35; border-radius:5px;}
-    QLabel#origin {background:transparent; color:#705b49; font:12px 'Microsoft YaHei UI';}
+    QFrame#readingCard {background:#fffdf7; border:1px solid #c6cfc2; border-radius:9px;}
+    QWidget#resultMasthead {background:#eaf0e5; border-bottom:1px solid #d7dfd2;
+        border-top-left-radius:8px; border-top-right-radius:8px;}
+    QWidget#resultActions {background:#f5f6ef; border-top:1px solid #e0e5d9;
+        border-bottom-left-radius:8px; border-bottom-right-radius:8px;}
+    QLabel#origin {background:transparent; color:#39513e; font:600 12px 'Microsoft YaHei UI';}
     QPushButton {font:12px 'Microsoft YaHei UI'; border:1px solid transparent; min-height:0;
-        padding:5px 9px; border-radius:3px;}
-    QPushButton#bookmark {background:#efdfbf; color:#64392d;}
-    QPushButton#bookmark:hover {background:#e6cfa8;}
-    QPushButton#bookmark:pressed {background:#d9bf94;}
-    QPushButton#bookmark:disabled {background:#efe5cf; color:#746451;}
-    QPushButton#copy, QPushButton#dismiss, QPushButton#expand {background:transparent; color:#685648;}
-    QPushButton#copy:hover, QPushButton#dismiss:hover, QPushButton#expand:hover {background:#f0e3c8; color:#3b2b21;}
+        padding:5px 8px; border-radius:5px;}
+    QPushButton#bookmark {background:#2d4334; color:#fffef8;}
+    QPushButton#bookmark:hover {background:#405947;}
+    QPushButton#bookmark:pressed {background:#203025;}
+    QPushButton#bookmark:disabled {background:#e2e7dc; color:#5f6e60;}
+    QPushButton#copy, QPushButton#dismiss, QPushButton#expand {background:transparent; color:#455a4c;}
+    QPushButton#copy:hover, QPushButton#dismiss:hover, QPushButton#expand:hover {background:#dfe7d9; color:#28402e;}
     QPushButton#dismiss {font:17px 'Segoe UI'; padding:0; border-radius:10px;}
-    QPushButton:focus {border-color:#935345;}
+    QPushButton:focus {border-color:#b04c32;}
     QTextBrowser {background:transparent; border:0; padding:0;
-        selection-background-color:#e7c8a7; selection-color:#37241c;}
+        selection-background-color:#d6e3d1; selection-color:#24372e;}
     QScrollBar:vertical {background:transparent; width:6px; margin:1px 0;}
-    QScrollBar::handle:vertical {background:#bda789; border-radius:3px; min-height:22px;}
+    QScrollBar::handle:vertical {background:#b9c4b4; border-radius:3px; min-height:22px;}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {height:0;}
     QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {background:transparent;}
 """
@@ -84,22 +88,23 @@ class Card(QWidget):
         shadow = QGraphicsDropShadowEffect(self.shell)
         shadow.setBlurRadius(16)
         shadow.setOffset(0, 4)
-        shadow.setColor(QColor(57, 36, 23, 51))
+        shadow.setColor(QColor(27, 42, 32, 46))
         self.shell.setGraphicsEffect(shadow)
         outer.addWidget(self.shell)
         body = QVBoxLayout(self.shell)
-        body.setContentsMargins(19, 13, 19, 15)
-        body.setSpacing(7)
+        body.setContentsMargins(1, 1, 1, 1)
+        body.setSpacing(0)
 
-        self.grip = QWidget()
+        self.grip = QWidget(objectName="resultMasthead")
+        self.grip.setAttribute(Qt.WA_StyledBackground)
         self.grip.setAccessibleName("移动翻译浮窗")
         self.grip.setToolTip("按住这里拖动浮窗")
         self.grip.setCursor(Qt.OpenHandCursor)
         header = QHBoxLayout(self.grip)
-        header.setContentsMargins(0, 0, 0, 0)
+        header.setContentsMargins(16, 7, 10, 7)
         header.setSpacing(7)
         mark = QSvgWidget(str(Path(__file__).resolve().parents[1] / "Assets/Brand/barrette.svg"))
-        mark.setFixedSize(24, 24)
+        mark.setFixedSize(22, 22)
         mark.setAccessibleName(APP_NAME)
         mark.setAttribute(Qt.WA_TransparentForMouseEvents)
         header.addWidget(mark)
@@ -117,12 +122,16 @@ class Card(QWidget):
         close.clicked.connect(self.close)
         header.addWidget(close, 0, Qt.AlignTop)
         body.addWidget(self.grip)
+        reading = QVBoxLayout()
+        reading.setContentsMargins(20, 10, 20, 10)
+        reading.setSpacing(6)
+        body.addLayout(reading, 1)
         self.speech_error = QLabel()
         self.speech_error.setWordWrap(True)
         self.speech_error.setTextFormat(Qt.PlainText)
         self.speech_error.setProperty("role", "warning")
         self.speech_error.hide()
-        body.addWidget(self.speech_error)
+        reading.addWidget(self.speech_error)
         self.listen.notice.connect(self.show_speech_error)
 
         self.text = QTextBrowser()
@@ -133,11 +142,13 @@ class Card(QWidget):
         self.text.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.text.document().setDocumentMargin(0)
         self.text.document().setDefaultStyleSheet(DOCUMENT_STYLE)
-        body.addWidget(self.text, 1)
+        reading.addWidget(self.text, 1)
 
-        self.actions = QWidget()
+        self.actions = QWidget(objectName="resultActions")
+        self.actions.setAttribute(Qt.WA_StyledBackground)
         footer = QHBoxLayout(self.actions)
-        footer.setContentsMargins(0, 4, 0, 0)
+        footer.setContentsMargins(14, 7, 12, 7)
+        footer.setSpacing(4)
         self.save = QPushButton(action_icon(True), "收藏生词", objectName="bookmark")
         self.online = QPushButton("查百科", objectName="expand")
         self.online.setToolTip("仅将这个词发给 Wikidata，在卡片内查看可能的含义")

@@ -1,6 +1,6 @@
 """Preferences for the Windows reader. The window owns persistence and system actions."""
 from PySide6.QtCore import QPointF, QRectF, QSignalBlocker, Qt
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout,
                                QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
 
@@ -23,25 +23,22 @@ class Switch(QCheckBox):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         if self.hasFocus():
-            painter.setPen(QPen(QColor("#885145"), 1.5))
+            painter.setPen(QPen(QColor("#a94a31"), 1.5))
             painter.drawRoundedRect(QRectF(1, 2, 46, 30), 15, 15)
         if not self.isEnabled():
-            top, bottom, border = "#eee5d3", "#e1d8c5", "#c8bca4"
+            fill, border = "#e1e4dd", "#d1d7ce"
         elif self.isChecked():
-            top, bottom, border = "#995044", "#78392f", "#78392f"
+            fill, border = "#334c3b", "#334c3b"
         else:
-            top, bottom, border = "#e1d1b4", "#d4c2a2", "#998262"
-        track = QLinearGradient(0, 6, 0, 28)
-        track.setColorAt(0, QColor(top))
-        track.setColorAt(1, QColor(bottom))
-        painter.setBrush(track)
+            fill, border = "#cad1c5", "#aab6a8"
+        painter.setBrush(QColor(fill))
         painter.setPen(QPen(QColor(border), 1))
         painter.drawRoundedRect(QRectF(4, 6, 40, 22), 11, 11)
         painter.setPen(Qt.NoPen)
         thumb = QRectF(25 if self.isChecked() else 7, 9, 16, 16)
-        painter.setBrush(QColor(50, 31, 22, 38))
+        painter.setBrush(QColor(36, 51, 40, 32))
         painter.drawEllipse(thumb.translated(0, 1))
-        painter.setBrush(QColor("#fff7e5"))
+        painter.setBrush(QColor("#fffefa"))
         painter.drawEllipse(thumb)
 
 
@@ -54,7 +51,7 @@ class Choice(QComboBox):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor("#765844"), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(QColor("#54695a"), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         x, y = self.width() - 11, self.height() / 2
         painter.drawPolyline([QPointF(x - 3, y - 1.5), QPointF(x, y + 1.5), QPointF(x + 3, y - 1.5)])
 
@@ -84,16 +81,13 @@ class SectionMark(QWidget):
     def __init__(self, window):
         super().__init__()
         self.window_mark = window
-        self.setFixedSize(32, 32)
+        self.setFixedSize(28, 30)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#ead8b6"))
-        painter.drawRoundedRect(self.rect(), 9, 9)
-        painter.setPen(QPen(QColor("#6a4131"), 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(QColor("#aa472f"), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         painter.setBrush(Qt.NoBrush)
         if self.window_mark:
             painter.drawRoundedRect(QRectF(7.5, 9, 17, 14), 2, 2)
@@ -109,7 +103,7 @@ class PreferenceSection(QWidget):
         super().__init__()
         self.row = QBoxLayout(QBoxLayout.LeftToRight, self)
         self.row.setContentsMargins(0, 0, 0, 0)
-        self.row.setSpacing(12)
+        self.row.setSpacing(20)
         self.category = QWidget()
         heading = QHBoxLayout(self.category)
         heading.setSpacing(7)
@@ -119,13 +113,14 @@ class PreferenceSection(QWidget):
         self.row.addWidget(self.category, 0, Qt.AlignTop)
         panel = QFrame(objectName="settingsGroup")
         self.options = QVBoxLayout(panel)
-        self.options.setContentsMargins(18, 17, 18, 17)
-        self.options.setSpacing(14)
+        self.options.setContentsMargins(0, 15, 0, 6)
+        self.options.setSpacing(15)
         self.row.addWidget(panel, 1)
 
     def set_compact(self, compact):
-        self.category.setMinimumWidth(0 if compact else 120)
-        self.category.layout().setContentsMargins(0, 0 if compact else 14, 0, 0)
+        self.category.setMinimumWidth(0 if compact else 132)
+        self.category.layout().setContentsMargins(0, 0 if compact else 8, 0, 0)
+        self.row.setSpacing(5 if compact else 20)
         self.row.setDirection(QBoxLayout.TopToBottom if compact else QBoxLayout.LeftToRight)
 
 
@@ -139,13 +134,11 @@ class SettingsPage(QScrollArea):
         content = QWidget(objectName="settingsSurface")
         self.setWidget(content)
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(30, 26, 30, 23)
-        layout.setSpacing(14)
+        layout.setContentsMargins(32, 24, 32, 24)
+        layout.setSpacing(18)
         layout.addWidget(label("设置", "heading"))
-        layout.addWidget(QFrame(objectName="hairline"))
 
         self.system = PreferenceSection("启动与窗口", window_mark=True)
-        layout.addWidget(self.system)
         system = self.system.options
         self.startup = Switch()
         setting_row(system, "开机启动", self.startup, "登录 Windows 后在系统托盘待命。")
@@ -189,6 +182,7 @@ class SettingsPage(QScrollArea):
         self.auto_online = Switch()
         setting_row(reading, "未收录词自动查百科", self.auto_online,
                     "本机查不到时，仅将选中的英文词条发送给 Wikidata。")
+        layout.addWidget(self.system)
         self.notice = label("", "warning")
         self.notice.setTextFormat(Qt.PlainText)
         self.notice.setWordWrap(True)
@@ -202,8 +196,8 @@ class SettingsPage(QScrollArea):
         compact = self.viewport().width() < 650
         self.system.set_compact(compact)
         self.reading.set_compact(compact)
-        margin = 16 if self.viewport().width() < 520 else 30
-        self.widget().layout().setContentsMargins(margin, 18 if compact else 26, margin, 23)
+        margin = 16 if self.viewport().width() < 520 else 32
+        self.widget().layout().setContentsMargins(margin, 15 if compact else 24, margin, 24)
 
     def set_startup_state(self, state, message=""):
         with QSignalBlocker(self.startup):
