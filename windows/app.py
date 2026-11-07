@@ -440,7 +440,7 @@ class Window(QWidget):
         self.gesture_ready = False
         self.card.dismiss_on_deactivate = True
         if not self.stopping and self.gesture_warning.isHidden():
-            self.gesture_warning.setText(f"无法监听屏幕取词键（{reason}）。可双击原文查词或点「开始框选」。")
+            self.gesture_warning.setText(f"无法监听屏幕取词键（{reason}）。可在阅读页双击查词，或点「框选翻译」。")
             self.gesture_warning.show()
             self.update_trigger_hints()
             if self.overlay is not None and self.overlay.from_ctrl:

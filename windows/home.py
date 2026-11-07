@@ -1,142 +1,155 @@
-"""Interactive manga dictionary cover and live notebook counts."""
+"""First-use guide to screen lookup, reading and review."""
 from pathlib import Path
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPixmap
-from PySide6.QtWidgets import (QBoxLayout, QFrame, QHBoxLayout, QLabel, QPushButton,
+from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtWidgets import (QBoxLayout, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
                                QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
 
 from theme import ui_icon
 
 
 HOME_WORD = "glance"
-HOME_EXAMPLE = "She turned back for one last glance."
+EXAMPLE_OPENING = "She turned back"
+EXAMPLE_PHRASE = "for one last"
+HOME_EXAMPLE = f"{EXAMPLE_OPENING} {EXAMPLE_PHRASE} {HOME_WORD}."
 COVER = Path(__file__).resolve().parents[1] / "Assets/Editorial/glance.png"
+SAVE_HINT = "查词时点「收藏生词」，在这里用原句复习。"
 
 HOME_STYLE = """
-    QWidget#home, QFrame#actionStrip {background:#faf9f6;}
-    QFrame#actionStrip {border:0; border-top:2px solid #171715;}
-    QPushButton#trialWord {background:transparent; border:0; padding:0;}
-    QPushButton#trialWord:hover, QPushButton#trialWord:focus {border-bottom:2px solid #181816;}
-    QPushButton#tryMeaning {background:#121211; color:#ffffff; border:2px solid #121211;
-        border-radius:0; font-weight:bold; text-align:center; padding:2px 8px;}
-    QPushButton#tryMeaning:hover {background:#393937;}
-    QPushButton#tryMeaning:focus {border-color:#777772;}
-    QPushButton#coverKey {background:#faf9f6; color:#171715; border:1px solid #262624;
-        border-radius:3px; padding:2px 7px; font-weight:600;}
-    QPushButton#coverKey:hover, QPushButton#coverKey:focus {background:#e8e7e3; border-color:#080808;}
-    QPushButton[role="stripAction"] {background:transparent; border:1px solid transparent;
-        border-radius:0; color:#191917; text-align:left; padding:4px 7px; font-weight:600; font-size:15px;}
-    QPushButton[role="stripAction"]:hover {background:#eae9e5;}
-    QPushButton[role="stripAction"]:focus {border-color:#393937;}
-    QFrame#stripDivider {background:#888882; border:0;}
-    QLabel#metricCaption {font-size:14px; color:#353532;}
-    QLabel#metricValue {font:22px 'Archivo Black','Arial Black'; color:#141413;}
+    QWidget#home, QFrame#intro {background:#faf9f6;}
+    QLabel#section {font-weight:700; font-size:14px; color:#494943;}
+    QFrame#sectionRule {background:#191917; border:0;}
+    QLabel#guideTitle {color:#131312; font-weight:900;}
+    QLabel#instructions {color:#34342f;}
+    QPushButton#tryMeaning {background:#171715; color:white; border:2px solid #171715;
+        border-radius:0; font-size:16px; font-weight:700; padding:8px 14px;}
+    QPushButton#tryMeaning:hover {background:#383835;}
+    QPushButton#tryMeaning:focus {border-color:#8c8c84;}
+    QPushButton#coverKey {background:transparent; color:#44443f; border:1px solid transparent;
+        font-size:13px; border-radius:0; padding:6px;}
+    QPushButton#coverKey:hover, QPushButton#coverKey:focus {border-color:#64645e;}
+    QFrame#example {background:#fffefa; border:1px solid #171715;}
+    QLabel#exampleCaption {font-size:12px; font-weight:600; color:#53534d;}
+    QLabel[role="sampleText"], QPushButton#trialWord {font:italic 20px 'Spectral','Georgia'; color:#171715;}
+    QPushButton#trialWord {background:transparent; border:0; border-bottom:2px solid #171715;
+        min-height:0; border-radius:0; padding:0;}
+    QPushButton#trialWord:hover, QPushButton#trialWord:focus {background:#deddd5;}
+    QFrame#taskStrip {background:#272723; border:0;}
+    QPushButton[role="homeTask"] {background:#faf9f6; border:0; border-radius:0; padding:0;}
+    QPushButton[role="homeTask"]:hover, QPushButton[role="homeTask"]:focus {background:#eeede7;}
+    QLabel#taskTitle {font-size:21px; font-weight:700; color:#191917;}
+    QLabel#taskHint {font-size:14px; color:#50504b;}
     QLabel#homeWarning {background:#faf9f6; color:#862d21; padding:4px 16px;}
 """
 
 
-class Cover(QWidget):
+class ExamplePanel(QWidget):
+    """Keep the real lookup target attached to its sentence as the illustration resizes."""
+
     def __init__(self):
         super().__init__()
-        self.setMinimumHeight(306)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.portrait = QPixmap(str(COVER))
-        font = QFont("Archivo Black")
-        font.setPixelSize(140)
-        letters = QPainterPath()
-        letters.addText(0, 0, font, HOME_WORD.upper())
-        self.lettering = letters
-
-        # The lettering is composited with the ink below it. A native button
-        # over exactly the same rectangle handles focus, keyboard and hit tests.
-        self.demo = QPushButton(self, objectName="trialWord")
-        self.demo.setAccessibleName("试查 glance")
-        self.phonetic = QLabel("/ɡlæns/   n.", self)
-        self.meaning = QLabel("一瞥", self)
-        self.sentence = QLabel(HOME_EXAMPLE.replace(HOME_WORD, f"<u>{HOME_WORD}</u>"), self)
-        self.sentence.setAccessibleName(HOME_EXAMPLE)
-        self.sentence.setWordWrap(True)
-        self.trial = QPushButton(ui_icon("launch", "#ffffff"), "试查词义", self, objectName="tryMeaning")
-        self.trial.setLayoutDirection(Qt.RightToLeft)
-        self.keycap = QPushButton(self, objectName="coverKey")
-        self.keycap.setToolTip("更改屏幕取词键")
-
-    def art_rect(self):
-        # On a tall, narrow desktop the illustration occupies the top of
-        # the page, leaving a paper band below for the definition and controls.
-        w, h = self.width(), self.height()
-        if w < h * 1.15:
-            return QRectF(0, 0, w, min(w * 0.72, h - 210))
-        return QRectF(self.rect())
-
-    def paintEvent(self, event):
-        area = self.art_rect()
-        with QPainter(self) as painter:
-            painter.fillRect(self.rect(), QColor("#faf8f4"))
-            if not self.portrait.isNull():
-                scale = max(area.width() / self.portrait.width(), area.height() / self.portrait.height())
-                w, h = area.width() / scale, area.height() / scale
-                crop = QRectF((self.portrait.width() - w) * 0.56, (self.portrait.height() - h) * 0.30, w, h)
-                painter.setRenderHint(QPainter.SmoothPixmapTransform)
-                painter.drawPixmap(area, self.portrait, crop)
-            box = QRectF(self.demo.geometry()).adjusted(1, 2, -1, -2)
-            ink = self.lettering.boundingRect()
-            painter.setRenderHint(QPainter.Antialiasing)
-            slant = 0.20
-            painter.translate(box.x() + slant * box.height(), box.y())
-            painter.shear(-slant, 0)
-            painter.scale((box.width() - slant * box.height()) / ink.width(), box.height() / ink.height())
-            painter.translate(-ink.topLeft())
-            painter.setCompositionMode(QPainter.CompositionMode_Difference)
-            painter.fillPath(self.lettering, Qt.white)
+        layout = QVBoxLayout(self)
+        layout.addStretch()
+        self.note = QFrame(objectName="example")
+        layout.addWidget(self.note, 0, Qt.AlignLeft)
+        note = QVBoxLayout(self.note)
+        note.setSpacing(1)
+        note.setContentsMargins(12, 7, 12, 9)
+        note.addWidget(QLabel("点击划线词试查", objectName="exampleCaption"))
+        self.lead = QLabel(EXAMPLE_OPENING)
+        self.prefix = QLabel(EXAMPLE_PHRASE + " ")
+        self.period = QLabel(".")
+        for label in (self.lead, self.prefix, self.period):
+            label.setProperty("role", "sampleText")
+        note.addWidget(self.lead)
+        line = QHBoxLayout()
+        line.setSpacing(0)
+        note.addLayout(line)
+        line.addWidget(self.prefix)
+        self.demo = QPushButton(HOME_WORD, objectName="trialWord")
+        self.demo.setAccessibleName("试查例句中的 glance")
+        line.addWidget(self.demo)
+        line.addWidget(self.period)
+        line.addStretch()
+        self.setAccessibleName(HOME_EXAMPLE)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.layout_entry()
+        inset = 18 if self.width() >= 270 else 8
+        self.layout().setContentsMargins(inset, 10, inset, inset)
+        flat = self.prefix.fontMetrics().horizontalAdvance(HOME_EXAMPLE) + 34 <= self.width() - 2 * inset
+        self.lead.setVisible(not flat)
+        self.prefix.setText((f"{EXAMPLE_OPENING} {EXAMPLE_PHRASE}" if flat else EXAMPLE_PHRASE) + " ")
 
-    def layout_entry(self):
-        w, h = self.width(), self.height()
-        inset = max(17, min(54, round(w * 0.037)))
-        art = self.art_rect()
-        stacked = art.height() < h
-        if stacked:
-            title_y, title_h = round(art.height() * 0.17), round(art.height() * 0.32)
-            baseline = round(art.height()) + 8
-            unit = min(1.25, max(0.7, (h - baseline) / 258))
+    def paintEvent(self, event):
+        with QPainter(self) as painter:
+            painter.fillRect(self.rect(), QColor("#edeae3"))
+            if not self.portrait.isNull():
+                scale = max(self.width() / self.portrait.width(), self.height() / self.portrait.height())
+                w, h = self.width() / scale, self.height() / scale
+                # Keep the visible eye in the panel when the window is tall and narrow.
+                x = max(0, min(self.portrait.width() - w, self.portrait.width() * 0.72 - w * 0.52))
+                source = QRectF(x, (self.portrait.height() - h) * 0.30, w, h)
+                painter.setRenderHint(QPainter.SmoothPixmapTransform)
+                painter.drawPixmap(QRectF(self.rect()), self.portrait, source)
+            painter.fillRect(0, 0, 1, self.height(), QColor("#272723"))
+
+
+class HomeTask(QPushButton):
+    def __init__(self, title, icon, hint):
+        super().__init__()
+        self.setProperty("role", "homeTask")
+        self.setAccessibleName(title)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        box = QGridLayout(self)
+        box.setHorizontalSpacing(9)
+        box.setVerticalSpacing(8)
+        box.setColumnStretch(2, 1)
+        glyph = QLabel()
+        glyph.setPixmap(ui_icon(icon, "#191917").pixmap(23, 23))
+        box.addWidget(glyph, 0, 0)
+        self.heading = QLabel(title, objectName="taskTitle")
+        box.addWidget(self.heading, 0, 1)
+        arrow = QLabel()
+        arrow.setPixmap(ui_icon("arrow", "#50504b").pixmap(18, 18))
+        box.addWidget(arrow, 0, 3)
+        self.hint = QLabel(objectName="taskHint")
+        self.hint.setWordWrap(True)
+        self.compact = None
+        self.set_compact(False)
+        self.set_hint(hint)
+        for child in self.findChildren(QWidget):
+            child.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+    def set_compact(self, compact):
+        if self.compact == compact:
+            return
+        self.compact = compact
+        box = self.layout()
+        box.removeWidget(self.hint)
+        if compact:
+            box.setContentsMargins(18, 9, 18, 9)
+            box.setColumnMinimumWidth(1, self.heading.fontMetrics().horizontalAdvance("对照阅读"))
+            box.setAlignment(Qt.AlignVCenter)
+            box.addWidget(self.hint, 0, 2)
         else:
-            title_y, title_h = round(h * 0.13), round(h * 0.34)
-            baseline = title_y + title_h + max(4, round(h * 0.02))
-            unit = min(1.65, w / 1000, h / 535)
-        self.demo.setGeometry(inset - 3, title_y, round(min(w * 0.465, title_h * 3.0)), title_h)
-        measure = w - 2 * inset if stacked else round(w * 0.39)
+            box.setContentsMargins(24, 20, 24, 22)
+            box.setColumnMinimumWidth(1, 0)
+            box.setAlignment(Qt.AlignTop)
+            box.addWidget(self.hint, 1, 0, 1, 4, Qt.AlignTop)
 
-        def line(widget, y, family, pixels, weight="normal"):
-            size = max(12, round(pixels * unit))
-            widget.setStyleSheet(f"color:#151513; font:{weight} {size}px {family};")
-            height = widget.sizeHint().height()
-            widget.setGeometry(inset, y, measure, height)
-            return y + height
+    def set_hint(self, hint):
+        self.hint.setText(hint)
+        self.setAccessibleDescription(hint)
 
-        y = line(self.phonetic, baseline, "'Consolas','Courier New'", 22)
-        y = line(self.meaning, y + round(3 * unit), "'Noto Serif SC Black','Noto Serif SC','SimSun'", 61, "900")
-        # Fit the example on the paper beside the face at any window ratio.
-        sentence_size = max(13, round(24 * unit))
-        font = QFont("Spectral")
-        font.setPixelSize(sentence_size)
-        width = QFontMetrics(font).horizontalAdvance(HOME_EXAMPLE)
-        sentence_size = max(16, min(sentence_size, int(sentence_size * (measure - 3) / max(1, width))))
-        self.sentence.setStyleSheet(f"color:#171715; font:{sentence_size}px 'Spectral','Georgia';")
-        self.sentence.setGeometry(inset, y + round(3 * unit), measure, self.sentence.heightForWidth(measure))
-        y = self.sentence.geometry().bottom() + max(8, round(15 * unit))
-        button_h = max(29, min(64, round(44 * unit)))
-        self.trial.setStyleSheet(f"font-size:{max(13, round(18 * unit))}px;")
-        self.trial.setIconSize(QSize(round(button_h * 0.48), round(button_h * 0.48)))
-        self.trial.setGeometry(inset, y, max(102, round(155 * unit)), button_h)
-        key_h = max(25, round(button_h * 0.77))
-        self.keycap.setStyleSheet(f"font-size:{max(12, round(15 * unit))}px;")
-        self.keycap.setGeometry(self.trial.geometry().right() + max(10, round(15 * unit)),
-                                y + (button_h - key_h) // 2, self.keycap.sizeHint().width() + 2, key_h)
+    def sizeHint(self):
+        return self.layout().sizeHint()
+
+    def heightForWidth(self, width):
+        return self.layout().totalHeightForWidth(width)
 
 
 class HomePage(QScrollArea):
@@ -159,97 +172,115 @@ class HomePage(QScrollArea):
         page = QVBoxLayout(surface)
         page.setContentsMargins(0, 0, 0, 0)
         page.setSpacing(0)
-        self.hero = Cover()
-        page.addWidget(self.hero, 1)
-        self.demo = self.hero.demo
-        self.keycap = self.hero.keycap
+
+        hero = QHBoxLayout()
+        hero.setSpacing(0)
+        page.addLayout(hero, 1)
+        intro = QFrame(objectName="intro")
+        self.copy = QVBoxLayout(intro)
+        self.copy.setSpacing(0)
+        self.copy.addStretch(2)
+        kicker = QHBoxLayout()
+        rule = QFrame(objectName="sectionRule")
+        rule.setFixedSize(26, 3)
+        kicker.addWidget(rule)
+        kicker.addSpacing(5)
+        self.mode_label = QLabel(objectName="section")
+        kicker.addWidget(self.mode_label)
+        kicker.addStretch()
+        self.copy.addLayout(kicker)
+        self.copy.addSpacing(10)
+        self.title = QLabel("在原文里\n读懂生词", objectName="guideTitle")
+        self.copy.addWidget(self.title)
+        self.copy.addSpacing(12)
+        self.instructions = QLabel(objectName="instructions")
+        self.instructions.setWordWrap(True)
+        self.copy.addWidget(self.instructions)
+        self.copy.addSpacing(20)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        self.trial = QPushButton(ui_icon("launch", "#ffffff"), "试查 glance", objectName="tryMeaning")
+        self.trial.setLayoutDirection(Qt.RightToLeft)
+        self.trial.setIconSize(QSize(18, 18))
+        self.trial.clicked.connect(self.demo_requested)
+        actions.addWidget(self.trial)
+        self.key_settings = QPushButton("更改取词键", objectName="coverKey")
+        self.key_settings.clicked.connect(self.settings_requested)
+        actions.addWidget(self.key_settings)
+        actions.addStretch()
+        self.copy.addLayout(actions)
+        self.copy.addStretch(2)
+        hero.addWidget(intro, 55)
+        self.example = ExamplePanel()
+        hero.addWidget(self.example, 45)
+        self.demo = self.example.demo
         self.demo.clicked.connect(self.demo_requested)
-        self.hero.trial.clicked.connect(self.demo_requested)
-        self.keycap.clicked.connect(self.settings_requested)
+
         self.warning = QLabel(objectName="homeWarning")
         self.warning.setWordWrap(True)
         self.warning.hide()
         page.addWidget(self.warning)
 
-        strip = QFrame(objectName="actionStrip")
+        strip = QFrame(objectName="taskStrip")
         page.addWidget(strip)
-        self.strip_layout = QBoxLayout(QBoxLayout.LeftToRight, strip)
-        self.strip_layout.setContentsMargins(17, 3, 17, 3)
-        self.strip_layout.setSpacing(4)
-        tools = self.tools = QHBoxLayout()
-        tools.setSpacing(5)
-        self.read_tool = QPushButton(ui_icon("book", "#171715"), "对照阅读")
-        self.read_tool.setToolTip("打开阅读页，粘贴原文并翻译")
-        self.read_tool.clicked.connect(self.reader_requested)
-        self.region = QPushButton(ui_icon("region", "#171715"), "框选翻译")
+        self.task_layout = QBoxLayout(QBoxLayout.LeftToRight, strip)
+        self.task_layout.setContentsMargins(0, 1, 0, 0)
+        self.task_layout.setSpacing(1)
+        self.region = HomeTask("框选翻译", "region", "")
         self.region.clicked.connect(self.region_requested)
-        for button in (self.read_tool, self.region):
-            button.setProperty("role", "stripAction")
-            button.setIconSize(QSize(23, 23))
-            if button is self.region:
-                rule = QFrame(objectName="stripDivider")
-                rule.setFixedSize(1, 19)
-                tools.addWidget(rule)
-            tools.addWidget(button)
-        tools.addStretch(1)
-        self.strip_layout.addLayout(tools, 1)
-
-        self.notebook = QPushButton(objectName="openNotebook")
-        self.notebook.setProperty("role", "stripAction")
-        self.notebook.setAccessibleName("打开生词本")
-        self.notebook.setToolTip("打开生词本查看收藏和复习进度")
+        self.read_tool = HomeTask("对照阅读", "book", "粘贴文章，按 Ctrl + Enter 查看对照译文。")
+        self.read_tool.clicked.connect(self.reader_requested)
+        self.notebook = HomeTask("生词本", "bookmark", SAVE_HINT)
+        self.notebook.setObjectName("openNotebook")
         self.notebook.clicked.connect(self.library_requested)
-        metrics = QHBoxLayout(self.notebook)
-        metrics.setContentsMargins(8, 2, 8, 2)
-        metrics.setSpacing(5)
-        self.values = []
-        for caption in ("今日查词", "已收藏", "待复习"):
-            if self.values:
-                metrics.addSpacing(7)
-                rule = QFrame(objectName="stripDivider")
-                rule.setFixedSize(1, 17)
-                metrics.addWidget(rule)
-                metrics.addSpacing(7)
-            metrics.addWidget(QLabel(caption, objectName="metricCaption"))
-            value = QLabel("—", objectName="metricValue")
-            value.setAccessibleName(caption)
-            metrics.addWidget(value)
-            self.values.append(value)
-        for child in self.notebook.findChildren(QWidget):
-            child.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.notebook.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
-        self.strip_layout.addWidget(self.notebook)
+        for task in (self.region, self.read_tool, self.notebook):
+            self.task_layout.addWidget(task, 1)
         for button in self.findChildren(QPushButton):
             button.setCursor(Qt.PointingHandCursor)
         self.refresh = QTimer(self, interval=30_000)
         self.refresh.timeout.connect(self.stats_requested)
         self.set_mode("left")
+        self.arrange()
 
     def set_mode(self, mode):
         key = {"left": "左 Ctrl", "right": "右 Ctrl"}.get(mode)
-        self.keycap.setText(key or "仅应用内")
-        self.keycap.setAccessibleName(f"取词键设置：{key or '仅应用内查词'}")
-        self.hero.layout_entry()
-        self.demo.setToolTip(f"单击，或指向词头轻按{key}试查" if key else "单击试查 glance")
-        self.region.setToolTip(f"按住{key}，拖选屏幕上的原文" if key else "点击开始框选，拖选屏幕上的原文")
+        self.key_settings.setAccessibleDescription(f"当前为{key or '仅应用内查词'}")
+        self.mode_label.setText("屏幕取词" if key else "应用内查词")
+        if key:
+            self.instructions.setText(f"在网页或 PDF 里，鼠标指向生词，轻按 <nobr><b>{key}</b></nobr>。<br>浮窗会显示句中词义和整句译文。")
+            self.demo.setToolTip(f"点击，或指向 glance 轻按{key}试查")
+            hint = f"按住{key}，左键拖选，松开鼠标看译文。"
+        else:
+            self.instructions.setText("在「阅读」页粘贴外文，<b>双击生词</b>。<br>浮窗会显示句中词义和整句译文。")
+            self.demo.setToolTip("点击 glance 试查")
+            hint = "点击开始框选，用鼠标拖出要翻译的区域，松开即可查看译文。"
+        self.region.set_hint(hint)
 
     def set_stats(self, today, saved, due):
-        for display, value in zip(self.values, (today, saved, due)):
-            display.setText("—" if value is None else f"{value:,}")
-        self.notebook.setAccessibleDescription("，".join(f"{v.accessibleName()} {v.text()}" for v in self.values))
-        self.notebook.setMinimumSize(self.notebook.layout().sizeHint())
-        self.arrange_strip()
+        if None in (today, saved, due):
+            hint = "打开生词本，查看已收藏的原句和复习进度。"
+        elif saved:
+            hint = f"今日查词 {today:,} 次，已收藏 {saved:,} 条，待复习 {due:,} 条。"
+        elif today:
+            hint = f"今日查词 {today:,} 次。查词时点「收藏生词」即可保存原句。"
+        else:
+            hint = SAVE_HINT
+        self.notebook.set_hint(hint)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.arrange_strip()
+        self.arrange()
 
-    def arrange_strip(self):
-        needed = self.tools.minimumSize().width() + self.notebook.layout().sizeHint().width() + 58
-        narrow = self.viewport().width() < needed
-        self.strip_layout.setDirection(QBoxLayout.TopToBottom if narrow else QBoxLayout.LeftToRight)
-        self.strip_layout.setContentsMargins(11 if narrow else 22, 7, 11 if narrow else 22, 7)
-        self.strip_layout.setAlignment(self.notebook, Qt.AlignLeft if narrow else Qt.AlignVCenter)
+    def arrange(self):
+        w = self.viewport().width()
+        narrow = w < 720
+        margin = 18 if narrow else max(28, min(64, w // 24))
+        self.copy.setContentsMargins(margin, 20, margin, 20)
+        self.title.setStyleSheet(f"font-size:{max(34, min(68, w // 18))}px;")
+        self.instructions.setStyleSheet(f"font-size:{15 if narrow else 17}px;")
+        self.task_layout.setDirection(QBoxLayout.TopToBottom if narrow else QBoxLayout.LeftToRight)
+        for task in (self.region, self.read_tool, self.notebook):
+            task.set_compact(narrow)
 
     def showEvent(self, event):
         super().showEvent(event)

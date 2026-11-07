@@ -225,7 +225,7 @@ def passage_from_lines(lines, point, source_code=""):
 
     hit = nearest_box(point, (((i, j), word.rect) for i, line in enumerate(lines) for j, word in enumerate(line)))
     if hit is None:
-        raise ValueError("光标附近没有可确定的词。请移近想查的词，或点主窗口的「开始框选」。")
+        raise ValueError("光标附近没有可确定的词。请移近想查的词，或点主窗口的「框选翻译」。")
     anchor, column = hit
     hit_word = lines[anchor][column]
     match = word_at_point(hit_word, point)

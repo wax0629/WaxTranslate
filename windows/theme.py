@@ -53,6 +53,13 @@ def ui_icon(name, color="#595955"):
         for y, end in ((10, 16), (14, 13)):
             path.moveTo(8, y)
             path.lineTo(end, y)
+    elif name == "bookmark":
+        path.moveTo(5, 3)
+        path.lineTo(19, 3)
+        path.lineTo(19, 21)
+        path.lineTo(12, 16)
+        path.lineTo(5, 21)
+        path.closeSubpath()
     elif name == "arrow":
         path.moveTo(5, 12)
         path.lineTo(19, 12)
