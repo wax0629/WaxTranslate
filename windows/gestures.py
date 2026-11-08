@@ -113,8 +113,8 @@ class CtrlGestures:
         # releases both hooks if the application exits unexpectedly.
         try:
             for line in sys.stdin.buffer:
-                ticket, hwnd, mode = json.loads(line)
-                self.watched_card = (ticket, hwnd) if hwnd else None
+                ticket, hwnd, mode, menus = json.loads(line)
+                self.watched_card = (ticket, hwnd, menus) if hwnd else None
                 if mode != self.mode and mode in CTRL_KEYS:
                     self.mode = mode
                     self.events.put(("mode", mode, None))
@@ -172,15 +172,15 @@ class CtrlGestures:
             self.cancel()
         card = self.watched_card
         if code == 0 and message == WM_LBUTTONDOWN and card:
-            ticket, hwnd = card
+            ticket, hwnd, menus = card
             point = MouseEvent.from_address(payload).point
             bounds = wt.RECT()
             if user32.GetWindowRect(hwnd, ctypes.byref(bounds)) and not (
                     bounds.left <= point.x < bounds.right and bounds.top <= point.y < bounds.bottom):
-                # An owned menu can extend beyond the card. Observe the press
-                # without intercepting or replaying it.
+                # Qt's transient tool menus can have no Win32 owner. They are
+                # still part of the card when their items extend beyond it.
                 target = user32.WindowFromPhysicalPoint(point)
-                if user32.GetAncestor(target, 3) != hwnd:  # GA_ROOTOWNER
+                if user32.GetAncestor(target, 3) != hwnd and user32.GetAncestor(target, 2) not in menus:
                     self.events.put(("dismiss", ticket, None))
         if code == 0 and (self.armed or self.owns_button):
             event = MouseEvent.from_address(payload)

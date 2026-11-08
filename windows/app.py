@@ -147,6 +147,8 @@ class Window(QWidget):
         self.card = Card(self.player)
         self.card.dismissed.connect(self.invalidate)
         self.card.presented.connect(self.watch_card)
+        for menu in (self.card.listen.menu(), self.card.more.menu()):
+            menu.aboutToShow.connect(self.watch_card)
         self.card.save_requested.connect(self.save_word)
         self.card.online.clicked.connect(self.search_online)
         self.online_finished.connect(self.show_online)
@@ -539,7 +541,9 @@ class Window(QWidget):
     def watch_card(self):
         if self.gesture_ready and not self.stopping:
             hwnd = int(self.card.winId()) if self.card.isVisible() else 0
-            self.gestures.write((json.dumps((self.ticket, hwnd, self.trigger.currentData())) + "\n").encode("ascii"))
+            menus = [int(menu.winId()) for menu in (self.card.listen.menu(), self.card.more.menu())] if hwnd else []
+            watched = (self.ticket, hwnd, self.trigger.currentData(), menus)
+            self.gestures.write((json.dumps(watched) + "\n").encode("ascii"))
 
     def on_gesture(self, action, origin, end):
         if action == "dismiss":
