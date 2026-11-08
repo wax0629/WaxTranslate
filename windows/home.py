@@ -2,7 +2,7 @@
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter
 from PySide6.QtWidgets import (
-    QAbstractItemView, QAbstractScrollArea, QFrame, QHeaderView, QHBoxLayout, QLabel, QPushButton,
+    QAbstractItemView, QAbstractScrollArea, QFrame, QHeaderView, QHBoxLayout, QLabel, QLayout, QPushButton,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -12,16 +12,16 @@ from theme import ui_icon
 
 HOME_STYLE = """
     QWidget#home {background:transparent;}
-    QLabel#coverTitle {font:600 56px 'Noto Serif SC','SimSun','Microsoft YaHei UI'; color:#171715;}
-    QLabel#totalLabel {color:#4d4a45; font-size:14px;}
-    QLabel#activity, QLabel#historyNotice, QLabel#pastActivity {color:#504d48; font-size:13px;}
-    QPushButton#useHint {background:transparent; color:#413f3b; border:1px solid transparent;
-        padding:2px 0; text-align:left; font-size:14px;}
+    QLabel#coverTitle {font:600 34px 'Microsoft YaHei UI'; color:#1d1d1a;}
+    QLabel#activity, QLabel#historyNotice {color:#504d48; font-size:13px;}
+    QPushButton#useHint {background:transparent; border:1px solid transparent; padding:0;}
     QPushButton#useHint:focus, QPushButton#useHint:hover {border-bottom:1px solid #79756e;}
-    QPushButton#region {background:#232321; color:#fffefa; border:1px solid #232321;
-        padding:6px 14px; border-radius:4px; font-size:14px; font-weight:600;}
-    QPushButton#region:hover {background:#40403b;}
-    QPushButton#region:focus {border:2px solid #827f74; padding:5px 13px;}
+    QPushButton#useHint QLabel {color:#403e39; font-size:14px;}
+    QLabel#shortcutKey {background:#f7f5ef; border:1px solid #b8b4aa; border-bottom:2px solid #aaa69c;
+        border-radius:4px; padding:1px 5px; font-weight:600;}
+    QPushButton#region {background:rgba(250,249,246,150); color:#292824; border:1px solid #8d897f;
+        padding:6px 12px; border-radius:4px; font-size:14px;}
+    QPushButton#region:hover, QPushButton#region:focus {background:#efede6; border-color:#494740;}
     QPushButton#readOriginal {background:transparent; color:#34332f; border:1px solid transparent;
         padding:6px 9px; border-radius:4px; font-size:14px;}
     QPushButton#readOriginal:hover, QPushButton#readOriginal:focus {border-color:#928e84;}
@@ -54,26 +54,19 @@ class HomePage(QWidget):
         self.page.setSpacing(0)
         self.page.addStretch(2)
         self.title = QLabel(objectName="coverTitle")
+        self.title.setTextFormat(Qt.RichText)
+        self.title.setWordWrap(True)
         self.page.addWidget(self.title)
-
-        self.metrics = QWidget()
-        metrics = QVBoxLayout(self.metrics)
-        metrics.setContentsMargins(0, 0, 0, 0)
-        metrics.setSpacing(0)
-        metrics.addWidget(QLabel("累计查词", objectName="totalLabel"))
-        self.total = QLabel()
-        self.total.setTextFormat(Qt.RichText)
-        metrics.addWidget(self.total)
         self.activity = QLabel(objectName="activity")
-        self.activity.setContentsMargins(0, 3, 0, 0)
-        metrics.addWidget(self.activity)
-        self.page.addWidget(self.metrics)
+        self.activity.setWordWrap(True)
+        self.activity.setContentsMargins(0, 4, 0, 0)
+        self.page.addWidget(self.activity)
 
         self.sheet = QWidget()
         history = QVBoxLayout(self.sheet)
         history.setContentsMargins(0, 14, 0, 0)
         history.setSpacing(5)
-        history.addWidget(QLabel("最近查词", objectName="recentTitle"))
+        history.addWidget(QLabel("最近查过", objectName="recentTitle"))
         self.table = QTableWidget(0, 3, objectName="recentWords")
         self.table.setAccessibleName("最近查词，从新到旧")
         self.table.setHorizontalHeaderLabels(["词语", "释义", "语种"])
@@ -97,39 +90,45 @@ class HomePage(QWidget):
 
         self.notice = QLabel("正在读取查词记录…", objectName="historyNotice")
         self.page.addWidget(self.notice)
-        self.page.addSpacing(8)
+        self.page.addSpacing(12)
         self.instructions = QPushButton(objectName="useHint")
         self.instructions.setToolTip("更改取词键")
         self.instructions.setCursor(Qt.PointingHandCursor)
         self.instructions.clicked.connect(self.settings_requested)
+        hint = QHBoxLayout(self.instructions)
+        hint.setSizeConstraint(QLayout.SetFixedSize)
+        hint.setSpacing(4)
+        hint.setContentsMargins(1, 3, 1, 3)
+        self.hint_start = QLabel()
+        self.key = QLabel(objectName="shortcutKey")
+        self.hint_end = QLabel("查看释义")
+        for part in (self.hint_start, self.key, self.hint_end):
+            part.setAttribute(Qt.WA_TransparentForMouseEvents)
+            hint.addWidget(part)
         self.page.addWidget(self.instructions, 0, Qt.AlignLeft)
         self.page.addSpacing(10)
         actions = QHBoxLayout()
         actions.setSpacing(6)
-        self.region = QPushButton(ui_icon("region", "#fffefa"), "框选翻译", objectName="region")
+        self.region = QPushButton(ui_icon("region"), "框选翻译", objectName="region")
         self.region.setIconSize(QSize(16, 16))
         self.region.setCursor(Qt.PointingHandCursor)
         self.region.clicked.connect(self.region_requested)
         actions.addWidget(self.region)
-        self.reader = QPushButton(ui_icon("book"), "打开对照翻译", objectName="readOriginal")
+        self.reader = QPushButton(ui_icon("book"), "对照翻译", objectName="readOriginal")
         self.reader.setIconSize(QSize(16, 16))
         self.reader.setCursor(Qt.PointingHandCursor)
         self.reader.clicked.connect(self.reader_requested)
         actions.addWidget(self.reader)
         actions.addStretch()
         self.page.addLayout(actions)
-        self.past_activity = QLabel(objectName="pastActivity")
-        self.past_activity.setContentsMargins(0, 18, 0, 0)
-        self.past_activity.setWordWrap(True)
-        self.past_activity.hide()
-        self.page.addWidget(self.past_activity)
         self.warning = QLabel(objectName="homeWarning")
         self.warning.setWordWrap(True)
         self.warning.hide()
         self.page.addWidget(self.warning)
         self.page.addStretch(3)
         self.rows = []
-        self.metrics.hide()
+        self.title.setText("在原文中查词")
+        self.activity.hide()
         self.sheet.hide()
         self.refresh = QTimer(self, interval=30_000)
         self.refresh.timeout.connect(self.stats_requested)
@@ -138,25 +137,31 @@ class HomePage(QWidget):
 
     def set_mode(self, mode):
         key = {"left": "左 Ctrl", "right": "右 Ctrl"}.get(mode)
-        self.title.setText("屏幕取词" if key else "原文查词")
-        hint = f"指向外文单词，轻按 {key} 查看释义。" if key else "在「对照翻译」中双击单词，即可查看释义。"
-        self.instructions.setText(hint)
-        self.instructions.setAccessibleName(hint + " 点击更改取词键。")
+        self.hint_start.setText("指向生词，轻按" if key else "在对照翻译中双击单词，查看释义")
+        self.key.setText(key or "")
+        self.key.setVisible(bool(key))
+        self.hint_end.setVisible(bool(key))
+        hint = f"{self.hint_start.text()} {key} 查看释义" if key else self.hint_start.text()
+        self.instructions.setAccessibleName(hint + "。更改取词键")
 
     def set_stats(self, snapshot):
         total, today, saved, due, recent = snapshot if snapshot is not None else (0, 0, 0, 0, [])
-        self.metrics.setVisible(bool(recent))
-        self.title.setVisible(not recent)
-        count = f"累计查词 {total:,} 次"
-        self.total.setAccessibleName(count)
-        # A single text line gives the two font sizes a shared typographic baseline.
-        self.total.setText(f"<span style=\"font:600 52px 'Spectral'; color:#171715\">{total:,}</span>"
-                           "&nbsp; <span style=\"font-size:15px; color:#514e48\">次</span>")
-        self.activity.setText(f"今日 {today:,} 次     ·     已收藏 {saved:,}     ·     待复习 {due:,}")
-        past = [label for value, label in ((total, count), (today, f"今日 {today:,} 次"),
-                (saved, f"已收藏 {saved:,}"), (due, f"待复习 {due:,}")) if value]
-        self.past_activity.setText("   ·   ".join(past))
-        self.past_activity.setVisible(bool(past) and not recent)
+        if total:
+            self.title.setText(f'已查词 <span style="font:600 46px \'Spectral\'">{total:,}</span> 次')
+            self.title.setAccessibleName(f"累计查词 {total:,} 次")
+        else:
+            heading = "查词概览" if saved or due or recent else "在原文中查词"
+            self.title.setText(heading)
+            self.title.setAccessibleName(heading)
+        details = []
+        if today or recent:
+            details.append(f"今日 {today:,} 次")
+        if saved:
+            details.append(f"已收藏 {saved:,} 条")
+        if due:
+            details.append(f"待复习 {due:,} 条")
+        self.activity.setText("   ·   ".join(details))
+        self.activity.setVisible(bool(details))
         self.notice.setText("暂时无法读取查词记录" if snapshot is None else "")
         self.notice.setVisible(snapshot is None)
         self.sheet.setVisible(bool(recent))
@@ -200,13 +205,12 @@ class HomePage(QWidget):
         super().paintEvent(event)
         paper = QColor(250, 249, 246)
         if self.portrait:
-            heading = self.title if self.metrics.isHidden() else self.metrics
-            top = heading.y()
+            top = self.title.y()
             wash = QLinearGradient(0, max(0, top - 140), 0, max(1, top + 24))
             stops = ((0, 0), (0.35, 58), (0.75, 197), (1, 237))
         else:
             # The original landscape illustration already leaves paper at the left.
-            if self.metrics.isHidden() and self.width() >= 820 and self.width() > self.height() * 1.55:
+            if not self.rows and self.width() >= 820 and self.width() > self.height() * 1.55:
                 return
             edge = self.column.width()
             wash = QLinearGradient(0, 0, edge + self.width() * 0.19, 0)

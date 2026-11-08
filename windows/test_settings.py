@@ -53,7 +53,7 @@ class SettingsTests(unittest.TestCase):
         page.trigger.setCurrentIndex(page.trigger.findData("off"))
         page.auto_online.click()
         window.tabs.setCurrentWidget(window.home)
-        self.assertIn("双击单词", window.home.instructions.text())
+        self.assertIn("双击单词", window.home.instructions.accessibleName())
         window.home.instructions.click()
         self.assertIs(window.tabs.currentWidget(), page)
         self.assertIs(window.focusWidget(), page.trigger)
