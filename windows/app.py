@@ -221,7 +221,6 @@ class Window(QWidget):
         self.home = HomePage()
         self.tabs.addWidget(self.home)
         self.home.region_requested.connect(lambda: self.begin(True))
-        self.home.reader_requested.connect(self.open_reader)
         self.home.settings_requested.connect(self.open_gesture_settings)
         self.home.stats_requested.connect(self.refresh_home)
         self.stats_ready.connect(self.home.set_stats)

@@ -20,11 +20,12 @@ from threading import Event
 from unittest.mock import patch
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, QRectF, QSize, Qt
-from PySide6.QtGui import QCursor, QFont, QFontDatabase, QFontMetrics, QImage, QMouseEvent, QPainter, QShortcut
+from PySide6.QtGui import QCursor, QFont, QFontDatabase, QFontMetrics, QImage, QMouseEvent, QPainter, QRegion, QShortcut
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QWidget
 
 from app import Window, app_icon, image_point, image_rect
+from home import HomePage
 from notebook import Notebook
 from popup import Card
 from reader import Passage, Word, context_excerpt, passage_from_lines, recognize
@@ -58,6 +59,32 @@ def wait_until(predicate):
 
 
 class Checks(unittest.TestCase):
+    def test_home_background_is_independent_of_lookup_history(self):
+        home = HomePage()
+        home.setAttribute(Qt.WA_DontShowOnScreen)
+        home.show()
+        rows = [(f"word-{n}", "en", "释义") for n in range(6)]
+        try:
+            for width, height in ((1000, 582), (728, 529), (540, 764)):
+                home.resize(width, height)
+                baseline = None
+                for snapshot in ((0, 0, 0, 0, []), (6, 0, 0, 0, []), (7, 1, 0, 0, rows[:1]),
+                                 (12, 6, 0, 0, rows), None):
+                    home.set_stats(snapshot)
+                    QApplication.processEvents()
+                    # Render the page layer without its foreground text and controls.
+                    layer = QImage(home.size(), QImage.Format_ARGB32_Premultiplied)
+                    layer.fill(Qt.transparent)
+                    with QPainter(layer) as painter:
+                        home.render(painter, QPoint(), QRegion(), QWidget.RenderFlag(0))
+                    if baseline is None:
+                        baseline = layer
+                    else:
+                        self.assertEqual(layer, baseline, (width, height, snapshot))
+        finally:
+            home.close()
+            home.deleteLater()
+
     @unittest.skipUnless(DESKTOP, "sample the composited edges on an isolated desktop")
     def test_desktop_visible_window_edges(self):
         user, gdi = ctypes.windll.user32, ctypes.windll.gdi32
@@ -148,14 +175,18 @@ class Checks(unittest.TestCase):
                     self.assertGreater(nav[-1].x(), nav[-2].geometry().right())
                     self.assertFalse(home.activity.isVisible())
                     self.assertFalse(home.sheet.isVisible())
-                    for control in (home.title, home.instructions, home.region, home.reader):
+                    for control in (home.title, home.instructions, home.region):
                         bounds = QRect(control.mapTo(home, QPoint()), control.size())
                         self.assertTrue(home.rect().contains(bounds), (width, height, bounds))
                     self.assertGreaterEqual(home.instructions.width(), home.instructions.layout().sizeHint().width())
-                    self.assertFalse(home.instructions.geometry().intersects(home.region.geometry()))
+                    self.assertEqual(home.instructions.y(), home.page.contentsMargins().top())
+                    self.assertLess(home.instructions.geometry().bottom(), home.title.y())
                     if home.portrait:
                         self.assertGreater(home.title.y(), home.height() // 2)
                 # Migrated profiles and a read failure must not look like a fresh notebook.
+                window.resize(540, 390)
+                QApplication.processEvents()
+                short_window_size = window.size()
                 home.set_stats((17, 0, 2, 1, []))
                 self.assertTrue(home.title.isVisible())
                 self.assertEqual(home.title.accessibleName(), "累计查词 17 次")
@@ -178,10 +209,12 @@ class Checks(unittest.TestCase):
                 for width, height in ((1000, 620), (540, 800), (540, 390)):
                     window.resize(width, height)
                     QApplication.processEvents()
-                    self.assertTrue(home.rect().contains(QRect(home.reader.mapTo(home, QPoint()), home.reader.size())))
+                    self.assertTrue(home.rect().contains(QRect(home.region.mapTo(home, QPoint()), home.region.size())))
+                    self.assertEqual(home.instructions.y(), home.page.contentsMargins().top())
                     if height >= 620:
                         self.assertEqual(home.table.verticalScrollBar().maximum(), 0)
                     else:
+                        self.assertEqual(window.size(), short_window_size)
                         home.table.scrollToBottom()
                         self.assertGreaterEqual(home.table.rowAt(home.table.viewport().height() - 2), 5)
                 window.resize(570, 485)
@@ -289,7 +322,8 @@ class Checks(unittest.TestCase):
                 self.assertEqual(home.table.rowCount(), 0)
                 self.assertEqual(home.key.text(), "左 Ctrl")
                 self.assertTrue(home.key.isVisible())
-                home.reader.click()
+                self.assertFalse(any(b.text() == "对照翻译" for b in home.findChildren(QPushButton)))
+                window.navigation.button(window.tabs.indexOf(window.reader_page)).click()
                 self.assertIs(window.tabs.currentWidget(), window.reader_page)
                 editor = window.workspace.input
                 editor.setPlainText(RIVER)
