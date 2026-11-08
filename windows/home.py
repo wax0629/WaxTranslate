@@ -14,7 +14,7 @@ HOME_STYLE = """
     QWidget#home {background:transparent;}
     QLabel#coverTitle {font:600 34px 'Microsoft YaHei UI'; color:#1d1d1a;}
     QLabel#activity, QLabel#historyNotice {color:#504d48; font-size:13px;}
-    QPushButton#useHint {background:transparent; border:1px solid transparent; padding:0;}
+    QPushButton#useHint {background:rgba(250,249,246,230); border:1px solid transparent; border-radius:4px; padding:0;}
     QPushButton#useHint:focus, QPushButton#useHint:hover {border-bottom:1px solid #79756e;}
     QPushButton#useHint QLabel {color:#403e39; font-size:14px;}
     QLabel#shortcutKey {background:#f7f5ef; border:1px solid #b8b4aa; border-bottom:2px solid #aaa69c;
@@ -22,9 +22,6 @@ HOME_STYLE = """
     QPushButton#region {background:rgba(250,249,246,150); color:#292824; border:1px solid #8d897f;
         padding:6px 12px; border-radius:4px; font-size:14px;}
     QPushButton#region:hover, QPushButton#region:focus {background:#efede6; border-color:#494740;}
-    QPushButton#readOriginal {background:transparent; color:#34332f; border:1px solid transparent;
-        padding:6px 9px; border-radius:4px; font-size:14px;}
-    QPushButton#readOriginal:hover, QPushButton#readOriginal:focus {border-color:#928e84;}
     QLabel#recentTitle {color:#272622; font-size:16px; font-weight:600;}
     QTableWidget#recentWords {background:transparent; border:0; border-top:1px solid #a5a198;
         outline:0; selection-background-color:#dfddd5; selection-color:#171715;}
@@ -36,7 +33,6 @@ HOME_STYLE = """
 
 class HomePage(QWidget):
     region_requested = Signal()
-    reader_requested = Signal()
     settings_requested = Signal()
     stats_requested = Signal()
 
@@ -52,10 +48,26 @@ class HomePage(QWidget):
         outer.addStretch()
         self.page = QVBoxLayout(self.column)
         self.page.setSpacing(0)
+        self.instructions = QPushButton(objectName="useHint")
+        self.instructions.setToolTip("更改取词键")
+        self.instructions.setCursor(Qt.PointingHandCursor)
+        self.instructions.clicked.connect(self.settings_requested)
+        hint = QHBoxLayout(self.instructions)
+        hint.setSizeConstraint(QLayout.SetFixedSize)
+        hint.setSpacing(4)
+        hint.setContentsMargins(6, 3, 6, 3)
+        self.hint_start = QLabel()
+        self.key = QLabel(objectName="shortcutKey")
+        self.hint_end = QLabel("查看释义")
+        for part in (self.hint_start, self.key, self.hint_end):
+            part.setAttribute(Qt.WA_TransparentForMouseEvents)
+            hint.addWidget(part)
+        self.page.addWidget(self.instructions, 0, Qt.AlignLeft)
         self.page.addStretch(2)
         self.title = QLabel(objectName="coverTitle")
         self.title.setTextFormat(Qt.RichText)
         self.title.setWordWrap(True)
+        self.title.setContentsMargins(0, 8, 0, 0)
         self.page.addWidget(self.title)
         self.activity = QLabel(objectName="activity")
         self.activity.setWordWrap(True)
@@ -91,36 +103,11 @@ class HomePage(QWidget):
         self.notice = QLabel("正在读取查词记录…", objectName="historyNotice")
         self.page.addWidget(self.notice)
         self.page.addSpacing(12)
-        self.instructions = QPushButton(objectName="useHint")
-        self.instructions.setToolTip("更改取词键")
-        self.instructions.setCursor(Qt.PointingHandCursor)
-        self.instructions.clicked.connect(self.settings_requested)
-        hint = QHBoxLayout(self.instructions)
-        hint.setSizeConstraint(QLayout.SetFixedSize)
-        hint.setSpacing(4)
-        hint.setContentsMargins(1, 3, 1, 3)
-        self.hint_start = QLabel()
-        self.key = QLabel(objectName="shortcutKey")
-        self.hint_end = QLabel("查看释义")
-        for part in (self.hint_start, self.key, self.hint_end):
-            part.setAttribute(Qt.WA_TransparentForMouseEvents)
-            hint.addWidget(part)
-        self.page.addWidget(self.instructions, 0, Qt.AlignLeft)
-        self.page.addSpacing(10)
-        actions = QHBoxLayout()
-        actions.setSpacing(6)
         self.region = QPushButton(ui_icon("region"), "框选翻译", objectName="region")
         self.region.setIconSize(QSize(16, 16))
         self.region.setCursor(Qt.PointingHandCursor)
         self.region.clicked.connect(self.region_requested)
-        actions.addWidget(self.region)
-        self.reader = QPushButton(ui_icon("book"), "对照翻译", objectName="readOriginal")
-        self.reader.setIconSize(QSize(16, 16))
-        self.reader.setCursor(Qt.PointingHandCursor)
-        self.reader.clicked.connect(self.reader_requested)
-        actions.addWidget(self.reader)
-        actions.addStretch()
-        self.page.addLayout(actions)
+        self.page.addWidget(self.region, 0, Qt.AlignLeft)
         self.warning = QLabel(objectName="homeWarning")
         self.warning.setWordWrap(True)
         self.warning.hide()
@@ -165,7 +152,6 @@ class HomePage(QWidget):
         self.notice.setText("暂时无法读取查词记录" if snapshot is None else "")
         self.notice.setVisible(snapshot is None)
         self.sheet.setVisible(bool(recent))
-        self.update()
         if recent == self.rows:
             return
         self.rows = recent
@@ -189,13 +175,18 @@ class HomePage(QWidget):
         super().resizeEvent(event)
         self.arrange()
 
+    def hasHeightForWidth(self):
+        # The text column wraps inside the viewport. Let history scroll instead
+        # of feeding its preferred row count into Windows' resize constraints.
+        return False
+
     def arrange(self):
         compact = self.width() < 720
         self.portrait = self.height() > self.width() * 1.15
         margin = 22 if compact else min(64, round(self.width() * 0.052))
         width = self.width() if self.portrait else min(self.width(), max(330, min(640, round(self.width() * 0.48))))
         self.column.setFixedWidth(width)
-        self.page.setStretch(0, 7 if self.portrait else 2)
+        self.page.setStretch(1, 7 if self.portrait else 2)
         self.page.setStretch(self.page.count() - 1, 1 if self.portrait else 3)
         self.page.setContentsMargins(margin, 12, margin if self.portrait else 6, 12)
         self.table.setColumnWidth(0, max(87, min(154, (width - margin) // 3)))
@@ -205,15 +196,12 @@ class HomePage(QWidget):
         super().paintEvent(event)
         paper = QColor(250, 249, 246)
         if self.portrait:
-            top = self.title.y()
-            wash = QLinearGradient(0, max(0, top - 140), 0, max(1, top + 24))
+            # Anchor the reading area to the canvas, even as the list changes height.
+            wash = QLinearGradient(0, self.height() * 0.19, 0, self.height() * 0.42)
             stops = ((0, 0), (0.35, 58), (0.75, 197), (1, 237))
         else:
-            # The original landscape illustration already leaves paper at the left.
-            if not self.rows and self.width() >= 820 and self.width() > self.height() * 1.55:
-                return
             edge = self.column.width()
-            wash = QLinearGradient(0, 0, edge + self.width() * 0.19, 0)
+            wash = QLinearGradient(0, 0, edge + self.width() * 0.12, 0)
             stops = ((0, 225), (0.7, 221), (0.8, 166), (0.9, 55), (1, 0))
         for position, opacity in stops:
             paper.setAlpha(opacity)
