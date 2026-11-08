@@ -14,9 +14,7 @@ HOME_STYLE = """
     QWidget#home {background:transparent;}
     QLabel#coverTitle {font:600 56px 'Noto Serif SC','SimSun','Microsoft YaHei UI'; color:#171715;}
     QLabel#totalLabel {color:#4d4a45; font-size:14px;}
-    QLabel#totalValue {font:600 56px 'Spectral','Georgia'; color:#171715;}
-    QLabel#metricUnit {font-size:15px; color:#514e48;}
-    QLabel#activity, QLabel#historyNotice {color:#504d48; font-size:13px;}
+    QLabel#activity, QLabel#historyNotice, QLabel#pastActivity {color:#504d48; font-size:13px;}
     QPushButton#useHint {background:transparent; color:#413f3b; border:1px solid transparent;
         padding:2px 0; text-align:left; font-size:14px;}
     QPushButton#useHint:focus, QPushButton#useHint:hover {border-bottom:1px solid #79756e;}
@@ -63,17 +61,11 @@ class HomePage(QWidget):
         metrics.setContentsMargins(0, 0, 0, 0)
         metrics.setSpacing(0)
         metrics.addWidget(QLabel("累计查词", objectName="totalLabel"))
-        amount = QHBoxLayout()
-        amount.setSpacing(7)
-        self.total = QLabel(objectName="totalValue")
-        self.total.setAccessibleName("累计查词次数")
-        amount.addWidget(self.total)
-        unit = QLabel("次", objectName="metricUnit")
-        unit.setContentsMargins(0, 0, 0, 10)
-        amount.addWidget(unit, 0, Qt.AlignBottom)
-        amount.addStretch()
-        metrics.addLayout(amount)
+        self.total = QLabel()
+        self.total.setTextFormat(Qt.RichText)
+        metrics.addWidget(self.total)
         self.activity = QLabel(objectName="activity")
+        self.activity.setContentsMargins(0, 3, 0, 0)
         metrics.addWidget(self.activity)
         self.page.addWidget(self.metrics)
 
@@ -126,6 +118,11 @@ class HomePage(QWidget):
         actions.addWidget(self.reader)
         actions.addStretch()
         self.page.addLayout(actions)
+        self.past_activity = QLabel(objectName="pastActivity")
+        self.past_activity.setContentsMargins(0, 18, 0, 0)
+        self.past_activity.setWordWrap(True)
+        self.past_activity.hide()
+        self.page.addWidget(self.past_activity)
         self.warning = QLabel(objectName="homeWarning")
         self.warning.setWordWrap(True)
         self.warning.hide()
@@ -148,18 +145,20 @@ class HomePage(QWidget):
 
     def set_stats(self, snapshot):
         total, today, saved, due, recent = snapshot if snapshot is not None else (0, 0, 0, 0, [])
-        has_activity = bool(total or today or saved or due or recent)
-        self.metrics.setVisible(has_activity)
-        self.title.setVisible(not has_activity)
-        self.total.setText(f"{total:,}")
+        self.metrics.setVisible(bool(recent))
+        self.title.setVisible(not recent)
+        count = f"累计查词 {total:,} 次"
+        self.total.setAccessibleName(count)
+        # A single text line gives the two font sizes a shared typographic baseline.
+        self.total.setText(f"<span style=\"font:600 52px 'Spectral'; color:#171715\">{total:,}</span>"
+                           "&nbsp; <span style=\"font-size:15px; color:#514e48\">次</span>")
         self.activity.setText(f"今日 {today:,} 次     ·     已收藏 {saved:,}     ·     待复习 {due:,}")
-        message = ""
-        if snapshot is None:
-            message = "暂时无法读取查词记录"
-        elif has_activity and not recent:
-            message = "下次查词后，这里会显示最近记录。"
-        self.notice.setText(message)
-        self.notice.setVisible(bool(message))
+        past = [label for value, label in ((total, count), (today, f"今日 {today:,} 次"),
+                (saved, f"已收藏 {saved:,}"), (due, f"待复习 {due:,}")) if value]
+        self.past_activity.setText("   ·   ".join(past))
+        self.past_activity.setVisible(bool(past) and not recent)
+        self.notice.setText("暂时无法读取查词记录" if snapshot is None else "")
+        self.notice.setVisible(snapshot is None)
         self.sheet.setVisible(bool(recent))
         self.update()
         if recent == self.rows:

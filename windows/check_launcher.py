@@ -208,8 +208,9 @@ def check(root):
             assert bool(ex_style & 0x80) == has_tray, f"Unexpected WS_EX_TOOLWINDOW: {ex_style:#x}"
             if has_tray:
                 assert not ex_style & 0x40000, f"Unexpected WS_EX_APPWINDOW: {ex_style:#x}"
-            assert style & 0x70000 == 0x70000, f"Missing resize/minimize/maximize style: {style:#x}"
-            assert not (style & 0x00C00000), f"Unwanted native caption: {style:#x}"
+            assert style & 0xb0000 == 0xb0000, f"Missing system/minimize/maximize commands: {style:#x}"
+            assert not (style & 0x00c40000), f"Unwanted native caption or sizing frame: {style:#x}"
+            assert not (ex_style & 0x300), f"Unwanted raised or sunken native edge: {ex_style:#x}"
             if not login:
                 verify_frame(window)
 

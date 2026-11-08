@@ -58,6 +58,68 @@ def wait_until(predicate):
 
 
 class Checks(unittest.TestCase):
+    @unittest.skipUnless(DESKTOP, "sample the composited edges on an isolated desktop")
+    def test_desktop_visible_window_edges(self):
+        user, gdi = ctypes.windll.user32, ctypes.windll.gdi32
+        user.GetDC.argtypes, user.GetDC.restype = (wintypes.HWND,), wintypes.HDC
+        user.ReleaseDC.argtypes = (wintypes.HWND, wintypes.HDC)
+        user.ClientToScreen.argtypes = (wintypes.HWND, ctypes.POINTER(wintypes.POINT))
+        gdi.GetPixel.argtypes, gdi.GetPixel.restype = (wintypes.HDC, ctypes.c_int, ctypes.c_int), wintypes.DWORD
+
+        with TemporaryDirectory() as tmp, patch.object(QProcess, "start"):
+            window = Window(Notebook(Path(tmp) / "frame.sqlite"))
+            dc = user.GetDC(None)
+            try:
+                area = window.screen().availableGeometry()
+                window.setGeometry(area.x() + 12, area.y() + 12,
+                                   min(728, area.width() - 24), min(565, area.height() - 24))
+                window.open_home()
+
+                def verify_pixels(active=True):
+                    wait_until(lambda: window.isActiveWindow() == active)
+                    QTest.qWait(250)  # Allow the compositor's restore/activation animation to finish.
+                    ctypes.windll.dwmapi.DwmFlush()
+                    expected = window.grab().toImage()
+                    w, h = expected.width(), expected.height()
+                    # The app's hairline occupies one device pixel at either scaling.
+                    self.assertEqual(expected.pixelColor(w * 3 // 5, 0) == expected.pixelColor(w * 3 // 5, 1),
+                                     window.isMaximized())
+                    origin = wintypes.POINT()
+                    self.assertTrue(user.ClientToScreen(int(window.winId()), ctypes.byref(origin)))
+                    for inset in (1, 3, 5):
+                        for x, y in ((w * 3 // 5, inset), (inset, h // 2),
+                                     (w - 1 - inset, h // 4), (w // 8, h - 1 - inset)):
+                            rgb = gdi.GetPixel(dc, origin.x + x, origin.y + y)
+                            actual = tuple((rgb >> shift) & 255 for shift in (0, 8, 16))
+                            wanted = expected.pixelColor(x, y).getRgb()[:3]
+                            self.assertLessEqual(max(abs(a - b) for a, b in zip(actual, wanted)), 12,
+                                                 (x, y, actual, wanted, window.windowState()))
+
+                verify_pixels()
+                focus_target = QLabel("桌面边缘测试")
+                try:
+                    focus_target.move(window.geometry().center())
+                    focus_target.show()
+                    focus_target.activateWindow()
+                    verify_pixels(active=False)
+                finally:
+                    focus_target.close()
+                window.open_home()
+                window.maximize_button.click()
+                self.assertTrue(window.isMaximized())
+                verify_pixels()
+                window.maximize_button.click()
+                verify_pixels()
+                window.showMinimized()
+                wait_until(lambda: not window.isVisible() or window.isMinimized())
+                window.open_home()
+                verify_pixels()
+            finally:
+                user.ReleaseDC(None, dc)
+                window.shutdown()
+                window.hide()
+                window.deleteLater()
+
     def test_shell_reflows_on_first_show_and_resize(self):
         with TemporaryDirectory() as tmp, patch.object(QProcess, "start"):
             window = Window(Notebook(Path(tmp) / "book.sqlite"))
@@ -74,7 +136,7 @@ class Checks(unittest.TestCase):
                 self.assertFalse(window.backdrop.isNull())
                 nav = [b for b in window.sidebar.findChildren(QPushButton) if b.property("role") == "nav"]
                 self.assertEqual([b.text() for b in nav], ["首页", "对照翻译", "生词本", "设置"])
-                wait_until(lambda: home.total.text() == "0")
+                wait_until(lambda: home.total.accessibleName() == "累计查词 0 次")
                 for width, height in ((1080, 675), (820, 500), (740, 480), (570, 485), (540, 610), (540, 800)):
                     window.resize(width, height)
                     QApplication.processEvents()
@@ -95,16 +157,24 @@ class Checks(unittest.TestCase):
                         self.assertGreater(home.title.y(), home.height() // 2)
                 # Migrated profiles and a read failure must not look like a fresh notebook.
                 home.set_stats((17, 0, 2, 1, []))
-                self.assertTrue(home.metrics.isVisible())
-                self.assertEqual(home.total.text(), "17")
+                self.assertFalse(home.metrics.isVisible())
+                self.assertTrue(home.title.isVisible())
+                self.assertTrue(home.past_activity.isVisible())
+                self.assertIn("累计查词 17 次", home.past_activity.text())
+                self.assertIn("待复习 1", home.past_activity.text())
                 self.assertFalse(home.sheet.isVisible())
-                self.assertTrue(home.notice.isVisible())
+                self.assertFalse(home.notice.isVisible())
+                home.set_stats((6, 0, 0, 0, []))
+                self.assertEqual(home.past_activity.text(), "累计查词 6 次")
                 home.set_stats(None)
                 self.assertIn("无法读取", home.notice.text())
+                self.assertFalse(home.past_activity.isVisible())
                 self.assertFalse(home.metrics.isVisible())
                 rows = [(f"word-{i}", "en", "释义") for i in range(6)]
                 home.set_stats((18, 1, 2, 1, rows))
                 self.assertFalse(home.notice.isVisible())
+                self.assertFalse(home.past_activity.isVisible())
+                self.assertTrue(home.metrics.isVisible())
                 self.assertTrue(home.table.isVisible())
                 self.assertEqual(home.table.rowCount(), 6)
                 for width, height in ((1000, 620), (540, 800), (540, 390)):
@@ -215,7 +285,7 @@ class Checks(unittest.TestCase):
             try:
                 window.show()
                 self.assertIs(window.tabs.currentWidget(), home)
-                wait_until(lambda: home.total.text() == "0" and home.title.isVisible())
+                wait_until(lambda: home.total.accessibleName() == "累计查词 0 次" and home.title.isVisible())
                 self.assertFalse(home.notice.isVisible())
                 self.assertFalse(home.sheet.isVisible())
                 self.assertEqual(home.table.rowCount(), 0)
@@ -231,7 +301,8 @@ class Checks(unittest.TestCase):
                 window.card.save.click()
                 window.card.close()
                 window.tabs.setCurrentWidget(home)
-                wait_until(lambda: home.total.text() == "1" and home.table.isVisible() and "已收藏 1" in home.activity.text())
+                wait_until(lambda: home.total.accessibleName() == "累计查词 1 次" and home.table.isVisible()
+                           and "已收藏 1" in home.activity.text())
                 self.assertEqual(home.table.item(0, 0).text(), "bank")
                 self.assertIn("岸", home.table.item(0, 1).text())
                 self.assertEqual(home.table.item(0, 2).text(), "英语")
@@ -1008,7 +1079,7 @@ class Checks(unittest.TestCase):
             sample.hide()
             window.open_home()
             self.assertTrue(QTest.qWaitForWindowExposed(window))
-            wait_until(lambda: window.isActiveWindow() and window.home.total.text() == "2")
+            wait_until(lambda: window.isActiveWindow() and window.home.total.accessibleName() == "累计查词 2 次")
             self.assertEqual([window.home.table.item(i, 0).text() for i in range(2)], ["MVP", "bank"])
             self.assertIn("最小可行产品", window.home.table.item(0, 1).text())
             window.trigger.setCurrentIndex(window.trigger.findData("off"))
