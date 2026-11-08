@@ -169,7 +169,7 @@ class LanguageTests(unittest.TestCase):
                 engines = SimpleNamespace(
                     available_recognizer_languages=[Language("en-US"), Language(OCR_TAGS[code])],
                     try_create_from_language=lambda lang: lang.language_tag)
-                with patch("reader.OcrEngine", engines), patch("reader.read_passage", side_effect=[
+                with patch("reader.OcrEngine", engines), patch("reader.read_from_pack", side_effect=ValueError()), patch("reader.read_passage", side_effect=[
                         ValueError("未识别到文字"), expected]) as read:
                     result = asyncio.run(recognize(image, point))
                 self.assertEqual(result.source_code, code)
@@ -182,7 +182,38 @@ class LanguageTests(unittest.TestCase):
         engines = SimpleNamespace(
             available_recognizer_languages=[Language(tag) for tag in ("en-US", "ja-JP", "ko-KR")],
             try_create_from_language=lambda lang: lang.language_tag)
-        with patch("reader.OcrEngine", engines), patch("reader.read_passage", side_effect=[
+        with patch("reader.OcrEngine", engines), patch("reader.read_from_pack", side_effect=ValueError()), patch("reader.read_passage", side_effect=[
                 ValueError("未识别到文字"), Passage("ノ"), Passage(SAMPLES["ko"][0])]):
             result = asyncio.run(recognize(object()))
         self.assertEqual((result.source_code, result.text), ("ko", SAMPLES["ko"][0]))
+
+    def test_short_latin_title_recovers_after_native_ocr_misses(self):
+        font = QFont("Segoe UI")
+        font.setPixelSize(15)
+        image = QImage(160, 24, QImage.Format_RGB32)
+        image.fill(0xfff2f6fb)
+        with QPainter(image) as painter:
+            painter.setFont(font)
+            painter.drawText(5, 17, "conjoined (interlude)")
+        with patch("reader.read_passage", side_effect=ValueError("no native hit")):
+            for hit in (None, QPointF(38, 12)):
+                result = asyncio.run(recognize(image, hit))
+                self.assertEqual(result.text.casefold(), "conjoined (interlude)")
+                self.assertNotEqual(result.source_code, "ko")
+                if hit:
+                    self.assertEqual(result.word.casefold(), "conjoined")
+
+    def test_korean_fragments_among_misread_digits_do_not_establish_language(self):
+        noise = "00미이060 (10160ㅁ406)"
+        english = Language("en-US")
+        engines = SimpleNamespace(available_recognizer_languages=[english],
+                                  try_create_from_language=lambda lang: lang.language_tag)
+        def only_noisy_read(image, point, code):
+            if code == "ko":
+                return Passage(noise, (2, 4) if point else None, source_code="ko"), 62
+            raise ValueError("no confident Latin read")
+        with (patch("reader.OcrEngine", engines), patch("reader.read_passage", side_effect=ValueError("未识别")),
+              patch("reader.read_from_pack", side_effect=only_noisy_read)):
+            for hit in (None, QPointF(5, 12)):
+                with self.assertRaisesRegex(ValueError, "未识别"):
+                    asyncio.run(recognize(object(), hit))

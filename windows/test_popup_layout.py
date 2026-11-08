@@ -4,10 +4,33 @@ from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication
 
 from popup import Card
+from lookup import explain
 from reader import Passage
 
 
 class PopupLayoutTests(unittest.TestCase):
+    def test_standalone_dictionary_card_keeps_secondary_actions_in_menu(self):
+        word = Passage("warehouse", (0, 9), source_code="en")
+        result, excerpt, language, pos = explain(word)
+        card = Card()
+        self.addCleanup(card.close)
+        card.show_result(word, *result, QPoint(20, 20), excerpt, language, pos, can_search=True)
+        self.assertEqual(card.headword.text(), "warehouse")
+        self.assertTrue(card.phonetic.isVisible())
+        self.assertTrue(card.listen.isVisible())
+        self.assertTrue(card.pin.isVisible())
+        self.assertTrue(card.save.isVisible())
+        self.assertEqual(card.text.toPlainText().splitlines(), ["名词 · 英语", "仓库"])
+        self.assertLess(card.height(), 190)
+        card.prepare_menu()
+        actions = {action.text(): action for action in card.more.menu().actions()}
+        self.assertIn("英汉词典 · ECDICT", actions)
+        actions["更多释义"].trigger()
+        self.assertIn("货栈", card.text.toPlainText())
+        actions["复制译文"].trigger()
+        self.assertEqual(QApplication.clipboard().text(), result[1])
+        self.assertNotIn("warehouse", card.text.toPlainText())
+
     def test_region_starts_with_translation_and_copies_it_in_both_views(self):
         card = Card()
         self.addCleanup(card.close)

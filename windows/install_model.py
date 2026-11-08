@@ -94,17 +94,19 @@ POS_URL = ("https://raw.githubusercontent.com/nltk/nltk_data/"
 ECDICT_REV = "39cfb9672c0906b63569e0453c2e6abfb9ab182a"
 ECDICT_URL = f"https://raw.githubusercontent.com/skywind3000/ECDICT/{ECDICT_REV}/ecdict.csv"
 ECDICT_SHA = "d1ecbdf9ee2b920afb6f430ca6b6bb9f559588cf0dff86e04bd255f9390843cc"
-LEXICON = MODEL_DIR / f"ecdict-{ECDICT_REV[:8]}-v2.sqlite3"
+LEXICON = MODEL_DIR / f"ecdict-{ECDICT_REV[:8]}-v3.sqlite3"
 
 _LINES = re.compile(r"\\r\\n|\\n|\r?\n")
-_POS = re.compile(r"^(?:a|adj|adv|abbr|art|aux|conj|det|int|interj|n|num|p|pl|prep|pron|v|vi|vt)\.\s*", re.I)
+_POS = re.compile(r"^(a|adj|adv|abbr|art|aux|conj|det|int|interj|n|num|p|pl|prep|pron|v|vi|vt)\.\s*", re.I)
 _LABEL = re.compile(r"\[[^\]]{1,24}\]")
 _CHINESE = re.compile(r"[\u3400-\u9fff]")
 
 
-def _brief_gloss(translation):
+def _first_sense(translation):
     for line in _LINES.split(translation):
-        line = _POS.sub("", line.strip()).strip()
+        line = line.strip()
+        pos = _POS.match(line)
+        line = line[pos.end():].strip() if pos else line
         # A label such as "[网络]" alone does not make an echoed headword a gloss.
         if not _CHINESE.search(_LABEL.sub("", line)):
             continue
@@ -112,8 +114,8 @@ def _brief_gloss(translation):
             separators = list(re.finditer(r"[;,，；。]", line[:96]))
             end = separators[-1].start() if separators and separators[-1].start() >= 12 else 95
             line = line[:end].rstrip() + "…"
-        return line
-    return ""
+        return line, pos[1].lower() if pos else ""
+    return "", ""
 
 
 def _common_word(row):
@@ -127,16 +129,17 @@ def _common_word(row):
 def _build_lexicon(source, dest):
     with source.open(encoding="utf-8-sig", newline="") as data, closing(sqlite3.connect(dest)) as db:
         db.execute("CREATE TABLE entries (word TEXT PRIMARY KEY, gloss TEXT NOT NULL,"
-                   " abbreviation INTEGER NOT NULL, common INTEGER NOT NULL) WITHOUT ROWID")
+                   " abbreviation INTEGER NOT NULL, common INTEGER NOT NULL, phonetic TEXT, pos TEXT) WITHOUT ROWID")
         variants = []
         for row in csv.DictReader(data):
             word = row["word"].strip()
-            gloss = _brief_gloss(row["translation"])
+            gloss, pos = _first_sense(row["translation"])
             if not word or not gloss:
                 continue
             common = _common_word(row)
             abbreviation = row["translation"].lstrip().startswith("abbr.")
-            db.execute("INSERT INTO entries VALUES (?, ?, ?, ?)", (word, gloss, abbreviation, common))
+            db.execute("INSERT INTO entries VALUES (?, ?, ?, ?, ?, ?)",
+                       (word, gloss, abbreviation, common, (row.get("phonetic") or "").strip(), pos))
             if not common and not abbreviation:
                 # Surface forms such as 'banked' often omit the lemma's ranks.
                 lemma = re.search(r"(?:^|/)0:([^/]+)", row.get("exchange") or "")
@@ -155,7 +158,7 @@ def _lexicon_ready(path):
     try:
         with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
             return (db.execute("SELECT digest FROM source").fetchone() == (ECDICT_SHA,)
-                    and db.execute("SELECT word, gloss, abbreviation, common FROM entries LIMIT 1").fetchone() is not None
+                    and db.execute("SELECT word, gloss, abbreviation, common, phonetic, pos FROM entries LIMIT 1").fetchone() is not None
                     and db.execute("PRAGMA quick_check(1)").fetchone() == ("ok",))
     except sqlite3.Error:
         return False

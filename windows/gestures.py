@@ -9,6 +9,7 @@ from threading import Thread, get_native_id
 
 
 CTRL_KEYS = {"left": 0xA2, "right": 0xA3, "off": None}
+TAP_LIMIT_MS = 350
 
 WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP = 0x200, 0x201, 0x202
 VK_ESCAPE = 0x1B
@@ -36,6 +37,11 @@ user32.GetMessageW.argtypes = (ctypes.POINTER(wt.MSG), wt.HWND, wt.UINT, wt.UINT
 user32.PostThreadMessageW.argtypes = (wt.DWORD, wt.UINT, wt.WPARAM, wt.LPARAM)
 
 
+class KeyboardEvent(ctypes.Structure):
+    _fields_ = [("vk", wt.DWORD), ("scan", wt.DWORD), ("flags", wt.DWORD),
+                ("time", wt.DWORD), ("extra", ctypes.c_size_t)]
+
+
 class MouseEvent(ctypes.Structure):
     _fields_ = [("point", wt.POINT), ("data", wt.DWORD), ("flags", wt.DWORD),
                 ("time", wt.DWORD), ("extra", ctypes.c_size_t)]
@@ -58,6 +64,7 @@ class CtrlGestures:
     def __init__(self, mode="left"):
         self.mode = mode
         self.held_ctrl = None
+        self.pressed_at = 0
         self.armed = False
         self.origin = None
         self.dragging = False
@@ -131,7 +138,8 @@ class CtrlGestures:
 
     def keyboard(self, code, message, payload):
         if code == 0:
-            vk = wt.DWORD.from_address(payload).value
+            event = KeyboardEvent.from_address(payload)
+            vk = event.vk
             down = message in (0x100, 0x104)  # WM_KEYDOWN / WM_SYSKEYDOWN
             wanted = CTRL_KEYS[self.mode]
             if self.held_ctrl is not None and self.held_ctrl != wanted:
@@ -139,11 +147,13 @@ class CtrlGestures:
             if vk == self.held_ctrl or (self.held_ctrl is None and vk == wanted):
                 if down and self.held_ctrl is None:
                     self.held_ctrl = vk
+                    self.pressed_at = event.time
                     # Also reject chords whose other key/button went down first.
                     self.armed = not any(user32.GetAsyncKeyState(key) & 0x8000
                                          for key in range(1, 255) if key not in (0x11, vk))
                 elif not down:
-                    if self.armed and not self.owns_button:
+                    elapsed = (event.time - self.pressed_at) & 0xffffffff
+                    if self.armed and not self.owns_button and elapsed <= TAP_LIMIT_MS:
                         point = wt.POINT()
                         if user32.GetCursorPos(ctypes.byref(point)):
                             self.events.put(("lookup", (point.x, point.y), None))

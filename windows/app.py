@@ -408,7 +408,7 @@ class Window(QWidget):
             elif word:
                 self.notebook.update_recent_gloss(word, language, gloss)
             if visible:
-                self.stats_ready.emit(self.notebook.dashboard())
+                self.stats_ready.emit(self.notebook.activity_snapshot())
         except (sqlite3.Error, OSError):
             if visible:
                 self.stats_ready.emit(None)
@@ -480,7 +480,7 @@ class Window(QWidget):
         try:
             self.notebook.save(*self.saved_result)
         except (sqlite3.Error, OSError) as error:
-            self.card.caption.setText(f"收藏失败：{error}")
+            self.card.show_notice(f"收藏失败：{error}")
             return
         self.card.save.setText("已收藏")
         self.card.save.setEnabled(False)
@@ -543,7 +543,7 @@ class Window(QWidget):
 
     def on_gesture(self, action, origin, end):
         if action == "dismiss":
-            if origin == self.ticket and self.card.isVisible():
+            if origin == self.ticket and self.card.isVisible() and not self.card.pin.isChecked():
                 self.card.close()
             return
         if action in ("lookup", "start"):
