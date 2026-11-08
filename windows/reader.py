@@ -331,6 +331,7 @@ def read_from_pack(image, point, code):
         raise ValueError(f"请在「设置 → 语言包」下载{NAMES[code]}识字和翻译资源。")
     frame = image
     single_line = False
+    ink_height = 0
     if point is not None:
         width, height = min(image.width(), 1200), min(image.height(), 96)
         left = max(0, min(image.width() - width, int(point.x()) - width // 2))
@@ -349,16 +350,19 @@ def read_from_pack(image, point, code):
                 else:
                     bands[-1][1] = y
         single_line = len(bands) == 1 and frame.height() <= 64
-        if point is not None and len(bands) > 1:
+        if single_line:
+            ink_height = bands[0][1] - bands[0][0] + 1
+        if point is not None and not single_line:
             # Neighbouring titles can use different scripts. Use a clean strip
             # only when the pointer is actually inside a separated line of ink.
             for index, (top, bottom) in enumerate(bands):
                 if top <= point.y() <= bottom and 3 <= bottom - top < 64:
-                    above = (bands[index - 1][1] + top) // 2 + 1 if index else 0
-                    below = (bands[index + 1][0] + bottom) // 2 if index + 1 < len(bands) else frame.height()
+                    above = (bands[index - 1][1] + top) // 2 + 1 if index else max(0, top - 7)
+                    below = (bands[index + 1][0] + bottom) // 2 if index + 1 < len(bands) else min(frame.height(), bottom + 8)
                     frame = frame.copy(0, above, frame.width(), below - above)
                     point -= QPointF(0, above)
                     single_line = True
+                    ink_height = bottom - top + 1
                     break
     if single_line and frame.width() >= 4 * frame.height():
         # A little background around a tightly selected label keeps thin edge
@@ -375,6 +379,10 @@ def read_from_pack(image, point, code):
         zoom = 2
     else:
         zoom = 3 if image.height() <= 64 else 1.5
+    if ink_height:
+        # Large screen fonts already have enough detail. Over-enlarging CJK
+        # strokes can change a well-defined character into another character.
+        zoom = min(zoom, max(1, 40 / ink_height))
     factor = min(zoom, 3200 / max(frame.width(), frame.height()))
     pixels = frame.scaled(max(1, round(frame.width() * factor)), max(1, round(frame.height() * factor)),
                           Qt.IgnoreAspectRatio, Qt.SmoothTransformation).convertToFormat(QImage.Format_Grayscale8)
@@ -464,7 +472,7 @@ async def recognize(image, point=None, source_code=""):
     if source_code:
         try:
             passage = await read_native(source_code)
-        except ValueError:
+        except (ValueError, OSError):
             passage = read_from_pack(image, point, source_code)[0]
         passage.source_code = source_code
         return passage
@@ -476,7 +484,7 @@ async def recognize(image, point=None, source_code=""):
         if code not in native_reads:
             try:
                 native_reads[code] = await read_native(code)
-            except ValueError:
+            except (ValueError, OSError):
                 native_reads[code] = None
         return native_reads[code]
 
@@ -503,7 +511,10 @@ async def recognize(image, point=None, source_code=""):
                 chosen.source_code = detected
                 return chosen
 
-    latin = None
+    # Keep the native Latin hypothesis eligible for an independent match even
+    # when its offline pack is missing or fails to read this particular label.
+    latin = initial if initial and LATIN.search(target(initial)) and all(
+        not c.isalpha() or LATIN.fullmatch(c) for c in target(initial)) else None
     latin_confidence = 0
     punctuation = False
     if first == "en" and ocr_file("en"):

@@ -186,6 +186,20 @@ class RoutingTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "未识别"):
                     asyncio.run(recognize(object(), hit))
 
+    def test_missing_english_pack_and_native_engine_failure(self):
+        tags = [SimpleNamespace(language_tag=t) for t in ("en-US", "ko-KR")]
+        engines = SimpleNamespace(available_recognizer_languages=tags,
+                                  try_create_from_language=lambda lang: lang.language_tag)
+        english = Passage("Go", (0, 2))
+        with (patch("reader.OcrEngine", engines), patch("reader.ocr_file", side_effect=lambda c: c == "ja"),
+              patch("reader.read_passage", side_effect=[english, Passage("고", (0, 1))]),
+              patch("reader.read_from_pack", return_value=(Passage("Go", (0, 2)), 90)) as pack):
+            self.assertIs(asyncio.run(recognize(object(), QPointF(5, 12))), english)
+            self.assertEqual(pack.call_args.args[-1], "ja")
+        with (patch("reader.OcrEngine", engines), patch("reader.read_passage", side_effect=OSError("native OCR failed")),
+              patch("reader.ocr_file", return_value=True), patch("reader.read_from_pack", return_value=(english, 99))):
+            self.assertEqual(asyncio.run(recognize(object(), QPointF(5, 12))).word, "Go")
+
     def test_statistical_language_predictions_must_match_the_written_script(self):
         for code in ("ja", "ko", "ru"):
             matches = [(code, code, 99, 100)]
