@@ -1,9 +1,9 @@
 """Windows lookup dashboard."""
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFrame, QHeaderView, QHBoxLayout, QLabel, QPushButton,
-    QSizePolicy, QSpacerItem, QStackedLayout, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QAbstractScrollArea, QFrame, QHeaderView, QHBoxLayout, QLabel, QPushButton,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from languages import NAMES
@@ -12,32 +12,33 @@ from theme import ui_icon
 
 HOME_STYLE = """
     QWidget#home {background:transparent;}
-    QFrame#recentSheet {background:rgba(253,252,248,197); border:1px solid rgba(66,65,57,66); border-radius:6px;}
-    QLabel#totalLabel {color:#464641; font-size:15px; font-weight:500;}
-    QLabel#totalValue {font:600 48px 'Segoe UI'; color:#151514;}
-    QLabel#metricUnit {font-size:16px; color:#565650;}
-    QLabel#activity {font-size:13px; color:#484842;}
-    QFrame#guideBar {background:rgba(250,249,245,194); border:1px solid rgba(66,65,57,52); border-radius:4px;}
-    QPushButton#useHint {background:transparent; color:#44443e; border:1px solid transparent;
-        font-size:13px; text-align:left; padding:3px 0;}
-    QPushButton#useHint:focus, QPushButton#useHint:hover {border-bottom:1px solid #565650;}
-    QPushButton#region {background:transparent; border:1px solid #a09f97; border-radius:3px;
-        padding:3px 9px; font-size:13px; color:#272724;}
-    QPushButton#region:focus, QPushButton#region:hover {background:#e6e5de; border-color:#54544e;}
-    QLabel#recentTitle {font-size:20px; font-weight:600;}
-    QLabel#emptyHistory {color:#696962; font-size:14px;}
-    QTableWidget#recentWords, QHeaderView {background:transparent; border:0; outline:0;
-        selection-background-color:#e4e3dc; selection-color:#171715;}
-    QTableWidget#recentWords::item {border:0; border-bottom:1px solid rgba(74,73,65,50); padding:0 4px;}
-    QTableWidget#recentWords::item:focus {border:1px solid #76766d;}
-    QHeaderView::section {background:transparent; color:#55554e; font-size:12px; padding:3px 4px;
-        border:0; border-bottom:1px solid #a7a69e;}
-    QLabel#homeWarning {background:rgba(250,249,246,220); color:#862d21; padding:3px 7px;}
+    QLabel#coverTitle {font:600 56px 'Noto Serif SC','SimSun','Microsoft YaHei UI'; color:#171715;}
+    QLabel#totalLabel {color:#4d4a45; font-size:14px;}
+    QLabel#totalValue {font:600 56px 'Spectral','Georgia'; color:#171715;}
+    QLabel#metricUnit {font-size:15px; color:#514e48;}
+    QLabel#activity, QLabel#historyNotice {color:#504d48; font-size:13px;}
+    QPushButton#useHint {background:transparent; color:#413f3b; border:1px solid transparent;
+        padding:2px 0; text-align:left; font-size:14px;}
+    QPushButton#useHint:focus, QPushButton#useHint:hover {border-bottom:1px solid #79756e;}
+    QPushButton#region {background:#232321; color:#fffefa; border:1px solid #232321;
+        padding:6px 14px; border-radius:4px; font-size:14px; font-weight:600;}
+    QPushButton#region:hover {background:#40403b;}
+    QPushButton#region:focus {border:2px solid #827f74; padding:5px 13px;}
+    QPushButton#readOriginal {background:transparent; color:#34332f; border:1px solid transparent;
+        padding:6px 9px; border-radius:4px; font-size:14px;}
+    QPushButton#readOriginal:hover, QPushButton#readOriginal:focus {border-color:#928e84;}
+    QLabel#recentTitle {color:#272622; font-size:16px; font-weight:600;}
+    QTableWidget#recentWords {background:transparent; border:0; border-top:1px solid #a5a198;
+        outline:0; selection-background-color:#dfddd5; selection-color:#171715;}
+    QTableWidget#recentWords::item {border:0; border-bottom:1px solid rgba(74,73,65,45); padding:0 2px;}
+    QTableWidget#recentWords::item:focus {border:1px solid #767369;}
+    QLabel#homeWarning {color:#862d21; font-size:13px;}
 """
 
 
 class HomePage(QWidget):
     region_requested = Signal()
+    reader_requested = Signal()
     settings_requested = Signal()
     stats_requested = Signal()
 
@@ -50,59 +51,37 @@ class HomePage(QWidget):
         outer.setSpacing(0)
         self.column = QWidget()
         outer.addWidget(self.column)
-        outer.addStretch(1)
+        outer.addStretch()
         self.page = QVBoxLayout(self.column)
-        self.page.setSpacing(9)
-        self.summary = QVBoxLayout()
-        self.summary.setSpacing(2)
-        self.page.addLayout(self.summary)
-        self.summary.addWidget(QLabel("累计查词", objectName="totalLabel"))
+        self.page.setSpacing(0)
+        self.page.addStretch(2)
+        self.title = QLabel(objectName="coverTitle")
+        self.page.addWidget(self.title)
+
+        self.metrics = QWidget()
+        metrics = QVBoxLayout(self.metrics)
+        metrics.setContentsMargins(0, 0, 0, 0)
+        metrics.setSpacing(0)
+        metrics.addWidget(QLabel("累计查词", objectName="totalLabel"))
         amount = QHBoxLayout()
         amount.setSpacing(7)
-        self.total = QLabel("—", objectName="totalValue")
+        self.total = QLabel(objectName="totalValue")
         self.total.setAccessibleName("累计查词次数")
         amount.addWidget(self.total)
         unit = QLabel("次", objectName="metricUnit")
-        unit.setContentsMargins(0, 0, 0, 8)
+        unit.setContentsMargins(0, 0, 0, 10)
         amount.addWidget(unit, 0, Qt.AlignBottom)
         amount.addStretch()
-        self.summary.addLayout(amount)
+        metrics.addLayout(amount)
         self.activity = QLabel(objectName="activity")
-        self.summary.addWidget(self.activity)
-        self.art_space = QSpacerItem(0, 3, QSizePolicy.Minimum, QSizePolicy.Fixed)
-        self.page.addSpacerItem(self.art_space)
-        bar = QFrame(objectName="guideBar")
-        self.tools = QHBoxLayout(bar)
-        self.tools.setSpacing(8)
-        self.instructions = QPushButton(objectName="useHint")
-        self.instructions.setToolTip("更改取词键")
-        self.instructions.setCursor(Qt.PointingHandCursor)
-        self.instructions.clicked.connect(self.settings_requested)
-        self.tools.addWidget(self.instructions, 0, Qt.AlignLeft)
-        self.tools.addStretch()
-        self.region = QPushButton(ui_icon("region"), "框选翻译", objectName="region")
-        self.region.setIconSize(QSize(16, 16))
-        self.region.setCursor(Qt.PointingHandCursor)
-        self.region.clicked.connect(self.region_requested)
-        self.tools.addWidget(self.region)
-        self.page.addWidget(bar)
+        metrics.addWidget(self.activity)
+        self.page.addWidget(self.metrics)
 
-        self.warning = QLabel(objectName="homeWarning")
-        self.warning.setWordWrap(True)
-        self.warning.hide()
-        self.page.addWidget(self.warning)
-        self.sheet = QFrame(objectName="recentSheet")
-        self.page.addWidget(self.sheet, 1)
-        self.page.addStretch()
-        self.history = QVBoxLayout(self.sheet)
-        self.history.setSpacing(7)
-        self.history.addWidget(QLabel("最近查词", objectName="recentTitle"))
-        self.contents = QStackedLayout()
-        self.history.addLayout(self.contents, 1)
-
-        self.empty = QLabel(objectName="emptyHistory")
-        self.empty.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.contents.addWidget(self.empty)
+        self.sheet = QWidget()
+        history = QVBoxLayout(self.sheet)
+        history.setContentsMargins(0, 14, 0, 0)
+        history.setSpacing(5)
+        history.addWidget(QLabel("最近查词", objectName="recentTitle"))
         self.table = QTableWidget(0, 3, objectName="recentWords")
         self.table.setAccessibleName("最近查词，从新到旧")
         self.table.setHorizontalHeaderLabels(["词语", "释义", "语种"])
@@ -111,43 +90,78 @@ class HomePage(QWidget):
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setWordWrap(False)
         self.table.setShowGrid(False)
+        self.table.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.table.viewport().setAutoFillBackground(False)
         self.table.setFrameShape(QFrame.NoFrame)
         self.table.verticalHeader().hide()
-        self.table.verticalHeader().setDefaultSectionSize(39)
+        self.table.verticalHeader().setDefaultSectionSize(34)
         header = self.table.horizontalHeader()
-        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         header.setSectionResizeMode(QHeaderView.Fixed)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.setHighlightSections(False)
-        header.viewport().setAutoFillBackground(False)
-        self.contents.addWidget(self.table)
+        header.hide()
+        history.addWidget(self.table)
+        self.page.addWidget(self.sheet)
+
+        self.notice = QLabel("正在读取查词记录…", objectName="historyNotice")
+        self.page.addWidget(self.notice)
+        self.page.addSpacing(8)
+        self.instructions = QPushButton(objectName="useHint")
+        self.instructions.setToolTip("更改取词键")
+        self.instructions.setCursor(Qt.PointingHandCursor)
+        self.instructions.clicked.connect(self.settings_requested)
+        self.page.addWidget(self.instructions, 0, Qt.AlignLeft)
+        self.page.addSpacing(10)
+        actions = QHBoxLayout()
+        actions.setSpacing(6)
+        self.region = QPushButton(ui_icon("region", "#fffefa"), "框选翻译", objectName="region")
+        self.region.setIconSize(QSize(16, 16))
+        self.region.setCursor(Qt.PointingHandCursor)
+        self.region.clicked.connect(self.region_requested)
+        actions.addWidget(self.region)
+        self.reader = QPushButton(ui_icon("book"), "打开对照翻译", objectName="readOriginal")
+        self.reader.setIconSize(QSize(16, 16))
+        self.reader.setCursor(Qt.PointingHandCursor)
+        self.reader.clicked.connect(self.reader_requested)
+        actions.addWidget(self.reader)
+        actions.addStretch()
+        self.page.addLayout(actions)
+        self.warning = QLabel(objectName="homeWarning")
+        self.warning.setWordWrap(True)
+        self.warning.hide()
+        self.page.addWidget(self.warning)
+        self.page.addStretch(3)
         self.rows = []
+        self.metrics.hide()
+        self.sheet.hide()
         self.refresh = QTimer(self, interval=30_000)
         self.refresh.timeout.connect(self.stats_requested)
         self.set_mode("left")
-        self.empty.setText("正在读取查词记录…")
         self.arrange()
 
     def set_mode(self, mode):
         key = {"left": "左 Ctrl", "right": "右 Ctrl"}.get(mode)
-        hint = f"指向单词轻按{key}查词，按住拖选可翻译一段。" if key else "在「对照翻译」双击单词查词，或点「框选翻译」。"
+        self.title.setText("屏幕取词" if key else "原文查词")
+        hint = f"指向外文单词，轻按 {key} 查看释义。" if key else "在「对照翻译」中双击单词，即可查看释义。"
         self.instructions.setText(hint)
         self.instructions.setAccessibleName(hint + " 点击更改取词键。")
 
     def set_stats(self, snapshot):
+        total, today, saved, due, recent = snapshot if snapshot is not None else (0, 0, 0, 0, [])
+        has_activity = bool(total or today or saved or due or recent)
+        self.metrics.setVisible(has_activity)
+        self.title.setVisible(not has_activity)
+        self.total.setText(f"{total:,}")
+        self.activity.setText(f"今日 {today:,} 次     ·     已收藏 {saved:,}     ·     待复习 {due:,}")
+        message = ""
         if snapshot is None:
-            self.total.setText("—")
-            self.activity.clear()
-            self.empty.setText("暂时无法读取查词记录")
-            recent = []
-        else:
-            total, today, saved, due, recent = snapshot
-            self.total.setText(f"{total:,}")
-            self.activity.setText(f"今日 {today:,} 次     ·     已收藏 {saved:,}     ·     待复习 {due:,}")
-            self.empty.setText("还没有查词记录")
-        self.contents.setCurrentWidget(self.table if recent else self.empty)
-        self.sheet.setMaximumHeight(90 + len(recent) * self.table.verticalHeader().defaultSectionSize())
+            message = "暂时无法读取查词记录"
+        elif has_activity and not recent:
+            message = "下次查词后，这里会显示最近记录。"
+        self.notice.setText(message)
+        self.notice.setVisible(bool(message))
+        self.sheet.setVisible(bool(recent))
+        self.update()
         if recent == self.rows:
             return
         self.rows = recent
@@ -161,8 +175,11 @@ class HomePage(QWidget):
                 font.setPixelSize((16, 14, 12)[column])
                 font.setWeight(QFont.DemiBold if column == 0 else QFont.Normal)
                 item.setFont(font)
-                item.setForeground(QColor(("#181816", "#363632", "#484841")[column]))
+                item.setForeground(QColor(("#181816", "#363632", "#56544e")[column]))
+                if column == 2:
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.table.setItem(row, column, item)
+        self.table.setMaximumHeight(2 + len(recent) * self.table.verticalHeader().defaultSectionSize())
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -170,18 +187,36 @@ class HomePage(QWidget):
 
     def arrange(self):
         compact = self.width() < 720
-        margin = 14 if compact else 30
-        width = min(self.width(), max(467, min(740, round(self.width() * 0.58))))
+        self.portrait = self.height() > self.width() * 1.15
+        margin = 22 if compact else min(64, round(self.width() * 0.052))
+        width = self.width() if self.portrait else min(self.width(), max(330, min(640, round(self.width() * 0.48))))
         self.column.setFixedWidth(width)
-        # In a tall window leave the portrait visible above the history sheet.
-        gap = max(3, min(240, round((self.height() - self.width()) * 0.85))) if compact else 3
-        self.art_space.changeSize(0, gap, QSizePolicy.Minimum, QSizePolicy.Fixed)
-        self.page.invalidate()
-        self.page.setContentsMargins(margin, 14 if compact else 26, 6, 14)
-        self.tools.setContentsMargins(9, 4, 6, 4)
-        self.history.setContentsMargins(14, 10, 14, 9)
-        self.table.setColumnWidth(0, max(96, min(158, width // 4)))
-        self.table.setColumnWidth(2, 62 if compact else 72)
+        self.page.setStretch(0, 7 if self.portrait else 2)
+        self.page.setStretch(self.page.count() - 1, 1 if self.portrait else 3)
+        self.page.setContentsMargins(margin, 12, margin if self.portrait else 6, 12)
+        self.table.setColumnWidth(0, max(87, min(154, (width - margin) // 3)))
+        self.table.setColumnWidth(2, 47 if compact else 58)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        paper = QColor(250, 249, 246)
+        if self.portrait:
+            heading = self.title if self.metrics.isHidden() else self.metrics
+            top = heading.y()
+            wash = QLinearGradient(0, max(0, top - 140), 0, max(1, top + 24))
+            stops = ((0, 0), (0.35, 58), (0.75, 197), (1, 237))
+        else:
+            # The original landscape illustration already leaves paper at the left.
+            if self.metrics.isHidden() and self.width() >= 820 and self.width() > self.height() * 1.55:
+                return
+            edge = self.column.width()
+            wash = QLinearGradient(0, 0, edge + self.width() * 0.19, 0)
+            stops = ((0, 225), (0.7, 221), (0.8, 166), (0.9, 55), (1, 0))
+        for position, opacity in stops:
+            paper.setAlpha(opacity)
+            wash.setColorAt(position, paper)
+        with QPainter(self) as painter:
+            painter.fillRect(self.rect(), wash)
 
     def showEvent(self, event):
         super().showEvent(event)

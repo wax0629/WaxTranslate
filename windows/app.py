@@ -181,20 +181,19 @@ class Window(QWidget):
         self.tabs = QStackedWidget()
         outer.addWidget(self.tabs, 1)
         group = self.navigation = QButtonGroup(self)
-        for index, name in enumerate(("查词记录", "对照翻译", "生词本", "设置")):
-            if index:
-                rule = QFrame(objectName="pageDivider")
-                rule.setFixedSize(1, 15)
-                rail.addWidget(rule)
+        for index, name in enumerate(("首页", "对照翻译", "生词本", "设置")):
             nav = QPushButton(name)
             nav.setAccessibleName(name)
+            if name == "设置":
+                rail.addStretch()
+                nav.setIcon(ui_icon("settings"))
+                nav.setIconSize(QSize(14, 14))
             nav.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
             nav.setCheckable(True)
             nav.setProperty("role", "nav")
             nav.setCursor(Qt.PointingHandCursor)
             group.addButton(nav, index)
-            rail.addWidget(nav)
-        rail.addStretch()
+            rail.addWidget(nav, 0, Qt.AlignBottom)
         divider = QFrame(objectName="navDivider")
         divider.setFixedSize(1, 17)
         rail.addWidget(divider)
@@ -222,6 +221,7 @@ class Window(QWidget):
         self.home = HomePage()
         self.tabs.addWidget(self.home)
         self.home.region_requested.connect(lambda: self.begin(True))
+        self.home.reader_requested.connect(self.open_reader)
         self.home.settings_requested.connect(self.open_gesture_settings)
         self.home.stats_requested.connect(self.refresh_home)
         self.stats_ready.connect(self.home.set_stats)
@@ -307,7 +307,8 @@ class Window(QWidget):
         with QPainter(self) as painter:
             painter.setRenderHint(QPainter.SmoothPixmapTransform)
             painter.drawPixmap(QRectF(self.rect()), self.backdrop, QRectF(x, y, crop_w, crop_h))
-            # Keep the unboxed statistics legible when a portrait-shaped window crops the ink.
+            if self.tabs.currentWidget() is self.home:
+                return
             wash = QLinearGradient(0, 0, self.width(), 0)
             wash.setColorAt(0, QColor(250, 249, 246, 230))
             compact = self.width() < 720
@@ -319,12 +320,12 @@ class Window(QWidget):
         if self.compact == compact:
             return
         self.compact = compact
-        self.wordmark.setStyleSheet(f"font-size:{16 if compact else 21}px; padding-right:{6 if compact else 14}px;")
+        self.wordmark.setStyleSheet(f"font-size:{16 if compact else 20}px; padding-right:{8 if compact else 22}px;")
         self.sidebar.setFixedHeight(36 if compact else 38)
-        self.rail.setSpacing(3 if compact else 5)
+        self.rail.setSpacing(2 if compact else 4)
         for button in self.navigation.buttons():
-            button.setFixedHeight(28)
-            button.setStyleSheet(f"font-size:{13 if compact else 14}px; padding:0 {6 if compact else 8}px;")
+            button.setStyleSheet(f"font-size:13px; min-height:{28 if compact else 30}px;"
+                                 f"padding:0 {8 if compact else 16}px;")
         if compact:
             self.rail.setContentsMargins(12, 0, 8, 0)
             self.reading_layout.setContentsMargins(18, 18, 18, 18)

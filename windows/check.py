@@ -73,7 +73,8 @@ class Checks(unittest.TestCase):
                 home = window.home
                 self.assertFalse(window.backdrop.isNull())
                 nav = [b for b in window.sidebar.findChildren(QPushButton) if b.property("role") == "nav"]
-                self.assertEqual([b.text() for b in nav], ["查词记录", "对照翻译", "生词本", "设置"])
+                self.assertEqual([b.text() for b in nav], ["首页", "对照翻译", "生词本", "设置"])
+                wait_until(lambda: home.total.text() == "0")
                 for width, height in ((1080, 675), (820, 500), (740, 480), (570, 485), (540, 610), (540, 800)):
                     window.resize(width, height)
                     QApplication.processEvents()
@@ -82,13 +83,39 @@ class Checks(unittest.TestCase):
                     for button in nav:
                         self.assertTrue(window.sidebar.rect().contains(button.geometry()))
                         self.assertGreaterEqual(button.width(), button.sizeHint().width())
-                    for control in (home.total, home.activity, home.instructions, home.region):
+                    self.assertGreater(nav[-1].x(), nav[-2].geometry().right())
+                    self.assertFalse(home.metrics.isVisible())
+                    self.assertFalse(home.sheet.isVisible())
+                    for control in (home.title, home.instructions, home.region, home.reader):
                         bounds = QRect(control.mapTo(home, QPoint()), control.size())
                         self.assertTrue(home.rect().contains(bounds), (width, height, bounds))
                     self.assertGreaterEqual(home.instructions.width(), home.instructions.sizeHint().width())
                     self.assertFalse(home.instructions.geometry().intersects(home.region.geometry()))
-                    if width > 900:
-                        self.assertLess(home.sheet.mapTo(home, home.sheet.rect().topRight()).x(), width * 0.65)
+                    if home.portrait:
+                        self.assertGreater(home.title.y(), home.height() // 2)
+                # Migrated profiles and a read failure must not look like a fresh notebook.
+                home.set_stats((17, 0, 2, 1, []))
+                self.assertTrue(home.metrics.isVisible())
+                self.assertEqual(home.total.text(), "17")
+                self.assertFalse(home.sheet.isVisible())
+                self.assertTrue(home.notice.isVisible())
+                home.set_stats(None)
+                self.assertIn("无法读取", home.notice.text())
+                self.assertFalse(home.metrics.isVisible())
+                rows = [(f"word-{i}", "en", "释义") for i in range(6)]
+                home.set_stats((18, 1, 2, 1, rows))
+                self.assertFalse(home.notice.isVisible())
+                self.assertTrue(home.table.isVisible())
+                self.assertEqual(home.table.rowCount(), 6)
+                for width, height in ((1000, 620), (540, 800), (540, 390)):
+                    window.resize(width, height)
+                    QApplication.processEvents()
+                    self.assertTrue(home.rect().contains(QRect(home.reader.mapTo(home, QPoint()), home.reader.size())))
+                    if height >= 620:
+                        self.assertEqual(home.table.verticalScrollBar().maximum(), 0)
+                    else:
+                        home.table.scrollToBottom()
+                        self.assertGreaterEqual(home.table.rowAt(home.table.viewport().height() - 2), 5)
                 window.resize(570, 485)
                 self.assertLessEqual(window.width(), 572)
                 for index, button in enumerate(nav):
@@ -188,10 +215,13 @@ class Checks(unittest.TestCase):
             try:
                 window.show()
                 self.assertIs(window.tabs.currentWidget(), home)
-                wait_until(lambda: home.total.text() == "0" and home.empty.isVisible())
+                wait_until(lambda: home.total.text() == "0" and home.title.isVisible())
+                self.assertFalse(home.notice.isVisible())
+                self.assertFalse(home.sheet.isVisible())
                 self.assertEqual(home.table.rowCount(), 0)
                 self.assertIn("左 Ctrl", home.instructions.text())
-                window.open_reader()
+                home.reader.click()
+                self.assertIs(window.tabs.currentWidget(), window.reader_page)
                 editor = window.workspace.input
                 editor.setPlainText(RIVER)
                 editor.setTextCursor(editor.document().find("bank"))
@@ -205,6 +235,8 @@ class Checks(unittest.TestCase):
                 self.assertEqual(home.table.item(0, 0).text(), "bank")
                 self.assertIn("岸", home.table.item(0, 1).text())
                 self.assertEqual(home.table.item(0, 2).text(), "英语")
+                self.assertFalse(home.title.isVisible())
+                self.assertLessEqual(home.table.height(), home.table.rowHeight(0) + 2)
                 window.open_library()
                 window.library.review.click()
                 window.library.reveal.click()
