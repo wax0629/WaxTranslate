@@ -8,6 +8,7 @@ on:
       - 'windows/install_model.py'
       - 'windows/languages.py'
       - 'windows/test_languages.py'
+      - 'windows/test_ocr_routing.py'
       - 'windows/testdata/ocr-*.png'
       - '.github/scripts/install-test-ocr.ps1'
       - '.github/workflows/windows-ocr.yml'
@@ -42,3 +43,5 @@ jobs:
           .\.venv\Scripts\python.exe -c "from winrt.windows.media.ocr import OcrEngine; tags = {l.language_tag.split('-')[0] for l in OcrEngine.available_recognizer_languages}; print('Installed OCR:', sorted(tags)); assert {'ja', 'ko', 'ru'} <= tags"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           .\.venv\Scripts\python.exe windows\check.py -v -k screen_word_and_region
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          .\.venv\Scripts\python.exe windows\check.py -v -k test_ocr_routing

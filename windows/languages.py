@@ -14,6 +14,8 @@ KANA = re.compile(r"[ぁ-ゖァ-ヺｦ-ﾝ]")
 HANGUL = re.compile(r"[가-힣ᄀ-ᇿㄱ-ㆎ]")
 CYRILLIC = re.compile(r"[А-яЁё]")
 SHORT_CYRILLIC = re.compile(r"[А-яЁё]+[.!?]?")
+LATIN = re.compile(r"[A-Za-zÀ-ÖØ-öø-ɏ]")
+SOURCE_SCRIPTS = {"ja": re.compile(r"[ぁ-ゖァ-ヺｦ-ﾝ一-鿿]"), "ko": HANGUL, "ru": CYRILLIC}
 
 
 class UnsupportedLanguage(ValueError):
@@ -33,8 +35,7 @@ def _sentence_identifier():
 def script_ocr_score(text, code):
     # Compare independent recognizers on the same pixels. A stray kana glyph
     # in a failed Japanese pass must not outrank a complete Korean sentence.
-    native = {"ja": r"[ぁ-ゖァ-ヺｦ-ﾝ一-鿿]", "ko": HANGUL, "ru": CYRILLIC}[code]
-    count = len(re.findall(native, text))
+    count = len(SOURCE_SCRIPTS[code].findall(text))
     probability = dict(_sentence_identifier().rank(text)).get(code, 0)
     return count * (0.25 + 0.75 * probability)
 
@@ -47,7 +48,7 @@ def detect_source(text):
         return ""
     name, code, percent, _ = matches[0]
     confirmed = reliable and percent >= 80 and code != "un"
-    latin = re.search(r"[A-Za-zÀ-ɏ]", text)
+    latin = LATIN.search(text)
     if not confirmed or code in ("ja", "ko"):
         if HANGUL.search(text):
             return "ko"
@@ -56,12 +57,12 @@ def detect_source(text):
     if latin and len(re.findall(r"[^\W\d_]+", text)) < 3:
         return ""
     if confirmed and code in NAMES:
-        return code
+        return code if SOURCE_SCRIPTS.get(code, LATIN).search(text) else ""
     # CLD2 can confuse short Spanish sentences with Occitan. Check a second
     # offline identifier before routing a Latin sentence outside our models.
     if latin or CYRILLIC.search(text):
         candidate, confidence = _sentence_identifier().classify(text)
-        if candidate in NAMES and confidence >= 0.70:
+        if candidate in NAMES and confidence >= 0.70 and SOURCE_SCRIPTS.get(candidate, LATIN).search(text):
             return candidate
     if not confirmed:
         return ""

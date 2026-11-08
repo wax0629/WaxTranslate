@@ -17,7 +17,8 @@ from winrt.windows.media.ocr import OcrEngine
 from winrt.windows.storage.streams import DataWriter
 
 from install_model import ocr_file
-from languages import CYRILLIC, HANGUL, KANA, NAMES, OCR_TAGS, UnsupportedLanguage, detect_source, script_ocr_score
+from languages import (HANGUL, KANA, LATIN, NAMES, OCR_TAGS, SHORT_CYRILLIC, SOURCE_SCRIPTS, UnsupportedLanguage,
+                       detect_source, script_ocr_score)
 
 
 # Keep a Latin identifier selectable in mixed text such as “看懂ChatGPT的输出”.
@@ -92,6 +93,7 @@ class Passage:
     context_offset: int | None = field(default=None, compare=False, repr=False)
     source_code: str = field(default="", compare=False)
     phonetic: str = field(default="", compare=False)
+    ocr_line: str = field(default="", compare=False, repr=False)
 
     @property
     def word(self):
@@ -270,6 +272,7 @@ def passage_from_lines(lines, point, source_code=""):
 
     indices = neighbors(-1)[::-1] + [anchor] + neighbors(1)
     text, offset = join_ocr_words((word for i in indices for word in lines[i]), source_code, hit_word)
+    start, end = offset + match.start(), offset + match.end()
     if source_code in ("ja", "ko") and re.fullmatch(rf"[{CJK}]+", match.group()):
         # Locate the pointed character in its OCR box, then recover the word
         # across box boundaries using the same segmentation as the editor.
@@ -281,9 +284,14 @@ def passage_from_lines(lines, point, source_code=""):
         position = offset + char
         for a, b in word_spans(text, source_code):
             if a <= position < b:
-                return sentence_at(text, a, b)
-        raise ValueError("请指向一个词。")
-    return sentence_at(text, offset + match.start(), offset + match.end())
+                start, end = a, b
+                break
+        else:
+            raise ValueError("请指向一个词。")
+    passage = sentence_at(text, start, end)
+    if len(indices) > 1:
+        passage.ocr_line = join_ocr_words(lines[anchor], source_code)[0]
+    return passage
 
 
 async def ocr_lines(engine, image):
@@ -315,7 +323,7 @@ async def ocr_lines(engine, image):
 
 
 def read_from_pack(image, point, code):
-    """Return the passage and mean recognition confidence on its own line(s)."""
+    """Use confidence at the hit for hover, or across the selected lines for a region."""
     if image.isNull():
         raise ValueError("未识别到文字。请重新框选清晰、可见的原文。")
     model = ocr_file(code)
@@ -329,17 +337,29 @@ def read_from_pack(image, point, code):
         top = max(0, min(image.height() - height, int(point.y()) - height // 2))
         frame = image.copy(left, top, width, height)
         point = point - QPointF(left, top)
-    elif frame.height() <= 64:
+    if frame.height() <= 64 or point is not None:
         gray = frame.convertToFormat(QImage.Format_Grayscale8)
         data, stride = gray.constBits(), gray.bytesPerLine()
-        last, bands = -4, 0
+        bands = []
         for y in range(gray.height()):
             row = data[y * stride:y * stride + gray.width()]
             if max(row) - min(row) >= 45:
-                if y - last > 3:
-                    bands += 1
-                last = y
-        single_line = bands == 1
+                if not bands or y - bands[-1][1] > 3:
+                    bands.append([y, y])
+                else:
+                    bands[-1][1] = y
+        single_line = len(bands) == 1 and frame.height() <= 64
+        if point is not None and len(bands) > 1:
+            # Neighbouring titles can use different scripts. Use a clean strip
+            # only when the pointer is actually inside a separated line of ink.
+            for index, (top, bottom) in enumerate(bands):
+                if top <= point.y() <= bottom and 3 <= bottom - top < 64:
+                    above = (bands[index - 1][1] + top) // 2 + 1 if index else 0
+                    below = (bands[index + 1][0] + bottom) // 2 if index + 1 < len(bands) else frame.height()
+                    frame = frame.copy(0, above, frame.width(), below - above)
+                    point -= QPointF(0, above)
+                    single_line = True
+                    break
     if single_line and frame.width() >= 4 * frame.height():
         # A little background around a tightly selected label keeps thin edge
         # strokes from being interpreted as part of the image boundary.
@@ -348,8 +368,13 @@ def read_from_pack(image, point, code):
         with QPainter(padded) as painter:
             painter.drawImage(4, 4, frame)
         frame = padded
+        if point is not None:
+            point += QPointF(4, 4)
     # Enlarge small antialiased labels while bounding the cost of a full-screen region.
-    zoom = 2 if point is not None else (3 if image.height() <= 64 else 1.5)
+    if point is not None or (single_line and code == "en"):
+        zoom = 2
+    else:
+        zoom = 3 if image.height() <= 64 else 1.5
     factor = min(zoom, 3200 / max(frame.width(), frame.height()))
     pixels = frame.scaled(max(1, round(frame.width() * factor)), max(1, round(frame.height() * factor)),
                           Qt.IgnoreAspectRatio, Qt.SmoothTransformation).convertToFormat(QImage.Format_Grayscale8)
@@ -368,7 +393,8 @@ def read_from_pack(image, point, code):
         return QRectF(x, y, right - x, bottom - y)
 
     lines, line_boxes, confidence = [], [], []
-    for bounds, tokens in json.loads(job.stdout):
+    recognized = json.loads(job.stdout)
+    for bounds, tokens in recognized:
         words = []
         for text, box, _, blanks in tokens:
             if code in ("ja", "ko") and words and not blanks:
@@ -388,117 +414,165 @@ def read_from_pack(image, point, code):
         if hit is None:
             raise ValueError("光标附近没有可确定的词。请指向标题文字。")
         # Sparse labels on adjacent rows can be unrelated (song and artist).
-        lines, confidence = [lines[hit]], [confidence[hit]]
+        tokens = recognized[hit][1]
+        token = nearest_box(point, ((i, rect(data[1])) for i, data in enumerate(tokens)))
+        confidence = [tokens[token][2] if token is not None else min(data[2] for data in tokens)]
+        lines = [lines[hit]]
     passage = passage_from_lines(lines, point, code)
     passage.source_code = code
     return passage, sum(confidence) / len(confidence)
 
 
+# A Hangul jamo on its own can be indistinguishable from a Latin stroke.
+# Manual Korean OCR still returns the recognizer's literal text.
+SCRIPT_LETTERS = {**SOURCE_SCRIPTS, "ko": re.compile(r"[가-힣]")}
+
+
+def detected_language(text):
+    try:
+        return detect_source(text)
+    except UnsupportedLanguage:
+        return ""  # Preserve the original for the translation layer's unsupported-language message.
+
+
+def script_reading(passage, code, hover):
+    native = SCRIPT_LETTERS[code]
+    text = (passage.ocr_line or passage.text) if hover else passage.text
+    target = passage.word if hover else text
+    count = len(native.findall(text))
+    if not native.search(target) or count * 4 < sum(c.isalnum() for c in text):
+        return False
+    if code == "ja" and not KANA.search(text):
+        return False
+    try:
+        detected = detect_source(text)
+    except UnsupportedLanguage:
+        return False
+    return detected == code or (code == "ru" and not detected and SHORT_CYRILLIC.fullmatch(text.strip()))
+
+
 async def recognize(image, point=None, source_code=""):
     installed = {lang.language_tag.split("-")[0].lower(): lang for lang in OcrEngine.available_recognizer_languages}
-    packed = {}
 
-    def read_pack(code):
-        if code not in packed:
-            packed[code] = read_from_pack(image, point, code)
-        return packed[code]
-
-    async def read(code):
+    async def read_native(code):
         language = installed.get(code) or Language(OCR_TAGS[code])
         engine = OcrEngine.try_create_from_language(language)
-        if engine is not None:
-            try:
-                return await read_passage(engine, image, point)
-            except ValueError:
-                if not source_code:
-                    raise
-        return read_pack(code)[0]
+        if engine is None:
+            raise ValueError("没有可用的系统识字引擎。")
+        return await read_passage(engine, image, point)
 
     if source_code:
-        passage = await read(source_code)
+        try:
+            passage = await read_native(source_code)
+        except ValueError:
+            passage = read_from_pack(image, point, source_code)[0]
         passage.source_code = source_code
         return passage
 
     first = "en" if ocr_file("en") else next((code for code in NAMES if code in installed), "en")
-    try:
-        passage = await read(first)
-    except ValueError as error:
-        initial_error = error
-        passage = None
-    if passage:
-        try:
-            detected = detect_source(passage.text)
-        except UnsupportedLanguage:
-            detected = ""
-        if detected:
-            if detected != first and detected in installed:
-                try:
-                    passage = await read(detected)
-                except ValueError:
-                    pass  # The first pass already found the requested occurrence.
-            passage.source_code = detected
-            return passage
+    native_reads = {}
 
-    # Short Latin labels often have no reliable language ID. Compare the
-    # English pack on the same pixels before trying other writing systems.
+    async def system_read(code):
+        if code not in native_reads:
+            try:
+                native_reads[code] = await read_native(code)
+            except ValueError:
+                native_reads[code] = None
+        return native_reads[code]
+
+    def target(reading):
+        return (reading.word if point is not None else reading.text).strip().casefold()
+
+    initial = await system_read(first)
+    if initial:
+        detected = detected_language(initial.ocr_line or initial.text)
+        if detected:
+            refined = await system_read(detected) if detected != first and detected in installed else None
+            if detected not in SCRIPT_LETTERS:
+                chosen = refined or initial
+                chosen.source_code = detected
+                return chosen
+            # Nearby writing can identify a sentence, but a second recognizer
+            # must not silently replace the Latin word under the pointer.
+            same_hit = refined and point is not None and target(refined) == target(initial)
+            if same_hit and LATIN.search(target(initial)) and script_reading(refined, detected, False):
+                refined.source_code = detected
+                return refined
+            if script_reading(initial, detected, point is not None):
+                chosen = refined if refined and script_reading(refined, detected, point is not None) else initial
+                chosen.source_code = detected
+                return chosen
+
+    latin = None
+    latin_confidence = 0
+    punctuation = False
     if first == "en" and ocr_file("en"):
         try:
-            latin, confidence = read_pack("en")
-            sample = latin.word if point is not None else latin.text
-            letters = "".join(c for c in sample if c.isalpha())
-            agrees = (passage is not None and passage is not latin
-                      and sample.casefold() == (passage.word if point is not None else passage.text).casefold())
-            if (re.fullmatch(r"[A-Za-zÀ-ɏ]{2,}", letters) and
-                    ((len(letters) >= 3 and confidence >= 85) or (agrees and confidence >= 60))):
-                chosen = passage if agrees else latin
-                # The OCR alphabet also reads French, German and other Latin languages.
-                try:
-                    chosen.source_code = detect_source(chosen.text)
-                except UnsupportedLanguage:
-                    chosen.source_code = ""  # Let translation report the unsupported source.
-                return chosen
+            packed, confidence = read_from_pack(image, point, "en")
         except ValueError:
             pass
+        else:
+            sample = target(packed)
+            letters = "".join(c for c in sample if c.isalpha())
+            agrees = initial and target(initial) == sample
+            if not letters and confidence >= 85 and any(c.isdigit() for c in sample):
+                packed.source_code = ""
+                if agrees:
+                    return packed
+                latin, latin_confidence = packed, confidence
+            punctuation = not letters and confidence >= 55
+            if re.fullmatch(r"[A-Za-zÀ-ɏ]+", letters) and confidence >= 55:
+                latin = packed
+                latin_confidence = confidence
+                latin.source_code = detected_language(packed.text)
+                if agrees and detected_language(initial.text) not in SCRIPT_LETTERS:
+                    latin = initial
+                    latin.source_code = detected_language(initial.text)
+                if (agrees and confidence >= 60) or confidence >= 95 or (len(letters) >= 3 and confidence >= 85):
+                    return latin
 
-    def supports_script(candidate, code, script):
-        text = candidate.text
-        native_letters = r"[ぁ-ゖァ-ヺｦ-ﾝ一-鿿]" if code == "ja" else script
-        native = len(re.findall(native_letters, text))
-        target = candidate.word if point is not None else text
-        hit = re.search(native_letters, target)
-        return (hit and script.search(text) and native * 4 >= sum(c.isalnum() for c in text)
-                and detect_source(text) == code)
-
-    # A Latin OCR engine may produce nothing or punctuation over kana,
-    # Hangul or Cyrillic. Retry installed recognizers for those scripts only.
+    # Short or marginal Latin readings can also be corroborated by a model
+    # trained on another script: these recognizers can read Latin titles too.
     candidates = []
-    for code, script in (("ja", KANA), ("ko", HANGUL), ("ru", CYRILLIC)):
-        if code == first or code not in installed:
-            continue
-        try:
-            candidate = await read(code)
-            if supports_script(candidate, code, script):
+    for offline in (False, True):
+        if offline and candidates and latin is None:
+            break
+        for code, native in SCRIPT_LETTERS.items():
+            if offline:
+                if not ocr_file(code):
+                    continue
+                try:
+                    candidate, confidence = read_from_pack(image, point, code)
+                except ValueError:
+                    continue
+                if confidence < 55:
+                    continue
+                # A weak, isolated glyph among marks is poor evidence against
+                # a punctuation-only read (e.g. three dashes read as kana).
+                if punctuation and confidence < 80 and len(native.findall(target(candidate))) <= 1:
+                    continue
+            else:
+                if code not in installed:
+                    continue
+                candidate = await system_read(code)
+                if candidate is None:
+                    continue
+                if punctuation and len(native.findall(target(candidate))) <= 1:
+                    continue  # Check an isolated stroke with the local pack.
+            if latin and target(candidate) == target(latin):
+                return latin
+            if script_reading(candidate, code, point is not None):
                 candidate.source_code = code
                 candidates.append(candidate)
-        except ValueError:
-            continue
-    if not candidates:
-        for code, script in (("ja", KANA), ("ko", HANGUL), ("ru", CYRILLIC)):
-            if not ocr_file(code):
-                continue
-            try:
-                candidate, confidence = read_pack(code)
-                if confidence >= 55 and supports_script(candidate, code, script):
-                    candidates.append(candidate)
-            except ValueError:
-                continue
     if len(candidates) == 1:
         return candidates[0]
     if candidates:
         return max(candidates, key=lambda p: script_ocr_score(p.text, p.source_code))
-    if passage:
-        return passage
-    raise initial_error
+    if latin and latin_confidence >= 80:
+        return latin
+    if initial and any(c.isalnum() for c in target(initial)) and detected_language(initial.text) not in SCRIPT_LETTERS:
+        return initial
+    raise ValueError("未识别到可靠的原文。请框选清晰的文字或在设置中指定原文语言。")
 
 
 async def read_passage(engine, image, point):
