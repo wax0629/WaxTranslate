@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 import sqlite3
@@ -91,7 +92,7 @@ class HomeStatsTests(unittest.TestCase):
 
     def test_recent_time_migration_and_mastered_reviews(self):
         self.book.path.parent.mkdir(parents=True)
-        with sqlite3.connect(self.book.path) as db:
+        with closing(sqlite3.connect(self.book.path)) as db, db:
             db.execute("""CREATE TABLE recent_lookups (id INTEGER PRIMARY KEY, word TEXT, language TEXT,
                           gloss TEXT, UNIQUE(word, language))""")
             db.execute("INSERT INTO recent_lookups VALUES(1, 'bank', 'en', '银行')")
