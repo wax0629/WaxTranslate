@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from math import hypot
 from threading import local
@@ -80,6 +81,66 @@ def word_spans(text, source_code=""):
 class Word:
     text: str
     rect: QRectF
+    edges: tuple[float, ...] = ()
+
+    def character_at(self, x):
+        edges = self.edges or estimated_edges(self.text, self.rect.left(), self.rect.right())
+        return max(0, min(len(self.text) - 1, bisect_right(edges, x) - 1))
+
+
+def estimated_edges(text, left, right, start=0, end=None):
+    font = QFont("Segoe UI")
+    font.setPixelSize(64)
+    metrics = QFontMetricsF(font)
+    advances = [metrics.horizontalAdvance(text[:i]) for i in range(len(text) + 1)]
+    width = advances[len(text) if end is None else end] - advances[start]
+    if width <= 0 or right <= left:
+        return ()
+    scale = (right - left) / width
+    return tuple(left + scale * (a - advances[start]) for a in advances)
+
+
+def packed_word(text, rect, symbols):
+    word = Word(text, rect)
+    if not symbols or "".join(s[0] for s in symbols) != text:
+        return word
+    boxes = [(left, right) for symbol, left, right in symbols for _ in symbol]
+    # An underline can stretch a glyph across other words. Tesseract can also
+    # clip several successive glyphs to the same column at the edge of a box.
+    reliable = [i for i, (left, right) in enumerate(boxes)
+                if 0 < right - left <= 2 * rect.height()
+                and (i == 0 or boxes[i] != boxes[i - 1])
+                and (i + 1 == len(boxes) or boxes[i] != boxes[i + 1])]
+    if not reliable:
+        return word
+    if len(reliable) != len(boxes):
+        first, last = reliable[0], reliable[-1]
+        word.edges = estimated_edges(text, boxes[first][0], boxes[last][1], first, last + 1)
+        if word.edges:
+            word.rect.setLeft(word.edges[0])
+            word.rect.setRight(word.edges[-1])
+        return word
+    edges = [boxes[0][0]]
+    estimated = ()
+    for i, (a, b) in enumerate(zip(boxes, boxes[1:]), 1):
+        if a[1] <= b[0] + 1:
+            edges.append((a[1] + b[0]) / 2)
+        else:
+            # Overlapping ink cannot locate this character boundary. Keep
+            # measured positions at the other delimiters in the same word.
+            estimated = estimated or estimated_edges(text, rect.left(), rect.right())
+            if not estimated:
+                return word
+            edges.append(estimated[i])
+    edges.append(boxes[-1][1])
+    for i, (left, right) in enumerate(zip(edges, edges[1:])):
+        # Mixing measured and estimated boundaries can squeeze a separator
+        # out of existence. In that case use the consistent word-wide fit.
+        minimum = (estimated[i + 1] - estimated[i]) / 3 if estimated else 0
+        if right - left < minimum:
+            return word
+    word.edges = tuple(edges)
+    return word
 
 
 @dataclass
@@ -170,6 +231,7 @@ def nearest_box(point, boxes):
     units). Scaling the text and pointer together preserves the decision.
     """
     candidates = []
+    direct = []
     for key, rect in boxes:
         height = rect.height()
         if height <= 0 or rect.width() <= 0:
@@ -178,10 +240,16 @@ def nearest_box(point, boxes):
         dy = max(rect.top() - point.y(), point.y() - rect.bottom(), 0)
         distance = hypot(dx, dy)
         if distance == 0:
-            return key
+            direct.append((key, rect))
+            continue
         tolerance, tie_margin = 0.42 * height, 0.09 * height
         if distance <= tolerance + tie_margin:
             candidates.append((distance, tolerance, tie_margin, key))
+    if direct:
+        # An OCR box can swallow its neighbour (e.g. linked text). A nested
+        # box localizes the hit. Partial overlaps alone cannot disambiguate it.
+        hits = [key for key, rect in direct if all(other.contains(rect) for _, other in direct)]
+        return hits[0] if len(hits) == 1 else None
     if not candidates:
         return None
     candidates.sort(key=lambda item: item[0])
@@ -192,25 +260,11 @@ def nearest_box(point, boxes):
 
 
 def word_at_point(word, point):
-    matches = list(WORD_TOKEN.finditer(word.text))
-    if len(matches) <= 1:
-        return matches[0] if matches else None
-    # Windows supplies one ink box for e.g. "read/write", with no glyph boxes
-    # or source font. Scale proportional advances into that box before hit-testing.
-    font = QFont("Segoe UI")
-    font.setPixelSize(64)
-    metrics = QFontMetricsF(font)
-    position = (point.x() - word.rect.left()) / word.rect.width() * metrics.horizontalAdvance(word.text)
-    if point.x() <= word.rect.left():
-        return matches[0]
-    if point.x() >= word.rect.right():
-        return matches[-1]
-    for match in matches:
-        left = metrics.horizontalAdvance(word.text[:match.start()])
-        right = metrics.horizontalAdvance(word.text[:match.end()])
-        if left <= position < right:
-            return match
-    return None
+    whole = WORD_TOKEN.fullmatch(word.text)
+    if whole:
+        return whole
+    index = word.character_at(point.x())
+    return next((m for m in WORD_TOKEN.finditer(word.text) if m.start() <= index < m.end()), None)
 
 
 def join_ocr_words(words, code, anchor=None):
@@ -375,7 +429,9 @@ def read_from_pack(image, point, code):
         padded = QImage(frame.width() + 8, frame.height() + 8, QImage.Format_RGB32)
         padded.fill(frame.pixelColor(0, 0))
         with QPainter(padded) as painter:
-            painter.drawImage(4, 4, frame)
+            # The OCR buffer and pointer are in physical pixels even when the
+            # captured image carries a high-DPI device pixel ratio.
+            painter.drawImage(QRectF(4, 4, frame.width(), frame.height()), frame)
         frame = padded
         if point is not None:
             point += QPointF(4, 4)
@@ -394,7 +450,8 @@ def read_from_pack(image, point, code):
     if point is not None:
         point = QPointF(point.x() * pixels.width() / frame.width(), point.y() * pixels.height() / frame.height())
     command = [str(Path(sys.executable).with_name("python.exe")), str(Path(__file__).with_name("ocr_worker.py")),
-               model.stem, str(pixels.width()), str(pixels.height()), str(pixels.bytesPerLine()), str(int(single_line))]
+               model.stem, str(pixels.width()), str(pixels.height()), str(pixels.bytesPerLine()),
+               str(int(single_line)), str(int(point is not None))]
     try:
         job = subprocess.run(command, cwd=model.parent, input=bytes(pixels.constBits()), capture_output=True,
                              check=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -405,30 +462,39 @@ def read_from_pack(image, point, code):
         x, y, right, bottom = bounds
         return QRectF(x, y, right - x, bottom - y)
 
-    lines, line_boxes, confidence = [], [], []
+    lines, token_boxes, confidence = [], [], []
     recognized = json.loads(job.stdout)
     for bounds, tokens in recognized:
         words = []
-        for text, box, _, blanks in tokens:
+        boxes = []
+        for text, box, _, blanks, symbols in tokens:
+            word = packed_word(text, rect(box), symbols)
+            boxes.append(word.rect)
             if code in ("ja", "ko") and words and not blanks:
                 # Tesseract tokenizes CJK internally. Reassemble the printed
                 # unspaced run before mapping to a Japanese or Korean morpheme.
-                words[-1].text += text
-                words[-1].rect = words[-1].rect.united(rect(box))
+                previous = words[-1]
+                if previous.edges and word.edges and previous.edges[-1] <= word.edges[0]:
+                    boundary = (previous.edges[-1] + word.edges[0]) / 2
+                    previous.edges = previous.edges[:-1] + (boundary,) + word.edges[1:]
+                else:
+                    previous.edges = ()
+                previous.text += text
+                previous.rect = previous.rect.united(word.rect)
             else:
-                words.append(Word(text, rect(box)))
-        if len(words) == 1:
+                words.append(word)
+        if len(words) == 1 and code in ("ja", "ko") and re.fullmatch(rf"[{CJK}]+", words[0].text):
             words[0].rect = rect(bounds)
         lines.append(words)
-        line_boxes.append(rect(bounds))
+        token_boxes.append(boxes)
         confidence.append(sum(token[2] for token in tokens) / len(tokens))
     if point is not None:
-        hit = nearest_box(point, enumerate(line_boxes))
+        hit = nearest_box(point, ((i, word.rect) for i, line in enumerate(lines) for word in line))
         if hit is None:
             raise ValueError("光标附近没有可确定的词。请指向标题文字。")
         # Sparse labels on adjacent rows can be unrelated (song and artist).
         tokens = recognized[hit][1]
-        token = nearest_box(point, ((i, rect(data[1])) for i, data in enumerate(tokens)))
+        token = nearest_box(point, enumerate(token_boxes[hit]))
         confidence = [tokens[token][2] if token is not None else min(data[2] for data in tokens)]
         lines = [lines[hit]]
     passage = passage_from_lines(lines, point, code)

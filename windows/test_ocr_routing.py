@@ -259,7 +259,7 @@ class RoutingTests(unittest.TestCase):
     def test_weak_hover_hit_does_not_inherit_its_neighbors_confidence(self):
         frame = QImage(250, 60, QImage.Format_RGB32)
         frame.fill(Qt.white)
-        tokens = [(word, [x, 10, x + 40, 38], score, 1) for x, word, score
+        tokens = [(word, [x, 10, x + 40, 38], score, 1, []) for x, word, score
                   in ((10, "intro", 97), (65, "Al", 22), (120, "finale", 96))]
         output = json.dumps([([10, 10, 160, 38], tokens)]).encode()
         with patch("reader.subprocess.run", return_value=SimpleNamespace(stdout=output)):

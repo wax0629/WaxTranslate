@@ -1,5 +1,7 @@
 """Word targeting regressions run by windows/check.py with a QApplication."""
 import asyncio
+import json
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -8,11 +10,78 @@ from PySide6.QtGui import QFont, QImage, QPainter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QBoxLayout
 
-from reader import WORD_TOKEN, Word, ocr_lines, passage_from_lines, recognize, sentence_at
+from reader import WORD_TOKEN, Word, ocr_lines, passage_from_lines, read_from_pack, recognize, sentence_at
 from workspace import TextWorkspace
 
 
 class HitTests(unittest.TestCase):
+    def test_underlined_word_box_spanning_adjacent_title(self):
+        # One trailing symbol owns the underline under the rest of a mixed-script
+        # title. These are physical coordinates in the pack's 2x OCR buffer.
+        label = "docs(logistics):"
+        bounds = [20, 10, 450, 38]
+        symbols = [[c, 20 + i * 10, 30 + i * 10] for i, c in enumerate(label)]
+        symbols[-1][2] = bounds[2]
+        tokens = [(label, bounds, 86, 0, symbols),
+                  ("物流", [184, 10, 226, 38], 78, 0, []),
+                  ("logistics", [280, 10, 360, 38], 95, 1, [])]
+        frame = QImage(250, 60, QImage.Format_RGB32)
+        frame.fill(Qt.white)
+        output = json.dumps([(bounds, tokens)]).encode()
+        with patch("reader.subprocess.run", return_value=SimpleNamespace(stdout=output)):
+            for x, target, start, score in ((18, "docs", 0, 86), (53, "logistics", 5, 86),
+                                             (101, "物流", 17, 78), (155, "logistics", 20, 95)):
+                with self.subTest(x=x):
+                    read, confidence = read_from_pack(frame, QPointF(x, 12), "en")
+                    self.assertEqual((read.word, read.selection, read.context_offset, confidence),
+                                     (target, (start, start + len(target)), start, score))
+            with self.assertRaises(ValueError):
+                read_from_pack(frame, QPointF(220, 12), "en")
+
+    def test_real_pack_packed_labels_at_display_scales(self):
+        text = "docs(logistics): cache[root]:cache/input"
+        font = QFont("Segoe UI")
+        font.setPixelSize(22)
+        for scale in (1, 1.5):
+            image = QImage(int(600 * scale), int(40 * scale), QImage.Format_RGB32)
+            image.setDevicePixelRatio(scale)
+            image.fill(Qt.white)
+            with QPainter(image) as painter:
+                painter.setFont(font)
+                painter.drawText(10, 29, text)
+                metrics = painter.fontMetrics()
+            for match in WORD_TOKEN.finditer(text):
+                with self.subTest(scale=scale, start=match.start()):
+                    x = 10 + metrics.horizontalAdvance(text[:match.start()]) + metrics.horizontalAdvance(match[0]) / 2
+                    point = QPointF(x * scale, (29 - metrics.capHeight() / 2) * scale)
+                    read, _ = read_from_pack(image, point, "en")
+                    self.assertEqual((read.word, read.selection), (match[0], match.span()))
+
+    def test_collapsed_glyphs_keep_the_second_occurrence(self):
+        # At fractional scale the OCR text can be complete even though every
+        # box after the opening delimiter is clipped to the same column.
+        label = "echo(echo)"
+        prefix = [("e", 20, 36), ("c", 36, 50), ("h", 50, 68), ("o", 68, 85), ("(", 85, 94)]
+        symbols = prefix + [(ch, 93, 94) for ch in "echo)"]
+        token = (label, [20, 10, 94, 38], 96, 0, symbols)
+        output = json.dumps([(token[1], [token])]).encode()
+        frame = QImage(250, 60, QImage.Format_RGB32)
+        frame.fill(Qt.white)
+        with patch("reader.subprocess.run", return_value=SimpleNamespace(stdout=output)):
+            for x, start in ((22, 0), (62, 5)):
+                read, _ = read_from_pack(frame, QPointF(x, 12), "en")
+                self.assertEqual((read.word, read.selection, read.context_offset), ("echo", (start, start + 4), start))
+
+    def test_punctuation_and_overlapping_word_boxes(self):
+        label = Word("(docs):", QRectF(0, 0, 60, 20))
+        for x in (1, 59):
+            with self.assertRaises(ValueError):
+                passage_from_lines([[label]], QPointF(x, 10))
+        wide = Word("oversized", QRectF(0, 2, 180, 18))
+        tight = Word("target", QRectF(80, 2, 40, 18))
+        for words in ([wide, tight], [tight, wide]):
+            self.assertEqual(passage_from_lines([words], QPointF(100, 10)).word, "target")
+
     def test_near_word_boxes(self):
         for scale in (0.75, 1, 1.5, 2):
             def word(text, x, y, width):
