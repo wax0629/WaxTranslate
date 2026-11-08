@@ -147,6 +147,8 @@ class Window(QWidget):
         self.card = Card(self.player)
         self.card.dismissed.connect(self.invalidate)
         self.card.presented.connect(self.watch_card)
+        for menu in (self.card.listen.menu(), self.card.more.menu()):
+            menu.aboutToShow.connect(self.watch_card)
         self.card.save_requested.connect(self.save_word)
         self.card.online.clicked.connect(self.search_online)
         self.online_finished.connect(self.show_online)
@@ -408,7 +410,7 @@ class Window(QWidget):
             elif word:
                 self.notebook.update_recent_gloss(word, language, gloss)
             if visible:
-                self.stats_ready.emit(self.notebook.dashboard())
+                self.stats_ready.emit(self.notebook.activity_snapshot())
         except (sqlite3.Error, OSError):
             if visible:
                 self.stats_ready.emit(None)
@@ -480,7 +482,7 @@ class Window(QWidget):
         try:
             self.notebook.save(*self.saved_result)
         except (sqlite3.Error, OSError) as error:
-            self.card.caption.setText(f"收藏失败：{error}")
+            self.card.show_notice(f"收藏失败：{error}")
             return
         self.card.save.setText("已收藏")
         self.card.save.setEnabled(False)
@@ -539,11 +541,13 @@ class Window(QWidget):
     def watch_card(self):
         if self.gesture_ready and not self.stopping:
             hwnd = int(self.card.winId()) if self.card.isVisible() else 0
-            self.gestures.write((json.dumps((self.ticket, hwnd, self.trigger.currentData())) + "\n").encode("ascii"))
+            menus = [int(menu.winId()) for menu in (self.card.listen.menu(), self.card.more.menu())] if hwnd else []
+            watched = (self.ticket, hwnd, self.trigger.currentData(), menus)
+            self.gestures.write((json.dumps(watched) + "\n").encode("ascii"))
 
     def on_gesture(self, action, origin, end):
         if action == "dismiss":
-            if origin == self.ticket and self.card.isVisible():
+            if origin == self.ticket and self.card.isVisible() and not self.card.pin.isChecked():
                 self.card.close()
             return
         if action in ("lookup", "start"):

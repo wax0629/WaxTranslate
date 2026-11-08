@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 import sqlite3
@@ -88,6 +89,25 @@ class HomeStatsTests(unittest.TestCase):
         with self.assertRaises(sqlite3.IntegrityError):
             self.book.record_lookup(word="two", language="en", gloss="二")
         self.assertEqual(self.book.dashboard(), (1, 1, 0, 0, [("one", "en", "一")]))
+
+    def test_recent_time_migration_and_mastered_reviews(self):
+        self.book.path.parent.mkdir(parents=True)
+        with closing(sqlite3.connect(self.book.path)) as db, db:
+            db.execute("""CREATE TABLE recent_lookups (id INTEGER PRIMARY KEY, word TEXT, language TEXT,
+                          gloss TEXT, UNIQUE(word, language))""")
+            db.execute("INSERT INTO recent_lookups VALUES(1, 'bank', 'en', '银行')")
+        self.assertEqual(self.book.activity_snapshot().recent, [("bank", "en", "银行", None)])
+        self.book.record_lookup(5000, word="bank", language="en", gloss="岸")
+        self.book.update_recent_gloss("bank", "en", "河岸")
+        self.assertEqual(self.book.activity_snapshot().recent, [("bank", "en", "河岸", 5000)])
+        word = SimpleNamespace(word="bank", text="river bank", selection=(6, 10), source_code="en")
+        self.book.save(word, ("句中释义", "岸", "河岸"))
+        ident = self.book.entries()[0]["id"]
+        for expected in (0, 0, 1):
+            self.book.review(ident, True, now=6000)
+            self.assertEqual(self.book.activity_snapshot(6001).mastered, expected)
+        self.book.review(ident, False, now=7000)
+        self.assertEqual(self.book.activity_snapshot(7001).mastered, 0)
 
     def test_old_notebook_and_review_schedule(self):
         # Only the entries table exists in a notebook from the previous release.

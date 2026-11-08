@@ -2,12 +2,23 @@
 from contextlib import closing, contextmanager
 from datetime import date
 from pathlib import Path
+from typing import NamedTuple
 import os
 import sqlite3
 import time
 
 INTERVALS = (1, 3, 7, 14, 30, 60)
 RECENT_LIMIT = 6
+MASTERED_STREAK = 3
+
+
+class Dashboard(NamedTuple):
+    total: int
+    today: int
+    saved: int
+    due: int
+    mastered: int
+    recent: list
 
 ENTRIES_SCHEMA = """CREATE TABLE IF NOT EXISTS entries (
     id INTEGER PRIMARY KEY, word TEXT NOT NULL, context TEXT NOT NULL,
@@ -29,7 +40,7 @@ def prepare_dashboard(db):
             ON CONFLICT(day) DO UPDATE SET total=prior_lookup_days.total+excluded.total;
         END""")
     db.execute("""CREATE TABLE IF NOT EXISTS recent_lookups (
-        id INTEGER PRIMARY KEY, word TEXT NOT NULL, language TEXT NOT NULL, gloss TEXT NOT NULL,
+        id INTEGER PRIMARY KEY, word TEXT NOT NULL, language TEXT NOT NULL, gloss TEXT NOT NULL, looked_up_at INTEGER,
         UNIQUE(word, language))""")
     db.execute("CREATE INDEX IF NOT EXISTS entries_due ON entries(due)")
 
@@ -59,10 +70,11 @@ class Notebook:
                     db.execute("DROP TABLE entries_english")
                     db.execute("CREATE INDEX entries_due ON entries(due)")
                 db.commit()
-            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='recent_lookups'").fetchone():
-                # Install the rollover trigger and history together before the next writer.
+            if not db.execute("SELECT 1 FROM pragma_table_info('recent_lookups') WHERE name='looked_up_at'").fetchone():
                 db.execute("BEGIN IMMEDIATE")
                 prepare_dashboard(db)
+                if not db.execute("SELECT 1 FROM pragma_table_info('recent_lookups') WHERE name='looked_up_at'").fetchone():
+                    db.execute("ALTER TABLE recent_lookups ADD COLUMN looked_up_at INTEGER")
                 db.commit()
             yield db
 
@@ -70,15 +82,16 @@ class Notebook:
         """Count one completion and keep only the most recent word/meaning pairs."""
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            day = date.fromtimestamp(time.time() if now is None else now).isoformat()
+            now = time.time() if now is None else now
+            day = date.fromtimestamp(now).isoformat()
             row = db.execute("""INSERT INTO lookup_counter(id, day, total) VALUES(1, ?, 1)
                                 ON CONFLICT(id) DO UPDATE SET day=excluded.day,
                                     total=CASE WHEN day=excluded.day THEN total+1 ELSE 1 END
                                 RETURNING total""", (day,)).fetchone()
             if word:
                 # A new rowid moves a repeated word to the front even with identical timestamps.
-                db.execute("INSERT OR REPLACE INTO recent_lookups(word, language, gloss) VALUES(?, ?, ?)",
-                           (word, language, short_gloss(gloss)))
+                db.execute("INSERT OR REPLACE INTO recent_lookups(word, language, gloss, looked_up_at) VALUES(?, ?, ?, ?)",
+                           (word, language, short_gloss(gloss), int(now)))
                 db.execute("""DELETE FROM recent_lookups WHERE id NOT IN
                               (SELECT id FROM recent_lookups ORDER BY id DESC LIMIT ?)""", (RECENT_LIMIT,))
             prior = db.execute("SELECT total FROM prior_lookup_days WHERE day=?", (day,)).fetchone()
@@ -92,10 +105,9 @@ class Notebook:
             db.execute("UPDATE recent_lookups SET gloss=? WHERE word=? AND language=?",
                        (short_gloss(gloss), word, language))
 
-    def dashboard(self, now=None):
-        """Return lifetime/today counts, saved/due counts, and newest-first word/language/gloss rows."""
+    def activity_snapshot(self, now=None):
         if not self.path.exists():
-            return 0, 0, 0, 0, []
+            return Dashboard(0, 0, 0, 0, 0, [])
         now = time.time() if now is None else now
         day = date.fromtimestamp(now).isoformat()
         with self.connection() as db:
@@ -104,11 +116,16 @@ class Notebook:
                 SELECT day, total FROM prior_lookup_days UNION ALL SELECT day, total FROM lookup_counter)
                 SELECT COALESCE(sum(total), 0), COALESCE(sum(total) FILTER (WHERE day=?), 0) FROM days""",
                                       (day,)).fetchone()
-            saved, due = db.execute("""SELECT (SELECT count(*) FROM entries),
-                                              (SELECT count(*) FROM entries WHERE due <= ?)""", (now,)).fetchone()
+            saved, due, mastered = db.execute("""SELECT count(*), count(*) FILTER (WHERE due <= ?),
+                                                 count(*) FILTER (WHERE streak >= ?) FROM entries""",
+                                               (now, MASTERED_STREAK)).fetchone()
             recent = [tuple(row) for row in db.execute(
-                "SELECT word, language, gloss FROM recent_lookups ORDER BY id DESC LIMIT ?", (RECENT_LIMIT,))]
-            return total, today, saved, due, recent
+                "SELECT word, language, gloss, looked_up_at FROM recent_lookups ORDER BY id DESC LIMIT ?", (RECENT_LIMIT,))]
+            return Dashboard(total, today, saved, due, mastered, recent)
+
+    def dashboard(self, now=None):
+        stats = self.activity_snapshot(now)
+        return stats.total, stats.today, stats.saved, stats.due, [row[:3] for row in stats.recent]
 
     def home_stats(self, now=None):
         """Return today's lookups, saved entries and entries currently due."""

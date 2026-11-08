@@ -29,6 +29,18 @@ def ui_icon(name, color="#595955"):
                     path.lineTo(point)
         path.closeSubpath()
         path.addEllipse(QPointF(12, 12), 3, 3)
+    elif name == "pin":
+        path.moveTo(7, 4)
+        path.lineTo(17, 4)
+        path.lineTo(15, 6)
+        path.lineTo(15, 11)
+        path.lineTo(18, 14)
+        path.lineTo(6, 14)
+        path.lineTo(9, 11)
+        path.lineTo(9, 6)
+        path.closeSubpath()
+        path.moveTo(12, 14)
+        path.lineTo(12, 21)
     elif name == "history":
         path.addEllipse(QPointF(12, 12), 8, 8)
         path.moveTo(12, 7)

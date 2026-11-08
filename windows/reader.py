@@ -91,6 +91,7 @@ class Passage:
     context: str = field(default="", compare=False, repr=False)
     context_offset: int | None = field(default=None, compare=False, repr=False)
     source_code: str = field(default="", compare=False)
+    phonetic: str = field(default="", compare=False)
 
     @property
     def word(self):
@@ -395,6 +396,12 @@ def read_from_pack(image, point, code):
 
 async def recognize(image, point=None, source_code=""):
     installed = {lang.language_tag.split("-")[0].lower(): lang for lang in OcrEngine.available_recognizer_languages}
+    packed = {}
+
+    def read_pack(code):
+        if code not in packed:
+            packed[code] = read_from_pack(image, point, code)
+        return packed[code]
 
     async def read(code):
         language = installed.get(code) or Language(OCR_TAGS[code])
@@ -405,14 +412,14 @@ async def recognize(image, point=None, source_code=""):
             except ValueError:
                 if not source_code:
                     raise
-        return read_from_pack(image, point, code)[0]
+        return read_pack(code)[0]
 
     if source_code:
         passage = await read(source_code)
         passage.source_code = source_code
         return passage
 
-    first = next((code for code in NAMES if code in installed), "en")
+    first = "en" if ocr_file("en") else next((code for code in NAMES if code in installed), "en")
     try:
         passage = await read(first)
     except ValueError as error:
@@ -432,6 +439,36 @@ async def recognize(image, point=None, source_code=""):
             passage.source_code = detected
             return passage
 
+    # Short Latin labels often have no reliable language ID. Compare the
+    # English pack on the same pixels before trying other writing systems.
+    if first == "en" and ocr_file("en"):
+        try:
+            latin, confidence = read_pack("en")
+            sample = latin.word if point is not None else latin.text
+            letters = "".join(c for c in sample if c.isalpha())
+            agrees = (passage is not None and passage is not latin
+                      and sample.casefold() == (passage.word if point is not None else passage.text).casefold())
+            if (re.fullmatch(r"[A-Za-zÀ-ɏ]{2,}", letters) and
+                    ((len(letters) >= 3 and confidence >= 85) or (agrees and confidence >= 60))):
+                chosen = passage if agrees else latin
+                # The OCR alphabet also reads French, German and other Latin languages.
+                try:
+                    chosen.source_code = detect_source(chosen.text)
+                except UnsupportedLanguage:
+                    chosen.source_code = ""  # Let translation report the unsupported source.
+                return chosen
+        except ValueError:
+            pass
+
+    def supports_script(candidate, code, script):
+        text = candidate.text
+        native_letters = r"[ぁ-ゖァ-ヺｦ-ﾝ一-鿿]" if code == "ja" else script
+        native = len(re.findall(native_letters, text))
+        target = candidate.word if point is not None else text
+        hit = re.search(native_letters, target)
+        return (hit and script.search(text) and native * 4 >= sum(c.isalnum() for c in text)
+                and detect_source(text) == code)
+
     # A Latin OCR engine may produce nothing or punctuation over kana,
     # Hangul or Cyrillic. Retry installed recognizers for those scripts only.
     candidates = []
@@ -440,7 +477,7 @@ async def recognize(image, point=None, source_code=""):
             continue
         try:
             candidate = await read(code)
-            if script.search(candidate.text) and detect_source(candidate.text) == code:
+            if supports_script(candidate, code, script):
                 candidate.source_code = code
                 candidates.append(candidate)
         except ValueError:
@@ -450,9 +487,8 @@ async def recognize(image, point=None, source_code=""):
             if not ocr_file(code):
                 continue
             try:
-                candidate, confidence = read_from_pack(image, point, code)
-                if (confidence >= 55 and script.search(candidate.text)
-                        and (point is None or not candidate.word.isascii()) and detect_source(candidate.text) == code):
+                candidate, confidence = read_pack(code)
+                if confidence >= 55 and supports_script(candidate, code, script):
                     candidates.append(candidate)
             except ValueError:
                 continue

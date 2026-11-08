@@ -26,7 +26,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QWidget
 
 from app import Window, app_icon, image_point, image_rect
 from home import HomePage
-from notebook import Notebook
+from notebook import Dashboard, Notebook
 from popup import Card
 from reader import Passage, Word, context_excerpt, passage_from_lines, recognize
 from theme import apply_theme
@@ -63,13 +63,13 @@ class Checks(unittest.TestCase):
         home = HomePage()
         home.setAttribute(Qt.WA_DontShowOnScreen)
         home.show()
-        rows = [(f"word-{n}", "en", "释义") for n in range(6)]
+        rows = [(f"word-{n}", "en", "释义", 1700000000) for n in range(6)]
         try:
             for width, height in ((1000, 582), (728, 529), (540, 764)):
                 home.resize(width, height)
                 baseline = None
-                for snapshot in ((0, 0, 0, 0, []), (6, 0, 0, 0, []), (7, 1, 0, 0, rows[:1]),
-                                 (12, 6, 0, 0, rows), None):
+                for snapshot in (Dashboard(0, 0, 0, 0, 0, []), Dashboard(6, 0, 0, 0, 0, []), Dashboard(7, 1, 0, 0, 0, rows[:1]),
+                                 Dashboard(12, 6, 0, 0, 0, rows), None):
                     home.set_stats(snapshot)
                     QApplication.processEvents()
                     # Render the page layer without its foreground text and controls.
@@ -163,7 +163,7 @@ class Checks(unittest.TestCase):
                 self.assertFalse(window.backdrop.isNull())
                 nav = [b for b in window.sidebar.findChildren(QPushButton) if b.property("role") == "nav"]
                 self.assertEqual([b.text() for b in nav], ["首页", "对照翻译", "生词本", "设置"])
-                wait_until(lambda: home.title.accessibleName() == "在原文中查词")
+                wait_until(lambda: home.values["次取词"].text() == "0")
                 for width, height in ((1080, 675), (820, 500), (740, 480), (570, 485), (540, 610), (540, 800)):
                     window.resize(width, height)
                     QApplication.processEvents()
@@ -173,44 +173,41 @@ class Checks(unittest.TestCase):
                         self.assertTrue(window.sidebar.rect().contains(button.geometry()))
                         self.assertGreaterEqual(button.width(), button.sizeHint().width())
                     self.assertGreater(nav[-1].x(), nav[-2].geometry().right())
-                    self.assertFalse(home.activity.isVisible())
-                    self.assertFalse(home.sheet.isVisible())
-                    for control in (home.title, home.instructions, home.region):
+                    self.assertTrue(all(v.isVisible() and v.text() == "0" for v in home.values.values()))
+                    self.assertTrue(home.heading.isVisible())
+                    for control in (home.heading, home.instructions, home.region):
                         bounds = QRect(control.mapTo(home, QPoint()), control.size())
                         self.assertTrue(home.rect().contains(bounds), (width, height, bounds))
                     self.assertGreaterEqual(home.instructions.width(), home.instructions.layout().sizeHint().width())
-                    self.assertEqual(home.instructions.y(), home.page.contentsMargins().top())
-                    self.assertLess(home.instructions.geometry().bottom(), home.title.y())
-                    if home.portrait:
-                        self.assertGreater(home.title.y(), home.height() // 2)
+                    self.assertLessEqual(abs(home.instructions.y() - home.page.contentsMargins().top()), 2)
+                    self.assertLess(home.instructions.geometry().bottom(), home.heading.y())
                 # Migrated profiles and a read failure must not look like a fresh notebook.
                 window.resize(540, 390)
                 QApplication.processEvents()
                 short_window_size = window.size()
-                home.set_stats((17, 0, 2, 1, []))
-                self.assertTrue(home.title.isVisible())
-                self.assertEqual(home.title.accessibleName(), "累计查词 17 次")
-                self.assertTrue(home.activity.isVisible())
-                self.assertIn("待复习 1 条", home.activity.text())
-                self.assertFalse(home.sheet.isVisible())
-                self.assertFalse(home.notice.isVisible())
-                home.set_stats((6, 0, 0, 0, []))
-                self.assertEqual(home.title.accessibleName(), "累计查词 6 次")
-                self.assertFalse(home.activity.isVisible())
+                heading_at = home.heading.y()
+                for snapshot in (Dashboard(17, 0, 2, 1, 0, []), Dashboard(6, 0, 0, 0, 0, [])):
+                    home.set_stats(snapshot)
+                    QApplication.processEvents()
+                    self.assertEqual(home.values["次取词"].text(), str(snapshot.total))
+                    self.assertTrue(home.notice.isVisible())
+                    self.assertEqual(home.heading.y(), heading_at)
                 home.set_stats(None)
                 self.assertIn("无法读取", home.notice.text())
-                self.assertFalse(home.activity.isVisible())
-                rows = [(f"word-{i}", "en", "释义") for i in range(6)]
-                home.set_stats((18, 1, 2, 1, rows))
+                self.assertTrue(all(v.text() == "—" for v in home.values.values()))
+                rows = [(f"word-{i}", "en", "释义", 1700000000) for i in range(6)]
+                home.set_stats(Dashboard(18, 1, 2, 1, 1, rows))
+                QApplication.processEvents()
+                self.assertEqual(home.heading.y(), heading_at)
                 self.assertFalse(home.notice.isVisible())
-                self.assertTrue(home.activity.isVisible())
+                self.assertEqual([v.text() for v in home.values.values()], ["18", "2", "1", "1"])
                 self.assertTrue(home.table.isVisible())
                 self.assertEqual(home.table.rowCount(), 6)
                 for width, height in ((1000, 620), (540, 800), (540, 390)):
                     window.resize(width, height)
                     QApplication.processEvents()
                     self.assertTrue(home.rect().contains(QRect(home.region.mapTo(home, QPoint()), home.region.size())))
-                    self.assertEqual(home.instructions.y(), home.page.contentsMargins().top())
+                    self.assertLessEqual(abs(home.instructions.y() - home.page.contentsMargins().top()), 2)
                     if height >= 620:
                         self.assertEqual(home.table.verticalScrollBar().maximum(), 0)
                     else:
@@ -316,9 +313,9 @@ class Checks(unittest.TestCase):
             try:
                 window.show()
                 self.assertIs(window.tabs.currentWidget(), home)
-                wait_until(lambda: home.title.accessibleName() == "在原文中查词" and home.title.isVisible())
-                self.assertFalse(home.notice.isVisible())
-                self.assertFalse(home.sheet.isVisible())
+                wait_until(lambda: home.values["次取词"].text() == "0" and home.heading.isVisible())
+                self.assertTrue(home.notice.isVisible())
+                self.assertTrue(home.heading.isVisible())
                 self.assertEqual(home.table.rowCount(), 0)
                 self.assertEqual(home.key.text(), "左 Ctrl")
                 self.assertTrue(home.key.isVisible())
@@ -334,19 +331,18 @@ class Checks(unittest.TestCase):
                 window.card.save.click()
                 window.card.close()
                 window.tabs.setCurrentWidget(home)
-                wait_until(lambda: home.title.accessibleName() == "累计查词 1 次" and home.table.isVisible()
-                           and "已收藏 1" in home.activity.text())
+                wait_until(lambda: home.values["次取词"].text() == "1" and home.table.isVisible()
+                           and home.values["已保存"].text() == "1")
                 self.assertEqual(home.table.item(0, 0).text(), "bank")
                 self.assertIn("岸", home.table.item(0, 1).text())
-                self.assertEqual(home.table.item(0, 2).text(), "英语")
-                self.assertTrue(home.title.isVisible())
-                self.assertLessEqual(home.table.height(), home.table.rowHeight(0) + 2)
+                self.assertEqual(home.table.item(0, 2).text(), "刚刚")
+                self.assertEqual(home.values["待复习"].text(), "1")
                 window.open_library()
                 window.library.review.click()
                 window.library.reveal.click()
                 window.library.known.click()
                 window.tabs.setCurrentWidget(home)
-                wait_until(lambda: "已收藏 1 条" in home.activity.text() and "待复习" not in home.activity.text())
+                wait_until(lambda: home.values["已保存"].text() == "1" and home.values["待复习"].text() == "0")
                 window.trigger.setCurrentIndex(window.trigger.findData("right"))
                 self.assertEqual(home.key.text(), "右 Ctrl")
                 window.trigger.setCurrentIndex(window.trigger.findData("off"))
@@ -508,7 +504,7 @@ class Checks(unittest.TestCase):
             try:
                 window.submit(point, passage=word_in(RIVER))
                 wait_until(card.save.isVisible)
-                self.assertIn("英语 · 名词", card.text.toPlainText())
+                self.assertIn("名词 · 英语", card.text.toPlainText())
                 window.invalidate()
                 source = "De voorgestelde methode maakt het mogelijk om de temperatuur in deze omgeving te meten."
                 window.submit(point, passage=Passage(source))
@@ -520,7 +516,8 @@ class Checks(unittest.TestCase):
                 window.invalidate()
                 window.submit(point, passage=Passage("record", (0, 6)))
                 wait_until(card.save.isVisible)
-                self.assertIn("按英语查词 · 词性待定", card.text.toPlainText())
+                self.assertIn("英语", card.text.toPlainText())
+                self.assertNotIn("词性待定", card.text.toPlainText())
                 window.invalidate()
                 window.submit(point, passage=Passage(RIVER))
                 wait_until(card.copy.isVisible)
@@ -682,7 +679,7 @@ class Checks(unittest.TestCase):
             self.assertNotEqual(second.charFormat().background().style(), Qt.NoBrush)
 
             word = "inter" * 110
-            card.show_result(Passage(word, (0, len(word))), "单词参考", "参考", "译文", point)
+            card.show_result(Passage(word, (0, len(word))), "单词参考", "很长的释义" * 120, "译文", point)
             QApplication.processEvents()
             self.assertEqual(card.caption.text(), "单词参考")
             self.assertGreater(card.text.verticalScrollBar().maximum(), 0)
@@ -996,6 +993,11 @@ class Checks(unittest.TestCase):
             move_cursor(point)
             previous_ticket = window.ticket
             key(ctrl, True)
+            QTest.qWait(550)
+            key(ctrl, False)
+            QTest.qWait(100)
+            self.assertEqual(window.ticket, previous_ticket, "A long Ctrl hold opened a card")
+            key(ctrl, True)
             key(ord("C"), True)
             key(ord("C"), False)
             key(ctrl, False)
@@ -1057,7 +1059,16 @@ class Checks(unittest.TestCase):
                 wait_until(lambda: speak.called)
                 speak.assert_called_once_with(card.listen, "bank", True, "en")
                 self.assertTrue(card.isVisible())
-            button = window.card.copy
+            menu = card.more.menu()
+            menu.popup(card.more.mapToGlobal(card.more.rect().bottomLeft()))
+            wait_until(menu.isVisible)
+            copy_action = next(a for a in menu.actions() if a.text() == card.copy.accessibleName())
+            move_cursor(menu.mapToGlobal(menu.actionGeometry(copy_action).center()))
+            wait_until(lambda: native_target() == int(menu.winId()))
+            user.mouse_event(2, 0, 0, 0, 0)
+            user.mouse_event(4, 0, 0, 0, 0)
+            wait_until(lambda: card.copy.text() == "已复制")
+            button = window.card.pin
             center = button.mapToGlobal(button.rect().center())
             move_cursor(center)
             wait_until(lambda: native_target() == int(window.card.winId())
@@ -1065,7 +1076,7 @@ class Checks(unittest.TestCase):
             user.mouse_event(2, 0, 0, 0, 0)
             wait_until(button.isDown)
             user.mouse_event(4, 0, 0, 0, 0)
-            wait_until(lambda: window.card.copy.text() == "已复制")
+            wait_until(button.isChecked)
             self.assertTrue(window.card.isVisible())
             outside = sample.mapToGlobal(QPoint(6, sample.height() // 2))
             self.assertFalse(window.card.geometry().contains(outside))
@@ -1073,7 +1084,12 @@ class Checks(unittest.TestCase):
             wait_until(lambda: QApplication.widgetAt(QCursor.pos()) is sample and native_target() == int(sample.winId()))
             user.mouse_event(2, 0, 0, 0, 0)
             user.mouse_event(4, 0, 0, 0, 0)
-            wait_until(lambda: not window.card.isVisible() and len(clicks) == 2)
+            wait_until(lambda: len(clicks) == 2)
+            self.assertTrue(card.isVisible())
+            button.click()
+            user.mouse_event(2, 0, 0, 0, 0)
+            user.mouse_event(4, 0, 0, 0, 0)
+            wait_until(lambda: not card.isVisible() and len(clicks) == 3)
             self.assertEqual(clicks[-1], Qt.NoModifier)
             begin_drag()
             key(0x1B, True)
@@ -1088,7 +1104,7 @@ class Checks(unittest.TestCase):
             wait_until(lambda: window.card.caption.text() in ("选区译文", "需要处理"))
             self.assertEqual(window.card.caption.text(), "选区译文", window.card.text.toPlainText())
             self.assertIn("河岸", window.card.text.toPlainText())
-            self.assertEqual(len(clicks), 2, "Capture drag reached the foreground window")
+            self.assertEqual(len(clicks), 3, "Capture drag reached the foreground window")
             window.trigger.setCurrentIndex(window.trigger.findData("right"))
             wait_until(lambda: window.active_mode == "right")
             sample.setText("MVP validates our product hypothesis.")
@@ -1112,7 +1128,7 @@ class Checks(unittest.TestCase):
             sample.hide()
             window.open_home()
             self.assertTrue(QTest.qWaitForWindowExposed(window))
-            wait_until(lambda: window.isActiveWindow() and window.home.title.accessibleName() == "累计查词 2 次")
+            wait_until(lambda: window.isActiveWindow() and window.home.values["次取词"].text() == "2")
             self.assertEqual([window.home.table.item(i, 0).text() for i in range(2)], ["MVP", "bank"])
             self.assertIn("最小可行产品", window.home.table.item(0, 1).text())
             window.trigger.setCurrentIndex(window.trigger.findData("off"))

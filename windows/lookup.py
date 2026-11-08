@@ -1,7 +1,7 @@
 """Combine document, terminology, dictionary and translation evidence for a word."""
 import re
 
-from lexicon import lookup_info
+from lexicon import lookup_details
 from reader import Passage
 from terminology import resolve_term
 from languages import NAMES, SHORT_CYRILLIC, UnsupportedLanguage, detect_source
@@ -11,6 +11,9 @@ from word_details import part_of_speech
 
 UNKNOWN = "暂未收录"
 DICTIONARY = "英汉词典 · ECDICT"
+DICTIONARY_POS = {"n": "名词", "v": "动词", "vi": "不及物动词", "vt": "及物动词",
+                  "a": "形容词", "adj": "形容词", "adv": "副词", "prep": "介词",
+                  "pron": "代词", "conj": "连词", "num": "数词", "abbr": "缩写", "interj": "感叹词"}
 
 
 def reference_word(word):
@@ -77,10 +80,10 @@ def explain(passage):
 
     word = passage.word
     term = resolve_term(passage, passage.context)
-    entry, common = lookup_info(word) if not term else ("", False)
+    entry, common, passage.phonetic, dictionary_pos = lookup_details(word) if not term else ("", False, "", "")
     base = reference_word(word)
     if not term and not entry and base != word:
-        entry, common = lookup_info(base)
+        entry, common, _, dictionary_pos = lookup_details(base)
     # Preserve identifiers as printed. MT attention is not a definition of
     # an abbreviation or product name, even when it yields Chinese characters.
     identifier = bool(re.search(r"[a-z][A-Z]|\d|[+#_.]", word) or len(word) > 1 and word.isupper())
@@ -116,6 +119,9 @@ def explain(passage):
                     return result, excerpt, language, pos
                 return (DICTIONARY, entry, result[2]), None, language, pos
         origin, gloss = DICTIONARY, entry
+        if not has_sentence:
+            language = language or "英语"
+            pos = pos or DICTIONARY_POS.get(dictionary_pos, "")
     else:
         origin, gloss = UNKNOWN, "本机资料和附近原文里都没有找到可靠解释。"
     sentence = sentence_translation(passage.text) if has_sentence and english_context else ""
