@@ -129,20 +129,18 @@ def apply_theme(app):
         QLabel[role="shortcut"] {color:#595955; background:#f0efea; border:1px solid #bcbcb6;
             border-radius:4px; padding:2px 5px; font:12px 'Consolas';}
 
-        QFrame#sidebar {background:rgba(248,247,243,198); border:0;}
-        QFrame#navDivider, QFrame#pageDivider {border:0; background:qlineargradient(
-            x1:0, y1:0, x2:0, y2:1, stop:0 rgba(78,75,65,16), stop:0.5 rgba(78,75,65,110),
-            stop:1 rgba(78,75,65,16));}
+        QFrame#sidebar {background:#e8e6df; border:0;}
+        QFrame#navDivider {background:#c6c3ba; border:0;}
         QPushButton[role="windowControl"] {background:transparent; border:0; border-radius:2px; padding:0;}
         QPushButton[role="windowControl"]:hover, QPushButton[role="windowControl"]:focus {background:#e7e6df;}
         QPushButton#closeWindow:hover {background:#e3c5c0;}
         QLabel[role="brand"] {color:#101010; font:italic 27px 'Archivo Black','Arial Black'; padding-right:4px;}
-        QPushButton[role="nav"] {color:#46453e; background:transparent; border:0; border-radius:0;
-            border-bottom:2px solid transparent; font-weight:500;}
-        QPushButton[role="nav"]:hover {color:#171714; background:rgba(60,57,45,12);}
-        QPushButton[role="nav"]:checked {color:#171714; border-bottom-color:#4f4c40; font-weight:600;}
-        QPushButton[role="nav"]:focus {border-bottom:2px dashed #514f45;}
-        QPushButton[role="nav"]:pressed {background:rgba(60,57,45,28);}
+        QPushButton[role="nav"] {color:#4d4b45; background:transparent; border:1px solid transparent;
+            border-top-left-radius:7px; border-top-right-radius:7px; border-bottom:0; font-weight:500;}
+        QPushButton[role="nav"]:hover {color:#171714; background:#f1efe9;}
+        QPushButton[role="nav"]:checked {color:#171714; background:#faf9f6; font-weight:600;}
+        QPushButton[role="nav"]:focus {border-color:#837f73;}
+        QPushButton[role="nav"]:pressed {background:#dcd9d1;}
 
         QPushButton {color:#161615; background:#fffefa; border:1px solid #bcbcb6;
             border-radius:2px; padding:7px 13px; min-height:18px;}
