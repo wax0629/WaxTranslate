@@ -341,10 +341,15 @@ def read_from_pack(image, point, code):
     if frame.height() <= 64 or point is not None:
         gray = frame.convertToFormat(QImage.Format_Grayscale8)
         data, stride = gray.constBits(), gray.bytesPerLine()
-        bands = []
+        contrasts = []
         for y in range(gray.height()):
             row = data[y * stride:y * stride + gray.width()]
-            if max(row) - min(row) >= 45:
+            contrasts.append(max(row) - min(row))
+        # Dim, antialiased labels may never reach the contrast of black ink.
+        threshold = max(12, min(45, max(contrasts) * 0.4))
+        bands = []
+        for y, contrast in enumerate(contrasts):
+            if contrast >= threshold:
                 if not bands or y - bands[-1][1] > 3:
                     bands.append([y, y])
                 else:
@@ -467,7 +472,21 @@ async def recognize(image, point=None, source_code=""):
         engine = OcrEngine.try_create_from_language(language)
         if engine is None:
             raise ValueError("没有可用的系统识字引擎。")
-        return await read_passage(engine, image, point)
+        reading = await read_passage(engine, image, point)
+        # Windows can split the top stroke of the first kana into an extra
+        # prolongation mark. Never trim printed marks just from the string.
+        if code == "ja" and reading.text.startswith("ー") and ocr_file(code):
+            try:
+                check, confidence = read_from_pack(image, point, code)
+            except ValueError:
+                return reading
+            without_prefix = reading.text.lstrip("ー")
+            prefix_length = len(reading.text) - len(without_prefix)
+            if (confidence >= 80 and check.text == without_prefix
+                    and (point is None or check.word == reading.word.lstrip("ー")
+                         or reading.selection[1] <= prefix_length)):
+                return check
+        return reading
 
     if source_code:
         try:
@@ -523,6 +542,9 @@ async def recognize(image, point=None, source_code=""):
         except ValueError:
             pass
         else:
+            # A conflicting English pack reading can't corroborate the native
+            # Latin hypothesis (e.g. visually similar Cyrillic in a track list).
+            latin = None
             sample = target(packed)
             letters = "".join(c for c in sample if c.isalpha())
             agrees = initial and target(initial) == sample
@@ -539,7 +561,8 @@ async def recognize(image, point=None, source_code=""):
                 if agrees and detected_language(initial.text) not in SCRIPT_LETTERS:
                     latin = initial
                     latin.source_code = detected_language(initial.text)
-                if (agrees and confidence >= 60) or confidence >= 95 or (len(letters) >= 3 and confidence >= 85):
+                threshold = 95 if len(letters) == 1 else 90 if len(letters) == 2 else 85
+                if (agrees and confidence >= 60) or confidence >= threshold:
                     return latin
 
     # Short or marginal Latin readings can also be corroborated by a model

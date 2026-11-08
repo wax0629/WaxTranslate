@@ -1,6 +1,6 @@
 """Regression matrix for automatic OCR routing. Images and recognition stay local."""
 import asyncio
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +11,7 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter
 
 from app import analyze
+import reader
 from languages import detect_source
 from reader import Passage, read_from_pack, recognize
 
@@ -55,13 +56,35 @@ def packs_only():
                                                     try_create_from_language=lambda lang: None))
 
 
+@contextmanager
+def report_reads_on_failure(image, point):
+    """Make differences between Windows OCR configurations visible in the CI failure."""
+    try:
+        yield
+    except (AssertionError, ValueError) as error:
+        for code in ("en", "ja", "ko", "ru"):
+            try:
+                native = reader.OcrEngine.try_create_from_language(reader.Language(reader.OCR_TAGS[code]))
+                if native:
+                    p = asyncio.run(reader.read_passage(native, image, point))
+                    error.add_note(f"Windows {code}: {p!r}, hit line {p.ocr_line!r}")
+            except (OSError, ValueError) as reason:
+                error.add_note(f"Windows {code}: {reason}")
+            try:
+                p, confidence = read_from_pack(image, point, code)
+                error.add_note(f"Pack {code}: {p!r}, confidence {confidence:.1f}")
+            except (OSError, ValueError) as reason:
+                error.add_note(f"Pack {code}: {reason}")
+        raise
+
+
 class RoutingTests(unittest.TestCase):
     def check_latin_labels(self, offline):
         with packs_only() if offline else nullcontext():
             for i, (text, target, size) in enumerate(LABELS):
                 image, hit = render_label(text, target, size, COLORS[i % len(COLORS)])
                 for point in (hit, None):
-                    with self.subTest(text=text, hover=point is not None, offline=offline):
+                    with self.subTest(text=text, hover=point is not None, offline=offline), report_reads_on_failure(image, point):
                         result = asyncio.run(recognize(image, point))
                         self.assertEqual(result.text.casefold(), text.casefold())
                         self.assertIn(result.source_code, ("", "en"))
@@ -100,7 +123,7 @@ class RoutingTests(unittest.TestCase):
         for i, (text, code) in enumerate(samples):
             line = image.copy(0, 34 * i, image.width(), 34)
             for point in (QPointF(19, 18), None):
-                with self.subTest(text=text, hover=point is not None):
+                with self.subTest(text=text, hover=point is not None), report_reads_on_failure(line, point):
                     result = asyncio.run(recognize(line, point))
                     self.assertEqual((result.source_code, result.text.casefold()), (code, text.casefold()))
                     if point is not None:
@@ -137,7 +160,7 @@ class RoutingTests(unittest.TestCase):
                                  Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
             blurred = small.scaled(image.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
             for point in (hit, None):
-                with self.subTest(target=target, hover=point is not None):
+                with self.subTest(target=target, hover=point is not None), report_reads_on_failure(blurred, point):
                     result = asyncio.run(recognize(blurred, point))
                     self.assertEqual(result.text.casefold(), target.casefold())
                     self.assertIn(result.source_code, ("", "en"))
@@ -147,7 +170,8 @@ class RoutingTests(unittest.TestCase):
         for hit, word, allowed in ((QPointF(41, 324), "Midnight", ("en", "")),
                                    (QPointF(22, 289), "дом", ("ru",)), (QPointF(21, 52), "하루", ("ko",))):
             for offline in (False, True):
-                with self.subTest(word=word, offline=offline), packs_only() if offline else nullcontext():
+                with (self.subTest(word=word, offline=offline), packs_only() if offline else nullcontext(),
+                      report_reads_on_failure(sheet, hit)):
                     result = asyncio.run(recognize(sheet, hit))
                     self.assertEqual(result.word.casefold(), word.casefold())
                     self.assertIn(result.source_code, allowed)
@@ -199,6 +223,28 @@ class RoutingTests(unittest.TestCase):
         with (patch("reader.OcrEngine", engines), patch("reader.read_passage", side_effect=OSError("native OCR failed")),
               patch("reader.ocr_file", return_value=True), patch("reader.read_from_pack", return_value=(english, 99))):
             self.assertEqual(asyncio.run(recognize(object(), QPointF(5, 12))).word, "Go")
+
+    def test_detached_kana_stroke_needs_a_second_read_of_the_pixels(self):
+        native = Passage("ーそして", (0, 4))
+        for second in ("ーそして", "そして"):
+            packed = Passage(second, (0, len(second)), source_code="ja")
+            with (self.subTest(second=second), patch("reader.OcrEngine.try_create_from_language", return_value="ja"),
+                  patch("reader.read_passage", return_value=native), patch("reader.ocr_file", return_value=True),
+                  patch("reader.read_from_pack", return_value=(packed, 94))):
+                result = asyncio.run(recognize(object(), QPointF(19, 18), "ja"))
+                self.assertEqual((result.text, result.word), (second, second))
+
+    def test_conflicting_latin_read_on_a_cyrillic_row(self):
+        tags = [SimpleNamespace(language_tag=t) for t in ("en-US", "ja-JP", "ru-RU")]
+        engines = SimpleNamespace(available_recognizer_languages=tags,
+                                  try_create_from_language=lambda lang: lang.language_tag)
+        reads = {"en-US": Passage("npner AOM Midnight (Live)", (6, 9), ocr_line="AOM"),
+                 "ja-JP": Passage("AOM", (0, 3)), "ru-RU": Passage("дом", (0, 3))}
+        with (patch("reader.OcrEngine", engines), patch("reader.ocr_file", return_value=True),
+              patch("reader.read_passage", side_effect=lambda engine, *_: reads[engine]),
+              patch("reader.read_from_pack", return_value=(Passage("JOM", (0, 3)), 49))):
+            result = asyncio.run(recognize(object(), QPointF(22, 289)))
+            self.assertEqual((result.word, result.source_code), ("дом", "ru"))
 
     def test_statistical_language_predictions_must_match_the_written_script(self):
         for code in ("ja", "ko", "ru"):
