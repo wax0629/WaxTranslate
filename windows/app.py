@@ -25,7 +25,7 @@ from startup import LoginStartup
 from theme import APP_NAME, apply_theme, label, ui_icon
 from languages import UnsupportedLanguage
 from workspace import TextWorkspace
-from window_frame import configure_frame, frame_result
+from window_frame import WindowOutline, configure_frame, frame_result
 
 
 def image_point(point, logical_size, image_size):
@@ -259,6 +259,8 @@ class Window(QWidget):
         self.workspace.example.clicked.connect(self.demo)
         layout.addWidget(self.workspace, 1)
         self.tray = QSystemTrayIcon(QApplication.windowIcon(), self)
+        self.outline = WindowOutline(self)
+        self.outline.setGeometry(self.rect())
         self.gesture_warning = self.home.warning
         self.update_trigger_hints()
         self.trigger.currentIndexChanged.connect(self.change_trigger)
@@ -293,6 +295,7 @@ class Window(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self.outline.setGeometry(self.rect())
         self.arrange_shell(event.size().width() < 820)
 
     def paintEvent(self, event):
@@ -339,8 +342,8 @@ class Window(QWidget):
         if available and not self.tray.isVisible():
             self.tray.show()
         kind = Qt.Tool if available else Qt.Window
-        if self.windowType() != kind or not self.windowFlags() & Qt.CustomizeWindowHint:
-            self.setWindowFlags(kind | Qt.CustomizeWindowHint | Qt.WindowSystemMenuHint)
+        if self.windowType() != kind or not self.windowFlags() & Qt.FramelessWindowHint:
+            self.setWindowFlags(kind | Qt.FramelessWindowHint)
         configure_frame(self)
         return available
 
@@ -419,6 +422,7 @@ class Window(QWidget):
             self.maximize_button.setIcon(ui_icon("restore" if maximized else "maximize", "#242422"))
             self.maximize_button.setAccessibleName(name)
             self.maximize_button.setToolTip(name)
+            self.outline.update()
             self.schedule_frame_update()
         if event.type() == QEvent.WindowStateChange and self.isMinimized() and hasattr(self, "tray"):
             # Finish the native minimize transition before hiding the window.
