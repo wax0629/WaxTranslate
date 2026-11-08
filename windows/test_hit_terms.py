@@ -57,6 +57,21 @@ class HitTests(unittest.TestCase):
                     read, _ = read_from_pack(image, point, "en")
                     self.assertEqual((read.word, read.selection), (match[0], match.span()))
 
+    def test_collapsed_glyphs_keep_the_second_occurrence(self):
+        # At fractional scale the OCR text can be complete even though every
+        # box after the opening delimiter is clipped to the same column.
+        label = "echo(echo)"
+        prefix = [("e", 20, 36), ("c", 36, 50), ("h", 50, 68), ("o", 68, 85), ("(", 85, 94)]
+        symbols = prefix + [(ch, 93, 94) for ch in "echo)"]
+        token = (label, [20, 10, 94, 38], 96, 0, symbols)
+        output = json.dumps([(token[1], [token])]).encode()
+        frame = QImage(250, 60, QImage.Format_RGB32)
+        frame.fill(Qt.white)
+        with patch("reader.subprocess.run", return_value=SimpleNamespace(stdout=output)):
+            for x, start in ((22, 0), (62, 5)):
+                read, _ = read_from_pack(frame, QPointF(x, 12), "en")
+                self.assertEqual((read.word, read.selection, read.context_offset), ("echo", (start, start + 4), start))
+
     def test_punctuation_and_overlapping_word_boxes(self):
         label = Word("(docs):", QRectF(0, 0, 60, 20))
         for x in (1, 59):

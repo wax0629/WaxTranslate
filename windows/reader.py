@@ -84,21 +84,20 @@ class Word:
     edges: tuple[float, ...] = ()
 
     def character_at(self, x):
-        edges = self.edges
-        if not edges:
-            advances = character_advances(self.text)
-            width = advances[-1]
-            if not width:
-                return 0
-            edges = [self.rect.left() + self.rect.width() * a / width for a in advances]
+        edges = self.edges or estimated_edges(self.text, self.rect.left(), self.rect.right())
         return max(0, min(len(self.text) - 1, bisect_right(edges, x) - 1))
 
 
-def character_advances(text):
+def estimated_edges(text, left, right, start=0, end=None):
     font = QFont("Segoe UI")
     font.setPixelSize(64)
     metrics = QFontMetricsF(font)
-    return [metrics.horizontalAdvance(text[:i]) for i in range(len(text) + 1)]
+    advances = [metrics.horizontalAdvance(text[:i]) for i in range(len(text) + 1)]
+    width = advances[len(text) if end is None else end] - advances[start]
+    if width <= 0 or right <= left:
+        return ()
+    scale = (right - left) / width
+    return tuple(left + scale * (a - advances[start]) for a in advances)
 
 
 def packed_word(text, rect, symbols):
@@ -106,24 +105,41 @@ def packed_word(text, rect, symbols):
     if not symbols or "".join(s[0] for s in symbols) != text:
         return word
     boxes = [(left, right) for symbol, left, right in symbols for _ in symbol]
-    # A link underline can be assigned to one glyph, stretching its box
-    # across subsequent words. Anchor the advances to the remaining glyphs.
-    reliable = [i for i, (left, right) in enumerate(boxes) if 0 < right - left <= 2 * rect.height()]
+    # An underline can stretch a glyph across other words. Tesseract can also
+    # clip several successive glyphs to the same column at the edge of a box.
+    reliable = [i for i, (left, right) in enumerate(boxes)
+                if 0 < right - left <= 2 * rect.height()
+                and (i == 0 or boxes[i] != boxes[i - 1])
+                and (i + 1 == len(boxes) or boxes[i] != boxes[i + 1])]
     if not reliable:
         return word
     if len(reliable) != len(boxes):
         first, last = reliable[0], reliable[-1]
-        advances = character_advances(text)
-        width = advances[last + 1] - advances[first]
-        if width > 0:
-            scale = (boxes[last][1] - boxes[first][0]) / width
-            if scale > 0:
-                word.edges = tuple(boxes[first][0] + scale * (a - advances[first]) for a in advances)
-                word.rect.setLeft(max(rect.left(), word.edges[0]))
-                word.rect.setRight(min(rect.right(), word.edges[-1]))
+        word.edges = estimated_edges(text, boxes[first][0], boxes[last][1], first, last + 1)
+        if word.edges:
+            word.rect.setLeft(word.edges[0])
+            word.rect.setRight(word.edges[-1])
         return word
-    if all(a[1] <= b[0] for a, b in zip(boxes, boxes[1:])):
-        word.edges = (boxes[0][0], *((a[1] + b[0]) / 2 for a, b in zip(boxes, boxes[1:])), boxes[-1][1])
+    edges = [boxes[0][0]]
+    estimated = ()
+    for i, (a, b) in enumerate(zip(boxes, boxes[1:]), 1):
+        if a[1] <= b[0] + 1:
+            edges.append((a[1] + b[0]) / 2)
+        else:
+            # Overlapping ink cannot locate this character boundary. Keep
+            # measured positions at the other delimiters in the same word.
+            estimated = estimated or estimated_edges(text, rect.left(), rect.right())
+            if not estimated:
+                return word
+            edges.append(estimated[i])
+    edges.append(boxes[-1][1])
+    for i, (left, right) in enumerate(zip(edges, edges[1:])):
+        # Mixing measured and estimated boundaries can squeeze a separator
+        # out of existence. In that case use the consistent word-wide fit.
+        minimum = (estimated[i + 1] - estimated[i]) / 3 if estimated else 0
+        if right - left < minimum:
+            return word
+    word.edges = tuple(edges)
     return word
 
 
@@ -446,8 +462,7 @@ def read_from_pack(image, point, code):
         x, y, right, bottom = bounds
         return QRectF(x, y, right - x, bottom - y)
 
-    lines, line_boxes, confidence = [], [], []
-    token_boxes = []
+    lines, token_boxes, confidence = [], [], []
     recognized = json.loads(job.stdout)
     for bounds, tokens in recognized:
         words = []
@@ -472,10 +487,9 @@ def read_from_pack(image, point, code):
             words[0].rect = rect(bounds)
         lines.append(words)
         token_boxes.append(boxes)
-        line_boxes.append(rect(bounds))
         confidence.append(sum(token[2] for token in tokens) / len(tokens))
     if point is not None:
-        hit = nearest_box(point, enumerate(line_boxes))
+        hit = nearest_box(point, ((i, word.rect) for i, line in enumerate(lines) for word in line))
         if hit is None:
             raise ValueError("光标附近没有可确定的词。请指向标题文字。")
         # Sparse labels on adjacent rows can be unrelated (song and artist).
