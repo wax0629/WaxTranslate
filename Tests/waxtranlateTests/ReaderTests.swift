@@ -39,13 +39,14 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testReadingCancellation()
         try testReferenceBoundary()
         try testTerminology()
+        try testMixedTerminology()
         try testPackedOCRAndManualLanguages()
         try testSmallMixedText()
         try testShortcutAndDockPreferences()
         try testSimplifiedOutput()
         try testLookupCache()
         try await testInstalledTranslation(ruledOut: ruledOut, ranOut: ranOut)
-        print("Passed: capture geometry, cursor-free Retina configuration, small mixed text, OCR, packed typography, phrase selection, exact occurrences, vocabulary migration, review, language routing, dashboard persistence, corrupt-data preservation, reading cancellation, local terminology, reference boundaries, Option tap guards and Dock preferences.")
+        print("Passed: capture geometry, cursor-free Retina configuration, small mixed text, OCR, packed typography, phrase selection, exact occurrences, vocabulary migration, review, language routing, dashboard persistence, corrupt-data preservation, reading cancellation, mixed-language terminology, unchanged-result boundaries, reference boundaries, Option tap guards and Dock preferences.")
     }
 
     static func testLookupCache() throws {
@@ -365,7 +366,7 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
             let japaneseSession = TranslationSession(installedSource: japanese, target: target)
             let result = try await LookupTranslation.translate(passage, session: japaneseSession, dictionary: [])
             let full = try require(result.sentenceTranslation)
-            try expect(full.contains("猫") && ["睡", "眠"].contains(where: full.contains))
+            try expect(result.isUsable && result.meaning.contains("猫") && full.contains("猫") && ["睡", "眠"].contains(where: full.contains))
             print("Japanese →", result.meaning, "/", full)
         } else { print("Skipping live Japanese translation: JA/ZH languages not installed.") }
     }
@@ -517,6 +518,76 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         let selected = TextLine(text: article, frame: CGRect(x: 0, y: 0, width: 1000, height: 20), hit: hit)
         let contextual = try SentenceContext.passage(in: [selected], language: "en")
         try expect(LocalTerminology.lookup(contextual)?.meaning == "mean annual rainfall")
+    }
+
+    static func testMixedTerminology() throws {
+        func passage(_ word: String, _ context: String, language: String? = nil, last: Bool = false) -> Passage {
+            Passage(text: word, context: context, selection: (context as NSString).range(of: word, options: last ? .backwards : []), language: language)
+        }
+        for (word, meaning) in [("OCR", "光学字符识别"), ("API", "应用程序编程接口"), ("SDK", "软件开发工具包"),
+                                ("JSON", "数据格式"), ("CPU", "中央处理器"), ("BPE", "字节对编码"),
+                                ("ＯＣＲ", "光学字符识别"), ("OCRs", "光学字符识别")] {
+            let p = passage(word, "这里使用\(word)处理图片和代码，其他文字都是中文。")
+            try expect(p.sourceLanguage.hasPrefix("zh"))
+            let term = try require(LocalTerminology.lookup(p))
+            try expect(term.meaning.contains(meaning))
+            let old = LookupResult(meaning: word, origin: .standalone, sentenceTranslation: "Old English output")
+            let initial = try require(LookupResult.initial(term: term, cached: old, dictionary: ["错误参考"]))
+            try expect(initial.origin == .term && initial.meaning.contains(meaning) && initial.sentenceTranslation == nil && initial.isUsable)
+        }
+        for (word, context, expected) in [
+            ("Codex", "开发者用Codex修复仓库里的代码。", "编程助手"),
+            ("Codex", "開發者用Codex修復倉庫裡的代碼。", "编程助手"),
+            ("Codex", "这份古代Codex是羊皮纸手抄本。", "手抄本"),
+            ("Rust", "我们用Rust开发软件。", "编程语言"),
+            ("Go", "Go语言支持协程。", "编程语言"),
+            ("React", "我们用React编写前端组件。", "JavaScript"),
+            ("Docker", "Docker容器使用镜像部署。", "容器"),
+            ("PRD", "PRD记录产品需求文档。", "产品需求文档"),
+            ("PRD", "广东和深圳都在PRD珠三角区域。", "珠江三角洲"),
+            ("ram", "这台电脑的ram内存不足。", "随机存取"),
+            ("api", "这个api接口返回数据。", "应用程序编程接口")
+        ] {
+            let term = try require(LocalTerminology.lookup(passage(word, context)))
+            try expect(term.meaning.contains(expected))
+        }
+        let text = "产品团队用MVP验证需求，球队的MVP是最有价值球员。"
+        try expect(LocalTerminology.lookup(passage("MVP", text))?.meaning.contains("最小可行产品") == true)
+        try expect(LocalTerminology.lookup(passage("MVP", text, last: true))?.meaning.contains("最有价值球员") == true)
+        try expect(LocalTerminology.lookup(passage("Codex", "我们在聊Codex。"))?.label == "多义参考")
+        for (word, context, language) in [
+            ("ram", "公羊ram正在山坡吃草。", "zh-Hans"), ("rest", "我需要rest休息一下。", "zh-Hans"),
+            ("Rust", "铁门上的Rust是铁锈。", "zh-Hans"), ("OCR2", "这里有OCR2字符串。", "zh-Hans"),
+            ("os", "os livros estão na mesa", "pt"), ("OS", "OS LIVROS ESTÃO NA MESA", "pt"),
+            ("api", "Api membakar kayu itu.", "id"), ("AI", "AI CHOISI CE LIVRE", "fr")
+        ] { try expect(LocalTerminology.lookup(passage(word, context, language: language)) == nil) }
+        let manual = passage("OCR", "使用OCR识别图片文字。", language: "zh-Hans")
+        try expect(manual.sourceLanguage == "zh-Hans" && LocalTerminology.lookup(manual)?.meaning.contains("光学字符识别") == true)
+        try expect(manual.headwordLanguage == "en")
+        let unknown = passage("UnknownSDK", "这里有UnknownSDK这个名称。")
+        let unchanged = LookupTranslation.makeResult(for: unknown, meaning: "UNKNOWNsdk", origin: .standalone)
+        try expect(unchanged.origin == .unresolved && !unchanged.isUsable && unchanged.meaning.isEmpty)
+        let cache = LookupCache(); cache.insert(unchanged, for: unknown)
+        try expect(cache.result(for: unknown) == nil)
+        let region = Passage(text: "SELECT * FROM users", context: "", language: "en")
+        try expect(LookupTranslation.makeResult(for: region, meaning: region.text, origin: .region).isUsable)
+        let japanese = Passage(text: "猫", context: "猫が眠っています。", language: "ja")
+        try expect(LookupTranslation.makeResult(for: japanese, meaning: "猫", origin: .sentence).isUsable)
+        try expect(japanese.headwordLanguage == "ja")
+        let stale = Passage(text: "OCR", context: "不是原词", selection: NSRange(location: 0, length: 3), language: "en")
+        try expect(LocalTerminology.lookup(stale) == nil)
+        let sentence = "这里用 OCR 识别图片里的文字，结果保存在本机。"
+        let font = NSFont.systemFont(ofSize: 16)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]
+        let image = NSImage(size: NSSize(width: 800, height: 90))
+        image.lockFocus(); NSColor.white.setFill(); NSRect(x: 0, y: 0, width: 800, height: 90).fill()
+        (sentence as NSString).draw(at: NSPoint(x: 20, y: 25), withAttributes: attributes)
+        image.unlockFocus()
+        let x = 20 + ("这里用 " as NSString).size(withAttributes: attributes).width + ("OCR" as NSString).size(withAttributes: attributes).width / 2
+        let recognized = try Reader.recognize(image: require(image.cgImage(forProposedRect: nil, context: nil, hints: nil)),
+                         target: CGPoint(x: x / 800, y: (25 + font.ascender * 0.55) / 90))
+        try expect(recognized.text == "OCR" && recognized.sourceLanguage.hasPrefix("zh"))
+        try expect(LocalTerminology.lookup(recognized)?.meaning.contains("光学字符识别") == true)
     }
 
     static func testPackedOCRAndManualLanguages() throws {

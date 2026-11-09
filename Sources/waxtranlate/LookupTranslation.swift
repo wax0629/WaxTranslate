@@ -4,10 +4,19 @@ import NaturalLanguage
 import Translation
 
 struct LookupResult {
-    enum Origin { case sentence, dictionary, standalone, region, term }
+    enum Origin { case sentence, dictionary, standalone, region, term, unresolved }
     let meaning: String
     let origin: Origin
     var sentenceTranslation: String? = nil
+    var isUsable: Bool { origin != .unresolved && !meaning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    static func initial(term: TermMeaning?, cached: LookupResult?, dictionary: [String]) -> LookupResult? {
+        if let term {
+            return LookupResult(meaning: TranslationOutput.normalize(term.meaning), origin: .term,
+                                sentenceTranslation: cached?.origin == .term ? cached?.sentenceTranslation : nil)
+        }
+        return cached ?? dictionary.first.map { LookupResult(meaning: $0, origin: .dictionary) }
+    }
 }
 
 @MainActor final class LookupCache {
@@ -32,7 +41,7 @@ struct LookupResult {
         return value
     }
     func insert(_ result: LookupResult, for passage: Passage, now: Date = Date()) {
-        guard passage.text.count <= 1000, passage.context.count <= 4000 else { return }
+        guard result.isUsable, passage.text.count <= 1000, passage.context.count <= 4000 else { return }
         let key = Key(passage)
         entries[key] = (result, now.addingTimeInterval(600))
         order.removeAll { $0 == key }; order.append(key)
@@ -104,6 +113,20 @@ private extension String {
 }
 
 enum LookupTranslation {
+    static func makeResult(for passage: Passage, meaning: String, origin: LookupResult.Origin, sentence: String? = nil) -> LookupResult {
+        let target = passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans"
+        let trim = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
+        let gloss = meaning.trimmingCharacters(in: trim)
+        let word = passage.text.precomposedStringWithCompatibilityMapping
+        let latin = word.range(of: #"^[\p{Latin}\p{N}\s.+#’'_-]+$"#, options: .regularExpression) != nil &&
+            word.range(of: #"\p{Latin}"#, options: .regularExpression) != nil
+        // Shared Han spellings (e.g. Japanese 猫 → Chinese 猫) are valid.
+        let unchanged = origin != .region && latin && gloss.caseInsensitiveCompare(passage.text.trimmingCharacters(in: trim)) == .orderedSame
+        return LookupResult(meaning: unchanged || gloss.isEmpty ? "" : TranslationOutput.normalize(meaning, target: target),
+                            origin: unchanged || gloss.isEmpty ? .unresolved : origin,
+                            sentenceTranslation: sentence.map { TranslationOutput.normalize($0, target: target) })
+    }
+
     static func markedSentence(_ passage: Passage) -> AttributedString? {
         guard let selection = passage.selection, let range = Range(selection, in: passage.context),
               passage.context[range] == passage.text else { return nil }
@@ -140,10 +163,8 @@ enum LookupTranslation {
     }
 
     static func translate(_ passage: Passage, session: TranslationSession, dictionary: [String], trace: LookupTrace = LookupTrace()) async throws -> LookupResult {
-        let target = passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans"
         func result(_ meaning: String, _ origin: LookupResult.Origin, _ sentence: String? = nil) -> LookupResult {
-            LookupResult(meaning: TranslationOutput.normalize(meaning, target: target), origin: origin,
-                         sentenceTranslation: sentence.map { TranslationOutput.normalize($0, target: target) })
+            makeResult(for: passage, meaning: meaning, origin: origin, sentence: sentence)
         }
         guard !passage.context.isEmpty, passage.context != passage.text else {
             let began = LookupTrace.now

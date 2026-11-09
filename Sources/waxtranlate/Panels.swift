@@ -174,7 +174,7 @@ struct LibraryView: View {
                                 if let sentence = item.displaySentenceTranslation { Text(sentence).font(.callout).foregroundStyle(DeskTheme.muted) }
                             }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                         }.buttonStyle(.plain)
-                        Button { speak(item.source, item.language ?? item.passage.sourceLanguage) } label: { Image(systemName: "speaker.wave.2") }
+                        Button { speak(item.source, item.passage.headwordLanguage) } label: { Image(systemName: "speaker.wave.2") }
                             .buttonStyle(.plain).help("朗读词条").accessibilityLabel("朗读 \(item.source)")
                         Button { deletion = item } label: { Image(systemName: "trash") }
                             .buttonStyle(.plain).foregroundStyle(DeskTheme.muted).help("删除词条").accessibilityLabel("删除 \(item.source)")
@@ -192,7 +192,7 @@ struct LibraryView: View {
                     Text("\(due.count) 条待复习").font(.callout).foregroundStyle(DeskTheme.muted)
                     HStack {
                         Text(item.source).font(.custom("Baskerville-Italic", size: 42))
-                        Button { speak(item.source, item.language ?? item.passage.sourceLanguage) } label: { Image(systemName: "speaker.wave.2") }
+                        Button { speak(item.source, item.passage.headwordLanguage) } label: { Image(systemName: "speaker.wave.2") }
                             .buttonStyle(.plain).accessibilityLabel("朗读复习词语")
                     }
                     if !item.context.isEmpty { Text(item.context).font(.custom("Baskerville", size: 20)) }

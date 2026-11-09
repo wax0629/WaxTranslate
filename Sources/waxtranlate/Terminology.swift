@@ -29,22 +29,34 @@ enum LocalTerminology {
 
     static func hasUnambiguousSpelling(_ word: String) -> Bool {
         guard let glossary else { return false }
+        let word = canonicalWord(word)
         return glossary.names[word.lowercased()] != nil || ["mvp", "prd", "codex"].contains(word.lowercased()) ||
             (word == word.uppercased() && glossary.acronyms[word] != nil)
     }
 
     static func lookup(_ passage: Passage) -> TermMeaning? {
-        guard passage.sourceLanguage == "en", !passage.isPhrase, passage.selection != nil,
+        guard !passage.isPhrase, let selection = passage.selection,
+              let selected = Range(selection, in: passage.context), passage.context[selected] == passage.text,
               passage.text.count <= 100, let glossary else { return nil }
-        var word = passage.text.precomposedStringWithCompatibilityMapping
-            .replacingOccurrences(of: "['’]s$", with: "", options: [.regularExpression, .caseInsensitive])
-        if word.range(of: "^[A-Z]{2,10}s$", options: .regularExpression) != nil { word.removeLast() }
+        let word = canonicalWord(passage.text)
+        guard word.range(of: #"^[A-Za-z0-9.+#'’\-]+$"#, options: .regularExpression) != nil else { return nil }
         let key = word.lowercased()
-        let clause = localClause(passage)
+        let clause = TranslationOutput.normalize(localClause(passage))
+        let english = passage.sourceLanguage == "en"
+        let technicalChinese = matches("代码|编程|接口|程序|服务器|模型|算法|软件|开发|数据库|识别|图片|内存|操作系统|界面|加密", in: clause)
         var acronym = glossary.acronyms[word.uppercased()]
-        if let cue = glossary.lowercaseCues[key], word != word.uppercased(), !matches(cue, in: clause) { acronym = nil }
+        if word != word.uppercased() {
+            if let cue = glossary.lowercaseCues[key] {
+                if !matches(cue, in: clause), !matches(chineseLowercaseCues[key] ?? "(?!)", in: clause) { acronym = nil }
+            } else if !english && !technicalChinese { acronym = nil }
+        } else if ["os", "ai", "ui"].contains(key), !english, !matches("[\\p{Han}]", in: clause) {
+            // These short strings are ordinary words in several Latin languages.
+            acronym = nil
+        }
         let senses = glossary.senses[key] ?? []
-        let matching = senses.filter { $0.count == 3 && matches("\\b(?:" + $0[2] + ")\\b", in: clause) }
+        let matching = senses.filter { $0.count == 3 &&
+            (matches("(?<![A-Za-z0-9_])(?:" + $0[2] + ")(?![A-Za-z0-9_])", in: clause) ||
+             matches(chineseSenseCues[$0[0]] ?? "(?!)", in: clause)) }
         let localSense = matching.count == 1 ? matching[0] : nil
         if let definition = writtenDefinition(passage, word: word) {
             let options = (acronym.map { [$0] } ?? []) + senses
@@ -60,13 +72,47 @@ enum LocalTerminology {
                 meaning: localSense.map(format) ?? glossary.multiple[key] ?? word, kind: key == "codex" ? "名称" : "缩写")
         }
         if let acronym { return TermMeaning(label: "术语参考", meaning: format(acronym), kind: "缩写") }
-        if let item = glossary.contextNames[key], item.count == 3, matches("\\b(?:" + item[0] + ")\\b", in: clause) {
+        if let item = glossary.contextNames[key], item.count == 3,
+           matches("(?<![A-Za-z0-9_])(?:" + item[0] + ")(?![A-Za-z0-9_])", in: clause) ||
+           matches(chineseNameCues[key] ?? "(?!)", in: clause) {
             return TermMeaning(label: "术语参考", meaning: item[2], kind: item[1])
         }
         let nameKey = matches("^ciallo{2,6}$", in: key) ? "ciallo" : key
         if let item = glossary.names[nameKey], item.count == 2 { return TermMeaning(label: "术语参考", meaning: item[1], kind: item[0]) }
         return nil
     }
+
+    private static func canonicalWord(_ text: String) -> String {
+        var word = text.precomposedStringWithCompatibilityMapping
+            .replacingOccurrences(of: "['’]s$", with: "", options: [.regularExpression, .caseInsensitive])
+        if word.range(of: "^[A-Z]{2,10}s$", options: .regularExpression) != nil { word.removeLast() }
+        return word
+    }
+
+    private static let chineseLowercaseCues = [
+        "ram": "内存|记忆体|DDR[345]", "rag": "检索增强|向量数据库|大语言模型|大模型",
+        "ide": "编辑器|调试器|集成开发|代码补全", "rest": "接口|端点|网络服务"
+    ]
+    // Key by the glossary's expansion, not its array position, so exported data
+    // can add or reorder senses without changing these language cues.
+    private static let chineseSenseCues = [
+        "minimum viable product": "产品|原型|用户|客户|上线|迭代|最小可行",
+        "most valuable player": "球员|球赛|球队|赛季|篮球|足球|冠军|联赛|运动员",
+        "model-view-presenter": "表示器|呈现器|视图|设计模式|MVP架构",
+        "mitral valve prolapse": "二尖瓣|心脏|瓣膜",
+        "product requirements document": "产品|需求|文档|功能|评审",
+        "Pearl River Delta": "珠三角|珠江|广东|广州|深圳|香港",
+        "OpenAI Codex": "编程|代码|代码库|仓库|软件|调试|开发|修复|提交|测试",
+        "codex": "手抄本|手稿|古籍|羊皮纸|中世纪|古代书籍",
+        "Codex Alimentarius": "食品|食物安全|食品法典"
+    ]
+    private static let chineseNameCues = [
+        "rust": "rust.{0,12}(?:编程|语言|编译器|代码|借用|所有权)|(?:用|使用|采用)\\s*rust.{0,8}(?:开发|编写|实现)|借用检查器",
+        "go": "go\\s*(?:语言|编译器|协程|模块)|(?:用|使用)\\s*go.{0,8}(?:开发|编写)|golang",
+        "react": "react.{0,12}(?:组件|前端|界面|框架|钩子)|(?:前端|组件|界面).{0,12}react",
+        "docker": "docker.{0,12}(?:容器|镜像|部署)|(?:容器|镜像).{0,12}docker",
+        "signal": "signal.{0,12}(?:通信|通讯|聊天|加密消息)|(?:使用|安装)\\s*signal.{0,12}(?:消息|通信|通讯|聊天)"
+    ]
 
     private static func format(_ item: [String]) -> String {
         guard item.count >= 2 else { return "" }
@@ -79,7 +125,8 @@ enum LocalTerminology {
 
     private static func localClause(_ passage: Passage) -> String {
         guard let selection = passage.selection, let range = Range(selection, in: passage.context) else { return passage.context.lowercased() }
-        let pattern = "[,;!?]|\\b(?:whereas|while|but|" + NSRegularExpression.escapedPattern(for: passage.text) + ")\\b"
+        let pattern = "[,;!?，；。！？]|\\b(?:whereas|while|but)\\b|(?<![A-Za-z0-9_])" +
+            NSRegularExpression.escapedPattern(for: passage.text) + "(?![A-Za-z0-9_])"
         let before = String(passage.context[..<range.lowerBound])
         let after = String(passage.context[range.upperBound...])
         let left = before.components(separatedByRegex: pattern).last ?? ""
@@ -107,7 +154,7 @@ enum LocalTerminology {
     private static func writtenDefinition(_ passage: Passage, word: String) -> (value: String, direct: Bool, acronym: Bool)? {
         let text = passage.nearbyContext ?? passage.context
         let selected = passage.nearbySelection ?? passage.selection
-        let pattern = "(?<![\\w])" + NSRegularExpression.escapedPattern(for: passage.text) + "(?![\\w])"
+        let pattern = "(?<![A-Za-z0-9_])" + NSRegularExpression.escapedPattern(for: passage.text) + "(?![A-Za-z0-9_])"
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
         var definitions: [(String, Bool, Bool)] = []
         for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {

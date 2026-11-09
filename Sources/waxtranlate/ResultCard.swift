@@ -52,9 +52,8 @@ struct ResultCard: View {
         trace.record("lookup.dictionary_and_terms", since: began)
         let cached = LookupCache.shared.result(for: passage)
         cacheHit = cached != nil
-        _phase = State(initialValue: cached == nil ? .checking : .done)
-        _result = State(initialValue: cached ?? term.map { LookupResult(meaning: TranslationOutput.normalize($0.meaning), origin: .term) }
-                        ?? dictionary.first.map { LookupResult(meaning: $0, origin: .dictionary) })
+        _phase = State(initialValue: cached == nil && term == nil ? .checking : .done)
+        _result = State(initialValue: LookupResult.initial(term: term, cached: cached, dictionary: dictionary))
     }
 
     private var hasSentence: Bool { !passage.context.isEmpty && passage.context != passage.text }
@@ -68,7 +67,8 @@ struct ResultCard: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if let result {
-                        Text(result.meaning).font(isRegion ? .system(size: 17) : .system(size: 20, weight: .medium))
+                        Text(result.isUsable ? result.meaning : "暂未找到可靠释义，可查看百科参考或更换语境重试。")
+                            .font(isRegion || !result.isUsable ? .system(size: 16) : .system(size: 17, weight: .medium))
                             .fixedSize(horizontal: false, vertical: true)
                         originLabel(result)
                     }
@@ -87,7 +87,7 @@ struct ResultCard: View {
                     if !referenceStatus.isEmpty { Text(referenceStatus).font(.caption).foregroundStyle(DeskTheme.muted) }
                     if let error = notebook.error { Text(error).font(.caption).foregroundStyle(DeskTheme.accent) }
                 }.frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-            }.frame(maxHeight: expanded || isRegion ? 260 : 110)
+            }.frame(maxHeight: expanded || isRegion ? 260 : term != nil ? 180 : 110)
             footer
         }
         .padding(19).frame(width: 365)
@@ -98,15 +98,16 @@ struct ResultCard: View {
         .task {
             let began = LookupTrace.now
             if let result { record(result); trace.record("lookup.first_reference", since: began) }
+            if term != nil { phase = .done; trace.record("lookup.local_term", since: began); return }
             if cacheHit { trace.record("lookup.cache_hit", since: began); return }
-            let availability = await LanguageAvailability().status(from: source, to: target)
-            trace.record("translation.availability", since: began)
-            guard !Task.isCancelled else { return }
-            switch availability {
-            case .installed: start()
-            case .supported: phase = .download
-            default: phase = .unsupported
-            }
+            await prepare()
+        }
+        .task(id: expanded) {
+            // A Chinese surrounding sentence is already readable alongside the
+            // Chinese term explanation. Other sentences translate on demand.
+            guard expanded, term != nil, hasSentence, !source.minimalIdentifier.hasPrefix("zh"),
+                  result?.sentenceTranslation == nil else { return }
+            await prepare()
         }
         .translationTask(configuration) { session in
             do {
@@ -142,10 +143,10 @@ struct ResultCard: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(isRegion ? "框选翻译" : passage.text).font(isRegion ? .headline : .custom("Baskerville", size: 30))
+                Text(isRegion ? "框选翻译" : passage.text).font(isRegion ? .headline : .custom("Baskerville", size: 27))
                     .lineLimit(2).textSelection(.enabled)
                 if !isRegion {
-                    Button { speak(passage.text, source.minimalIdentifier) } label: { Image(systemName: "speaker.wave.2") }
+                    Button { speak(passage.text, term == nil ? source.minimalIdentifier : "en") } label: { Image(systemName: "speaker.wave.2") }
                         .help("朗读词语").accessibilityLabel("朗读词语")
                 }
                 Spacer(minLength: 0)
@@ -154,7 +155,7 @@ struct ResultCard: View {
                 Button(action: close) { Image(systemName: "xmark") }
                     .help("关闭").accessibilityLabel("关闭取词卡").keyboardShortcut(.cancelAction)
             }.buttonStyle(.plain)
-            Text(sourceName + " → " + (target.languageCode == .english ? "英语" : "简体中文"))
+            Text(term != nil ? "术语释义" : result?.origin == .unresolved ? "词语查询" : sourceName + " → " + (target.languageCode == .english ? "英语" : "简体中文"))
                 .font(.system(size: 11)).foregroundStyle(DeskTheme.muted)
         }
     }
@@ -179,29 +180,29 @@ struct ResultCard: View {
                     .buttonStyle(.plain).help("朗读原句").accessibilityLabel("朗读原句")
             }
             Text(LookupTranslation.markedSentence(passage) ?? AttributedString(isRegion ? passage.text : passage.context))
-                .font(.custom("Baskerville", size: 18)).lineSpacing(3)
-            if let translated = result?.sentenceTranslation { Text(translated).font(.system(size: 14)).lineSpacing(3) }
+                .font(.custom("Baskerville", size: 16)).lineSpacing(3)
+            if let translated = result?.sentenceTranslation { Text(translated).font(.system(size: 13)).lineSpacing(3) }
         }
     }
 
     private var footer: some View {
         HStack(spacing: 14) {
             Button {
-                guard let result else { return }
+                guard let result, result.isUsable else { return }
                 notebook.save(passage, translation: result.meaning, sentenceTranslation: result.sentenceTranslation)
             } label: {
                 Label(notebook.contains(passage) ? "已加入生词本" : "加入生词本", systemImage: notebook.contains(passage) ? "bookmark.fill" : "bookmark")
-            }.disabled(result == nil || notebook.contains(passage) || phase == .translating)
+            }.disabled(result?.isUsable != true || notebook.contains(passage) || (phase == .translating && term == nil))
             Spacer()
             if hasSentence {
                 Button { expanded.toggle() } label: { Image(systemName: expanded ? "text.badge.minus" : "text.badge.plus") }
                     .help(expanded ? "收起原句" : "展开原句").accessibilityLabel(expanded ? "收起原句" : "展开原句")
             }
             Button {
-                guard let result else { return }
+                guard let result, result.isUsable else { return }
                 NSPasteboard.general.clearContents(); NSPasteboard.general.setString(result.meaning, forType: .string); copied = true
             } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc") }
-                .disabled(result == nil).help("复制释义").accessibilityLabel("复制释义")
+                .disabled(result?.isUsable != true).help("复制释义").accessibilityLabel("复制释义")
             if referenceAvailable {
                 Button { referenceAttempt += 1 } label: { Image(systemName: "globe") }
                     .disabled(referenceBusy).help("查询百科参考，仅发送当前词语").accessibilityLabel("查询百科参考")
@@ -219,13 +220,26 @@ struct ResultCard: View {
             Button("系统翻译未完成 · 重试") { focusForDownload(); start() }.controlSize(.small)
         case .unsupported:
             Text("系统不支持这个语言组合，可在设置中选择源语言后重试。").font(.caption).foregroundStyle(DeskTheme.muted)
-        case .done: EmptyView()
+        case .done:
+            if result?.origin == .unresolved { Button("重新查询") { focusForDownload(); start() }.controlSize(.small) }
         }
     }
 
     private func record(_ result: LookupResult) {
+        guard result.isUsable else { return }
         if let recordID { notebook.updateLookup(recordID, meaning: result.meaning) }
         else { recordID = notebook.recordLookup(passage, meaning: result.meaning) }
+    }
+    private func prepare() async {
+        let began = LookupTrace.now
+        let availability = await LanguageAvailability().status(from: source, to: target)
+        trace.record("translation.availability", since: began)
+        guard !Task.isCancelled else { return }
+        switch availability {
+        case .installed: start()
+        case .supported: phase = .download
+        default: phase = .unsupported
+        }
     }
     private func start() {
         phase = .translating

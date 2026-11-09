@@ -31,6 +31,8 @@ struct Passage: Equatable {
         language ?? LanguageResolver.resolve(context.isEmpty ? text : context)
     }
 
+    var headwordLanguage: String { LocalTerminology.lookup(self) == nil ? sourceLanguage : "en" }
+
     func using(language: String?) -> Passage {
         Passage(text: text, context: context, selection: selection, anchor: anchor, language: language,
                 nearbyContext: nearbyContext, nearbySelection: nearbySelection)
