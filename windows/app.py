@@ -117,6 +117,11 @@ class Selection(QWidget):
 
 
 def analyze(image, point, passage, source_code=""):
+    # Pasted/editor selections already carry exact text and offsets. Resolve
+    # them directly so unknown identifiers do not wait behind OCR/model warmup.
+    if passage is not None and passage.selection is not None:
+        passage.source_code = passage.source_code or source_code
+        return passage, *explain(passage)
     if passage is None:
         passage = asyncio.run(recognize(image, point, source_code))
     passage.source_code = passage.source_code or source_code
