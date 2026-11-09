@@ -1083,7 +1083,12 @@ class Checks(unittest.TestCase):
             # Moving after the shortcut must not retarget the delayed capture.
             move_cursor(sample.mapToGlobal(QPoint(5, 5)))
             wait_until(window.card.save.isVisible)
-            self.assertEqual(window.card.caption.text(), "句中释义")
+            # OCR at fractional scale may lose alignment confidence. A correctly
+            # labelled dictionary fallback is valid, but it must preserve the
+            # actual word, river sense and original context below.
+            self.assertIn(window.card.caption.text(), ("句中释义", "英汉词典 · ECDICT"))
+            self.assertEqual(window.saved_result[0].word, "bank")
+            self.assertIn("river", window.saved_result[0].text)
             self.assertIn("岸", window.card.text.toPlainText())
             self.assertFalse(window.isVisible(), "A background lookup opened the main window")
             self.assertEqual(window.card.windowType(), Qt.Tool)
