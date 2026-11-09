@@ -61,7 +61,11 @@ def main():
 
         def capture(widget, name):
             settle()
-            pixmap = widget.screen().grabWindow(int(widget.winId()))
+            # Layered/translucent Windows cards return black through their
+            # HWND DC. Capture the compositor's real screen rectangle instead.
+            screen = widget.screen()
+            point = widget.frameGeometry().topLeft() - screen.geometry().topLeft()
+            pixmap = screen.grabWindow(0, point.x(), point.y(), widget.width(), widget.height())
             assert not pixmap.isNull(), name
             assert pixmap.save(str(args.output / (name + ".png"))), name
             metadata["captures"].append(dict(name=name, width=widget.width(), height=widget.height(),
@@ -83,6 +87,8 @@ def main():
                         window.workspace.input.setPlainText(source + "\n\nShe deposited her paycheck at the bank.")
                         window.workspace.output.setPlainText("他们坐在河岸边，看着水。\n\n她把工资支票存入银行。")
                     capture(window, page + "-" + name)
+                if name == "narrow":
+                    assert window.width() <= width + 2, ("narrow window expanded", window.width())
             window.tabs.setCurrentIndex(0)
             point = window.mapToGlobal(QPoint(80, 90))
             card = window.card

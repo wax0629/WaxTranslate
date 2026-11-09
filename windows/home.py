@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView, QFrame, QGridLayout, QHeaderView, QHBoxLayout, QLabel, QLayout, QPushButton,
-    QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QSizePolicy, QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from languages import NAMES
@@ -54,11 +54,13 @@ class HomePage(QWidget):
         self.setAttribute(Qt.WA_StyledBackground)
         self.setStyleSheet(HOME_STYLE)
         outer = QHBoxLayout(self)
+        outer.setSizeConstraint(QLayout.SetNoConstraint)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         self.column = QWidget()
-        outer.addWidget(self.column)
-        outer.addStretch()
+        self.column.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        outer.addWidget(self.column, 1)
+        outer.addStretch(0)
         self.page = QVBoxLayout(self.column)
         self.page.setSpacing(18)
         tools = QHBoxLayout()
@@ -196,7 +198,9 @@ class HomePage(QWidget):
     def arrange(self):
         compact = self.width() < 760
         width = self.width() if compact else min(640, round(self.width() * 0.64))
-        self.column.setFixedWidth(width)
+        # A width derived from the current viewport must not become the
+        # window's minimum width before its first resize (initially 640px).
+        self.column.setMaximumWidth(width)
         margin = 22 if compact else 26
         self.statistics.setFixedWidth(min(432, max(1, width - margin * 2)))
         self.page.setContentsMargins(margin, 24, margin, 24)

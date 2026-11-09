@@ -182,7 +182,7 @@ def apply_theme(app):
         QPushButton[role="nav"]:hover {color:$ink; background:$soft;}
         QPushButton[role="nav"]:checked {color:$ink; background:transparent;
             border-bottom:2px solid $ink; font-weight:600;}
-        QPushButton[role="nav"]:focus {background:$soft;}
+        QPushButton[role="nav"]:focus {background:transparent; border-bottom:2px solid $accent;}
         QPushButton[role="nav"]:pressed {background:$rule;}
         QPushButton {color:$ink; background:$soft; border:1px solid transparent;
             border-radius:15px; padding:6px 13px; min-height:18px;}
