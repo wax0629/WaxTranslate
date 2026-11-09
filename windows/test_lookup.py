@@ -182,7 +182,10 @@ class LookupTests(unittest.TestCase):
                 window.auto_online.setChecked(True)
                 with patch("app.search_entities", side_effect=[OSError("offline"), []]) as fetch:
                     window.lookup_text(item, point)
-                    wait_for(lambda: card.isVisible() and card.online.isVisible() and card.online.isEnabled())
+                    try:
+                        wait_for(lambda: card.isVisible() and card.online.isVisible() and card.online.isEnabled())
+                    except AssertionError:
+                        self.fail(f"unknown retry state: card={card.isVisible()}, online={card.online.isVisible()}/{card.online.isEnabled()}, source={item.source_code}, saved={window.saved_result}, search={window.search_context}, pending={window.pending.done()}, text={card.text.toPlainText()}")
                     card.online.click()
                     wait_for(lambda: "无法连接" in card.text.toPlainText())
                     self.assertFalse(card.save.isEnabled())
