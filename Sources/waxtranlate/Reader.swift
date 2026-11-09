@@ -2,24 +2,38 @@ import AppKit
 import NaturalLanguage
 import ScreenCaptureKit
 import Vision
+import CoreText
 
 struct Passage: Equatable {
     let text: String
     let context: String
 
-    let selection: NSRange?
+    let selection: NSRange?   // Headword in context, in UTF-16.
+    let anchor: NSRange?      // Token under the pointer, in the same context.
+    let language: String?
+    let nearbyContext: String?
+    let nearbySelection: NSRange?
+    var isPhrase: Bool { selection != anchor }
 
-    init(text: String, context: String, selection: NSRange? = nil) {
+    init(text: String, context: String, selection: NSRange? = nil, anchor: NSRange? = nil, language: String? = nil,
+         nearbyContext: String? = nil, nearbySelection: NSRange? = nil) {
         self.text = text
         self.context = context
-        // OCR supplies the exact occurrence. Demo/manual passages can use a unique match.
+        // OCR supplies the exact occurrence. Demo/manual passages can infer it.
         self.selection = selection ?? context.range(of: text).map { NSRange($0, in: context) }
+        self.anchor = anchor ?? self.selection
+        self.language = language?.isEmpty == false ? language : nil
+        self.nearbyContext = nearbyContext
+        self.nearbySelection = nearbySelection
     }
 
     var sourceLanguage: String {
-        let recognizer = NLLanguageRecognizer()
-        recognizer.processString(context.isEmpty ? text : context)
-        return recognizer.dominantLanguage?.rawValue ?? "en"
+        language ?? LanguageResolver.resolve(context.isEmpty ? text : context)
+    }
+
+    func using(language: String?) -> Passage {
+        Passage(text: text, context: context, selection: selection, anchor: anchor, language: language,
+                nearbyContext: nearbyContext, nearbySelection: nearbySelection)
     }
 }
 
@@ -46,7 +60,7 @@ enum Reader {
         return CGRect(x: screen.minX, y: bottom, width: screen.width, height: height)
     }
 
-    @MainActor static func capture(point: CGPoint, region: CGRect?) async throws -> Passage {
+    @MainActor static func capture(point: CGPoint, region: CGRect?, language: String? = nil) async throws -> Passage {
         guard CGPreflightScreenCaptureAccess() else {
             throw ReaderError.permission
         }
@@ -59,25 +73,26 @@ enum Reader {
         let target = region == nil ? CGPoint(x: (point.x - bounds.minX) / bounds.width,
                                                y: (point.y - bounds.minY) / bounds.height) : nil
         return try await Task.detached(priority: .userInitiated) {
-            try recognize(image: image, target: target)
+            try recognize(image: image, target: target, language: language)
         }.value
     }
 
-    static func recognize(image: CGImage, target: CGPoint?) throws -> Passage {
+    static func recognize(image: CGImage, target: CGPoint?, language: String? = nil) throws -> Passage {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
-        request.automaticallyDetectsLanguage = true
-        request.recognitionLanguages = ["en-US", "zh-Hans", "fr-FR", "de-DE", "es-ES", "ja-JP", "ko-KR", "pt-BR"]
+        request.automaticallyDetectsLanguage = language == nil || language == ""
+        let requested = language.flatMap { $0.isEmpty ? nil : $0 }
+        request.recognitionLanguages = requested.map { [$0] } ?? ["en-US", "zh-Hans", "fr-FR", "de-DE", "es-ES", "it-IT", "ja-JP", "ko-KR", "pt-BR", "ru-RU"]
         try VNImageRequestHandler(cgImage: image).perform([request])
         let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first }
         guard let target else {
             let text = lines.map(\.string).joined(separator: "\n")
             guard !text.isEmpty else { throw ReaderError.noText }
-            return Passage(text: text, context: "")
+            return Passage(text: text, context: "", language: requested)
         }
         let size = CGSize(width: image.width, height: image.height)
         let point = CGPoint(x: target.x * size.width, y: target.y * size.height)
-        return try SentenceContext.passage(in: lines.flatMap { fragments(of: $0, imageSize: size, point: point) })
+        return try SentenceContext.passage(in: lines.flatMap { fragments(of: $0, imageSize: size, point: point) }, language: requested)
     }
 
     // Vision can group two columns on the same baseline into one observation.
@@ -103,12 +118,43 @@ enum Reader {
             let start = i == 0 ? text.startIndex : words[0].range.lowerBound
             let end = i + 1 == groups.count ? text.endIndex : groups[i + 1][0].range.lowerBound
             let fragment = text[start..<end].drop(while: { $0.isWhitespace })
-            let hit = words.first { $0.frame.contains(point) }.map {
-                NSRange(location: $0.range.lowerBound.utf16Offset(in: text) - fragment.startIndex.utf16Offset(in: text),
-                        length: NSRange($0.range, in: text).length)
+            let hit = wordRange(at: point, in: words, text: text).map {
+                NSRange(location: $0.lowerBound.utf16Offset(in: text) - fragment.startIndex.utf16Offset(in: text),
+                        length: NSRange($0, in: text).length)
             }
             return TextLine(text: String(fragment).trimmingCharacters(in: .whitespacesAndNewlines),
                             frame: words.reduce(CGRect.null) { $0.union($1.frame) }, hit: hit)
         }
+    }
+
+    private static func wordRange(at point: CGPoint,
+        in words: [(range: Range<String.Index>, frame: CGRect)], text: String) -> Range<String.Index>? {
+        let hits = words.filter { $0.frame.contains(point) }
+        guard let first = hits.first else { return nil }
+        guard hits.count > 1, let last = hits.last else { return first.range }
+        // Vision sometimes reports the same entire packed token box for every
+        // character range (docs(logistics), warehouse/parcel). Fit glyph advances
+        // inside that shared box instead of always accepting the first word.
+        var start = first.range.lowerBound
+        var end = last.range.upperBound
+        while start > text.startIndex {
+            let previous = text.index(before: start)
+            guard text[previous].isPunctuation else { break }
+            start = previous
+        }
+        while end < text.endIndex, text[end].isPunctuation { end = text.index(after: end) }
+        let segment = String(text[start..<end])
+        let styled = NSAttributedString(string: segment, attributes: [.font: NSFont.systemFont(ofSize: 100)])
+        let line = CTLineCreateWithAttributedString(styled)
+        let advance = CTLineGetTypographicBounds(line, nil, nil, nil)
+        let frame = hits.reduce(CGRect.null) { $0.union($1.frame) }
+        guard advance > 0, frame.width > 0 else { return nil }
+        let position = (point.x - frame.minX) / frame.width * advance
+        let offset = start.utf16Offset(in: text)
+        return hits.first { word in
+            let lower = CTLineGetOffsetForStringIndex(line, word.range.lowerBound.utf16Offset(in: text) - offset, nil)
+            let upper = CTLineGetOffsetForStringIndex(line, word.range.upperBound.utf16Offset(in: text) - offset, nil)
+            return position >= lower && position <= upper
+        }?.range
     }
 }

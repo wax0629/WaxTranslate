@@ -2,6 +2,12 @@
 
 截至 **2026-11-08**，此记录以合入 `main` 的功能提交 `38171df` 为基线。Windows 通过 GitHub Actions 提供测试过的便携构建，macOS 提供源码安装脚本。仓库当前处于开发版阶段。[基线提交](https://github.com/wax0629/WaxTranslate/commit/38171dfd50e54e3b53ea472ef95648e97347b46d) · [双端路线图](https://github.com/wax0629/WaxTranslate/issues/3)
 
+## macOS 同步分支 0.3.0（2026-11-09）
+
+[Issue #78](https://github.com/wax0629/WaxTranslate/issues/78) 在 `f6f651c` 上承接 #4 / #6 的短语修复，补齐首页四格统计及最近六条、对照阅读、紧凑取词卡、生词复习、源语言和快捷键设置、系统语言包及登录项入口。Windows 缩写/名称词表生成 Mac 资源；语境消歧、文中定义和百科查询保留来源与边界。旧个人签名 PR #7 不覆盖主分支后续采用的品牌图标。
+
+本机 macOS 26.6.2 / Intel，Swift 6.3.3 / SDK 26.5 的真实 Vision、Apple 英中翻译、旧词本、统计、过期结果与术语回归通过；Release 构建通过。应用保持原 bundle ID、词本键和签名身份。真实历史词本仍不能据空数据升级勾选；本机升级前词本为空，已有旧应用及偏好域备份。详细证据、截图、待验证范围与复现入口见 [本轮 Mac 验收](verification/macos-sync/README.md) 和 [Mac 指南](macos.md)。本节描述同步分支，下面的主分支清单保留其原基线，合并后再更新。
+
 ## 已进入主分支
 
 | 平台 | 已交付的用户操作 | 交付依据 |
@@ -26,8 +32,8 @@
 
 | 工作 | 当前进度与验收条件 |
 | --- | --- |
-| macOS 英语连续短语 | `rule out`、`run out of`、`look up` 已在 macOS 26.6.2 / Intel 的开发分支用实际快捷键与 Apple 翻译验收，PR #6 待合并。主分支的使用说明仍以按词取义为准。[功能记录 #4](https://github.com/wax0629/WaxTranslate/issues/4) · [安装版对照 #6](https://github.com/wax0629/WaxTranslate/pull/6) |
-| macOS 孤立词语种判断 | 单独查 `tulip` 曾误提示下载印尼语包。待对照孤立词、含该词的句子和真正的非英语句子，核验语种及下载提示。[问题 #2](https://github.com/wax0629/WaxTranslate/issues/2) |
+| macOS 英语连续短语 | 原 PR #6 的已验收实现由本轮 #78 集成至最新主分支基线；本轮真实 Apple 翻译回归通过，尚待同步 PR 合并。[功能记录 #4](https://github.com/wax0629/WaxTranslate/issues/4) · [安装版对照 #6](https://github.com/wax0629/WaxTranslate/pull/6) |
+| macOS 孤立词语种判断 | 本轮 #78 以本机英语词典证据改进孤立词判断，并提供明确源语言选项。`tulip`、完整非英语句子及手动覆盖回归通过，尚待同步 PR 合并。[问题 #2](https://github.com/wax0629/WaxTranslate/issues/2) |
 | macOS 正式包升级 | 开发版和旧数据格式已有验证，正式安装包仍需在带有真实历史词条的旧版上覆盖安装，并核对升级后的记录。[验收清单 #1](https://github.com/wax0629/WaxTranslate/issues/1) |
 | 双端一致性 | 待用同一组样文在两端对照取词、框选、取消和关闭，并核对默认与放大显示下的排版。语境准确性仍需人工对照多义词、术语、否定和跨行文本。[路线图 #3](https://github.com/wax0629/WaxTranslate/issues/3) |
 

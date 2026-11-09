@@ -11,6 +11,8 @@ mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 install -m 755 "$(swift build -c release --show-bin-path)/waxtranlate" "$bundle/Contents/MacOS/waxtranlate"
 cp Info.plist "$bundle/Contents/Info.plist"
 cp Assets/Editorial/river.jpg "$bundle/Contents/Resources/river.jpg"
+cp Assets/Editorial/glance.png "$bundle/Contents/Resources/glance.png"
+cp Assets/Lexicon/reading-terms.json "$bundle/Contents/Resources/reading-terms.json"
 ./scripts/build-icon.sh Assets/Brand/wax-icon.png "$bundle/Contents/Resources/AppIcon.icns"
 /usr/bin/python3 scripts/sign-local.py "$bundle" "$apps/waxtranlate.app"
 

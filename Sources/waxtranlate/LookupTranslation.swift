@@ -4,7 +4,7 @@ import NaturalLanguage
 import Translation
 
 struct LookupResult {
-    enum Origin { case sentence, dictionary, word, region }
+    enum Origin { case sentence, dictionary, standalone, region, term }
     let meaning: String
     let origin: Origin
     var sentenceTranslation: String? = nil
@@ -12,7 +12,8 @@ struct LookupResult {
 
 enum CompactGloss {
     static func candidates(for passage: Passage, language: String) -> [String] {
-        guard language == "en", let selection = passage.selection,
+        // Dictionary Services can return an entry for just one word of a phrase.
+        guard language == "en", !passage.isPhrase, let selection = passage.selection,
               let range = Range(selection, in: passage.context) else { return [] }
         let source = passage.context as CFString
         let selected = CFRange(location: selection.location, length: selection.length)
@@ -67,7 +68,7 @@ enum LookupTranslation {
         return AttributedString(passage.context[..<range.lowerBound]) + mark + AttributedString(passage.context[range.upperBound...])
     }
 
-    static func alignedMeaning(in output: AttributedString) -> String? {
+    static func alignedMeaning(in output: AttributedString, isPhrase: Bool = false) -> String? {
         // Accept only one contiguous translated span. Some language pairs may
         // drop the emphasis or apply it to the whole sentence.
         var span: Range<AttributedString.Index>?
@@ -77,7 +78,7 @@ enum LookupTranslation {
         }
         guard let span else { return nil }
         let trim = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
-        let gloss = String(output[span].characters).trimmingCharacters(in: trim)
+        var gloss = String(output[span].characters).trimmingCharacters(in: trim)
         let sentence = String(output.characters).trimmingCharacters(in: trim)
         guard !gloss.isEmpty, gloss.count <= 40, gloss != sentence else { return nil }
         // Apple can attach the preceding modifier particle to a Chinese adjective
@@ -87,22 +88,25 @@ enum LookupTranslation {
             tokenizer.string = gloss
             tokenizer.setLanguage(.simplifiedChinese)
             let first = tokenizer.tokenRange(at: gloss.startIndex)
-            if gloss[first] == "的" { return String(gloss[first.upperBound...]).trimmingCharacters(in: .whitespaces) }
+            if gloss[first] == "的" { gloss = String(gloss[first.upperBound...]).trimmingCharacters(in: .whitespaces) }
         }
+        // For the supported verb phrases these fragments omit the verb itself.
+        if isPhrase && ["了", "的", "着", "过", "一下"].contains(gloss) { return nil }
         return gloss
     }
 
     static func translate(_ passage: Passage, session: TranslationSession, dictionary: [String]) async throws -> LookupResult {
         guard !passage.context.isEmpty, passage.context != passage.text else {
             let text = try await session.translate(passage.text).targetText
-            return LookupResult(meaning: text, origin: passage.context.isEmpty ? .region : .word)
+            return LookupResult(meaning: text, origin: passage.context.isEmpty ? .region : .standalone)
         }
 
         let sentence: String
         if #available(macOS 26.4, *), let marked = markedSentence(passage),
            let response = try? await session.translate(marked) {
             sentence = response.targetText
-            if let formatted = response.attributedTargetText, let gloss = alignedMeaning(in: formatted) {
+            if let formatted = response.attributedTargetText,
+               let gloss = alignedMeaning(in: formatted, isPhrase: passage.isPhrase) {
                 return LookupResult(meaning: gloss, origin: .sentence, sentenceTranslation: sentence)
             }
         } else {
@@ -110,12 +114,11 @@ enum LookupTranslation {
             sentence = try await session.translate(passage.context).targetText
         }
 
-        if let match = dictionary.filter({ $0.count > 1 && sentence.contains($0) }).max(by: { $0.count < $1.count }) {
-            return LookupResult(meaning: match, origin: .dictionary, sentenceTranslation: sentence)
-        }
+        // A dictionary gloss elsewhere in the sentence may translate a different word.
         do {
-            let word = try await session.translate(passage.text).targetText
-            return LookupResult(meaning: word, origin: .word, sentenceTranslation: sentence)
+            try Task.checkCancellation()
+            let reference = try await session.translate(passage.text).targetText
+            return LookupResult(meaning: reference, origin: .standalone, sentenceTranslation: sentence)
         } catch {
             try Task.checkCancellation()
             guard let reference = dictionary.first else { throw error }

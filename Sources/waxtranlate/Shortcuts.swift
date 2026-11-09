@@ -9,7 +9,11 @@ final class Shortcuts {
 
     init(action: @escaping (UInt32) -> Void) { self.action = action }
 
-    func start() -> [String] {
+    func start(mode: CaptureShortcut = .optionShift) -> [String] {
+        refs.forEach { UnregisterEventHotKey($0) }
+        refs.removeAll()
+        if let handler { RemoveEventHandler(handler); self.handler = nil }
+        guard mode != .disabled else { return [] }
         var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let result = InstallEventHandler(GetApplicationEventTarget(), { _, event, user in
             guard let event, let user else { return OSStatus(eventNotHandledErr) }
@@ -21,11 +25,12 @@ final class Shortcuts {
             owner.action(hotkey.id)
             return noErr
         }, 1, &type, Unmanaged.passUnretained(self).toOpaque(), &handler)
-        guard result == noErr else { return ["⌥⇧T", "⌥⇧R"] }
+        guard result == noErr else { return [mode.hoverLabel, mode.regionLabel] }
         var unavailable: [String] = []
-        for (id, key, label) in [(1, kVK_ANSI_T, "⌥⇧T"), (2, kVK_ANSI_R, "⌥⇧R")] {
+        for (id, key, label) in [(1, kVK_ANSI_T, mode.hoverLabel), (2, kVK_ANSI_R, mode.regionLabel)] {
             var ref: EventHotKeyRef?
-            if RegisterEventHotKey(UInt32(key), UInt32(optionKey | shiftKey),
+            let modifiers = mode == .controlOption ? controlKey | optionKey : optionKey | shiftKey
+            if RegisterEventHotKey(UInt32(key), UInt32(modifiers),
                                    EventHotKeyID(signature: signature, id: UInt32(id)),
                                    GetApplicationEventTarget(), 0, &ref) == noErr, let ref {
                 refs.append(ref)
