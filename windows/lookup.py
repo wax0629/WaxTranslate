@@ -1,6 +1,7 @@
 """Combine document, terminology, dictionary and translation evidence for a word."""
 import re
 
+from card_policy import chinese_context, local_reference, needs_confirmation
 from lexicon import lookup_details
 from reader import Passage
 from terminology import resolve_term
@@ -49,6 +50,14 @@ def surrounding_script(text):
 
 
 def explain(passage):
+    if passage.selection:
+        special = local_reference(passage)
+        if special:
+            origin, gloss, kind = special
+            return (origin, gloss, ""), None, "中文语境" if chinese_context(passage) else "英语", kind
+        if needs_confirmation(passage):
+            message = "可能指 Apple 的屏幕朗读功能，当前片段不足以确认。" if passage.word == "VoiceOver" else "暂未确认这个代码名称的含义。"
+            return (UNKNOWN, message, ""), None, "中文语境" if chinese_context(passage) else "", "代码名称"
     # Determine the route before consulting English terminology, POS or ECDICT.
     # Unsupported mixed-script text may still contain an English identifier.
     try:
@@ -109,7 +118,7 @@ def explain(passage):
             if re.search(r"[\u3400-\u9fff]", translated):
                 gloss = translated + "（机译）\n" + gloss
     elif entry:
-        if common and english_context and has_sentence and not identifier:
+        if common and english_context and has_sentence and not identifier and passage.structure not in ("title", "path", "fragment"):
             try:
                 result, excerpt = translate_lookup(passage)
             except (ValueError, RuntimeError, OSError):
@@ -124,7 +133,7 @@ def explain(passage):
             pos = pos or DICTIONARY_POS.get(dictionary_pos, "")
     else:
         origin, gloss = UNKNOWN, "本机资料和附近原文里都没有找到可靠解释。"
-    sentence = sentence_translation(passage.text) if has_sentence and english_context else ""
+    sentence = sentence_translation(passage.text) if has_sentence and english_context and passage.structure not in ("title", "path", "fragment") else ""
     if sentence and not preserves_reference(word, "" if origin == UNKNOWN else gloss, sentence):
         sentence = ""
     return (origin, gloss, sentence), None, language, pos

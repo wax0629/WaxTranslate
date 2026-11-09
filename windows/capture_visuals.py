@@ -94,6 +94,13 @@ def main():
             card = window.card
             card.show_result(passage, "句中释义", "河岸", "他们坐在河岸边，看着水。", point, language="英语", pos="名词", can_search=True)
             capture(card, "lookup-context")
+            for word, source, origin, gloss, kind in (
+                ('VoiceOver','在macOS辅助功能中启用VoiceOver。','名称参考','Apple 的屏幕朗读辅助功能。','功能名称'),
+                ('Redis','用Docker部署Redis，通过API访问缓存。','名称参考','一种内存数据存储系统，常用于缓存。','技术名称'),
+                ('UnknownSDK','用Docker部署UnknownSDK。','暂未收录','暂未确认这个代码名称的含义。','代码名称')):
+                a=source.index(word)
+                card.show_result(Passage(source,(a,a+len(word))),origin,gloss,'',point,pos=kind,can_save=word!='UnknownSDK',can_search=True)
+                capture(card,'rules-'+word)
             card.close()
             word = Passage("warehouse", (0, 9), source_code="en")
             card.show_result(word, "英汉词典 · ECDICT", "仓库", "", point, language="英语", pos="名词", can_search=True)

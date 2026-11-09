@@ -28,7 +28,7 @@ def engine(code):
 def _load_engine(code):
     model = translation_dir(code)
     if model is None:
-        raise ValueError(f"请在「设置 → 语言包」下载{NAMES[code]}，安装后重新翻译。")
+        raise ValueError(f"请在「设置 → 语言包」下载{NAMES.get(code, "中文至英语")}，安装后重新翻译。")
     # SentencePiece's Windows file API cannot open some non-ASCII paths.
     tokenizer = sentencepiece.SentencePieceProcessor(model_proto=(model / "sentencepiece.model").read_bytes())
     translator = ctranslate2.Translator(str(model / "model"), device="cpu", compute_type="int8",

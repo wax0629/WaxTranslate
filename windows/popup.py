@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsDropShadowEffect, 
 
 from languages import SUPPORTED
 from lookup import DICTIONARY
+from card_policy import bounded_context, chinese_context, needs_confirmation
 from speech import ListenButton, SpeechPlayer
 from theme import APP_NAME, COLORS, marked_source, plain, theme_css, ui_icon
 
@@ -96,6 +97,8 @@ class Card(QWidget):
     dismissed = Signal()
     presented = Signal()
     save_requested = Signal()
+    term_requested = Signal(object)
+    context_requested = Signal(object)
     dismiss_on_deactivate = True
 
     def __init__(self, player=None):
@@ -260,12 +263,47 @@ class Card(QWidget):
         self.present(f"{language}原文", content, point, original, copy_original=True)
 
     def open_reference(self, url):
+        if url.scheme() == 'waxterm' and getattr(self, 'rule_state', None):
+            from dataclasses import replace
+            passage = self.rule_state[0]
+            try:
+                a, b = int(url.host()), int(url.path().strip('/'))
+            except ValueError:
+                return
+            if 0 <= a < b <= len(passage.text):
+                self.term_requested.emit(replace(passage, selection=(a,b)))
+            return
+        if url.scheme() == 'waxcard' and getattr(self, 'rule_state', None):
+            action = url.host()
+            if action == 'context': self.rule_context = not self.rule_context
+            elif action == 'expand':
+                self.rule_expanded = not self.rule_expanded
+                self.rule_translation = ''
+                self.rule_waiting = False
+                self.rule_request_id += 1
+            elif action == 'translate':
+                if self.rule_translation or self.rule_waiting:
+                    self.rule_translation = ''; self.rule_waiting = False; self.rule_request_id += 1
+                else:
+                    self.rule_waiting = True; self.rule_error = ''; self.rule_request_id += 1
+                    self.context_requested.emit((self.rule_request_id, self.rule_displayed))
+            elif action == 'title':
+                from dataclasses import replace
+                passage = self.rule_state[0]
+                self.term_requested.emit(replace(passage, selection=(0,len(passage.text))))
+                return
+            self.render_rule_card()
+            return
         if url.scheme() == "https" and url.host() in ("www.wikidata.org", "www.bing.com"):
             if not QDesktopServices.openUrl(url):
                 self.show_notice("系统未能打开浏览器。")
 
     def show_result(self, passage, origin, gloss, sentence, point, excerpt=None, language="", pos="",
                     can_save=True, can_search=False, references=(), web_search=False):
+        if passage.selection and (chinese_context(passage) or passage.structure in ('path','fragment','title') or origin in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考')):
+            self.show_rule_result(passage, origin, gloss, sentence, point, language, pos, can_save, can_search)
+            return
+        self.rule_state = None
         self.listen.set_content(passage.word, passage.text, passage.source_code or "en")
         if not passage.selection:
             details = (language or "按英语翻译") + " → 简体中文"
@@ -316,6 +354,64 @@ class Card(QWidget):
         self.present(origin, short, point, translated, can_save, (full, sentence), can_search=can_search,
                      word=passage.word, phonetic=passage.phonetic)
 
+    def show_rule_result(self, passage, origin, gloss, sentence, point, language, pos, can_save, can_search):
+        self.rule_state = (passage, origin, gloss, point, language, pos, can_save, can_search)
+        self.rule_context = origin not in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考') or (chinese_context(passage) and len(re.findall(r'[A-Za-z][A-Za-z0-9+#]*',passage.text)) > 1 and passage.word not in ('README','VoiceOver'))
+        self.rule_expanded = False
+        self.rule_translation = sentence
+        self.rule_waiting = False
+        self.rule_error = ''
+        self.rule_request_id = getattr(self,'rule_request_id',0)+1
+        self.render_rule_card()
+
+    def render_rule_card(self):
+        passage, origin, gloss, point, language, pos, can_save, can_search = self.rule_state
+        self.listen.set_content(passage.word, passage.text, 'en' if passage.word.isascii() else passage.source_code or 'en')
+        details = ' · '.join(filter(None,(pos, '中文语境' if chinese_context(passage) else language)))
+        content = f"<p class='details'>{plain(details)}</p><p class='gloss'>{plain(gloss)}</p><p class='details'>{plain(origin)}</p>"
+        part, offset = (passage,0) if self.rule_expanded else bounded_context(passage)
+        self.rule_displayed = part
+        if passage.structure == 'title' and passage.word != passage.text:
+            content += '<p><a href="waxcard://title">翻译整个标题</a></p>'
+        if self.rule_context and passage.word != passage.text:
+            label = '所在路径' if passage.structure == 'path' else '识别片段' if passage.structure == 'fragment' else '相关原文节选' if part.text != passage.text else '相关原文'
+            body = ''
+            cursor = 0
+            for match in re.finditer(r'[A-Za-z][A-Za-z0-9+#]*',part.text):
+                body += plain(part.text[cursor:match.start()])
+                a,b = match.start()+offset,match.end()+offset
+                if (a,b) == passage.selection: body += '<b>'+plain(match.group())+'</b>'
+                elif chinese_context(passage): body += f'<a href="waxterm://{a}/{b}">{plain(match.group())}</a>'
+                else: body += plain(match.group())
+                cursor = match.end()
+            body += plain(part.text[cursor:])
+            if offset: body = '…'+body
+            if offset+len(part.text)<len(passage.text): body += '…'
+            content += f"<hr><p class='details'>{label}</p><p class='source'>{body}</p>"
+            if self.rule_translation: content += f"<p class='translation'>{plain(self.rule_translation)}</p>"
+            if part.text != passage.text or self.rule_expanded:
+                content += '<p><a href="waxcard://expand">'+('收起' if self.rule_expanded else '展开当前项' if passage.structure=='list' else '展开当前句')+'</a></p>'
+            if passage.structure not in ('path','fragment'):
+                label = '取消句译' if self.rule_waiting else '收起句译' if self.rule_translation else '翻译这段原文'
+                content += f'<p><a href="waxcard://translate">{label}</a></p>'
+            if self.rule_waiting: content += "<p class='details'>正在翻译这段原文…</p>"
+            if self.rule_error: content += f"<p class='details'>{plain(self.rule_error)}</p>"
+            if passage.structure=='fragment': content += "<p class='details'>可重新取词或从菜单框选完整原文。</p>"
+        elif passage.word != passage.text:
+            content += '<p><a href="waxcard://context">查看相关原文</a></p>'
+        self.present(origin,content,point,gloss if can_save else '',can_save,can_search=can_search,word=passage.word)
+        self.save.setVisible(True); self.save.setEnabled(can_save)
+        self.actions.setVisible(True)
+        self.copy.setVisible(True); self.copy.setEnabled(can_save)
+        self.copy.setAccessibleName('复制释义'); self.copy.setToolTip('复制释义')
+
+    def finish_context(self, request_id, translated='', error=''):
+        if not getattr(self,'rule_state',None) or request_id != self.rule_request_id or not self.rule_waiting:
+            return False
+        self.rule_waiting = False; self.rule_translation = translated; self.rule_error = error
+        self.render_rule_card()
+        return True
+
     def present(self, caption, content, point, translation="", can_save=False, full_context=None, copy_original=False,
                 can_search=False, word="", phonetic="", expand_label="查看全句"):
         self.speech_error.hide()
@@ -345,6 +441,7 @@ class Card(QWidget):
         self.online.setEnabled(True)
         self.can_search = can_search
         self.online.setVisible(can_search)
+        self.copy.setEnabled(True)
         self.copy.setVisible(bool(translation))
         self.more.setVisible(bool(word and can_save))
         self.expand.setChecked(False)

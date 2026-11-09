@@ -32,6 +32,7 @@ class ModelPackage:
 
 LEGACY_FILES = ("model/model.bin", "model/shared_vocabulary.txt", "sentencepiece.model", "README.md", "metadata.json")
 MODELS = {
+    "zh": ModelPackage("translate-zh_en-1_9", "62e7af5a3a48b530e47b7b3e5c78c2de79073ecd815750d2bf3ab35b4a67da2d"),
     "en": ModelPackage("translate-en_zh-1_9", "433e7c4f034d87fbe2353161e05f18646d7999452f801a4e1f0378522b9850ab"),
     "fr": ModelPackage("translate-fr_en-1_9", "3b3052fee6bb1e8e8e632a26a723eb2a2c7710dfe73ba61ffd9b83e85d4f14c1"),
     "de": ModelPackage("translate-de_en-1_3", "becc2b0011f8249fcb89be9ecb75ba0d876b1fab93c28ee6ff0420936897d637"),
@@ -47,10 +48,11 @@ MODELS = {
     "pt": ModelPackage("translate-pt_en-1_9", "ae76df6f650895c16f2b582065014fab496755ca846ecb19fae81d51f332a38e"),
     "ru": ModelPackage("translate-ru_en-1_9", "e9ba8bf722d10a4a4c39f74289d5938fd47eac08dbe4ed0afd22d89445a5c3ac"),
 }
-DEFAULT_LANGUAGES = ("en", "ja", "ko")
+DEFAULT_LANGUAGES = ("en", "ja", "ko", "zh")
 BUNDLED_MODELS = Path(__file__).resolve().parents[1] / "models"
 OCR_REV = "87416418657359cb625c412a48b6e1d6d41c29bd"
 OCR_MODELS = {
+    "zh": ModelPackage("translate-zh_en-1_9", "62e7af5a3a48b530e47b7b3e5c78c2de79073ecd815750d2bf3ab35b4a67da2d"),
     "de": ("deu", 1525436, "19d219bbb6672c869d20a9636c6816a81eb9a71796cb93ebe0cb1530e2cdb22d"),
     "en": ("eng", 4113088, "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"),
     "es": ("spa", 2294433, "6f2e04d02774a18f01bed44b1111f2cd7f3ba7ac9dc4373cd3f898a40ea6b464"),
@@ -74,6 +76,7 @@ def translation_dir(code):
 
 
 def ocr_file(code):
+    if code == "zh": return None
     lang, size, _ = OCR_MODELS[code]
     for base in (BUNDLED_MODELS, MODEL_DIR):
         path = base / "tessdata" / f"{lang}.traineddata"
@@ -83,7 +86,7 @@ def ocr_file(code):
 
 
 def language_ready(code):
-    return ocr_file(code) is not None and translation_dir(code) is not None
+    return (code == "zh" or ocr_file(code) is not None) and translation_dir(code) is not None
 
 
 POS_PACKAGE = "averaged_perceptron_tagger_eng"
@@ -262,7 +265,7 @@ def install_model(package, archive=None, cancel=None):
 
 
 def install_language(code, archive=None, *, cancel=None):
-    if not ocr_file(code):
+    if code != "zh" and not ocr_file(code):
         lang, _, digest = OCR_MODELS[code]
         dest = MODEL_DIR / "tessdata" / f"{lang}.traineddata"
         dest.parent.mkdir(parents=True, exist_ok=True)
