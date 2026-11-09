@@ -300,7 +300,7 @@ class Card(QWidget):
 
     def show_result(self, passage, origin, gloss, sentence, point, excerpt=None, language="", pos="",
                     can_save=True, can_search=False, references=(), web_search=False):
-        if passage.selection and (chinese_context(passage) or passage.structure in ('path','fragment','title') or origin in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考')):
+        if passage.selection and (chinese_context(passage) or passage.structure in ('path','fragment','title') or origin == '暂未收录' or origin in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考')):
             self.show_rule_result(passage, origin, gloss, sentence, point, language, pos, can_save, can_search)
             return
         self.rule_state = None
