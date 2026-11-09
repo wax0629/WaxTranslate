@@ -72,6 +72,7 @@ CARD_DOCUMENT = theme_css("""
     p {margin:0; color:$ink; font-family:'Segoe UI Variable Text','Segoe UI','Microsoft YaHei UI';}
     .details {font-size:11px; color:$muted; margin-bottom:10px;}
     .gloss {font-size:17px; font-weight:600; line-height:138%; margin-bottom:10px;}
+    .region {font-size:16px; font-weight:400; line-height:140%; margin-bottom:10px;}
     .source {font-family:'Spectral','Georgia','Microsoft YaHei UI'; font-size:16px; line-height:132%;}
     .hit {font-weight:600; color:$ink;}
     .translation {font-size:13px; line-height:140%; margin-top:8px;}
@@ -269,7 +270,7 @@ class Card(QWidget):
         if not passage.selection:
             details = (language or "按英语翻译") + " → 简体中文"
             translation = gloss or sentence
-            content = f"<p class='details'>{plain(details)}</p><p class='gloss'>{plain(translation)}</p>"
+            content = f"<p class='details'>{plain(details)}</p><p class='region'>{plain(translation)}</p>"
             original = content + f"<hr style='background-color:#d7d8d2'><p class='source'>{plain(passage.text)}</p>"
             self.present(origin, content, point, translation, full_context=(original, translation),
                          expand_label="查看原文")

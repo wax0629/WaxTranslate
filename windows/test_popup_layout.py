@@ -53,6 +53,9 @@ class PopupLayoutTests(unittest.TestCase):
                     card.expand.click()
                 self.assertEqual(source in card.text.toPlainText(), expanded)
                 self.assertIn(translated, card.text.toPlainText())
+                # Paragraph translation is reading text, not the bold word gloss.
+                translated_cursor = card.text.document().find(translated)
+                self.assertLessEqual(translated_cursor.charFormat().fontWeight(), 500)
                 card.copy.click()
                 self.assertEqual(QApplication.clipboard().text(), translated)
         card.show_message("需要处理", "请重试。", QPoint(10, 10))
