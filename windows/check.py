@@ -76,7 +76,7 @@ class Checks(unittest.TestCase):
             card.show_result(passage,'名称参考','内存数据存储','',QPoint(10,10),can_search=True)
             self.assertNotIn('Use Docker',card.text.toPlainText())
             api = source.index('API')
-            card.open_reference(QUrl(f'waxterm://{api}/{api+3}'))
+            card.open_reference(QUrl(f'waxterm://term/{api}/{api+3}'))
             self.assertEqual(terms[0].word,'API')
             self.assertEqual(terms[0].selection,(api,api+3))
             card.open_reference(QUrl('waxcard://translate'))

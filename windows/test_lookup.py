@@ -92,7 +92,7 @@ class LookupTests(unittest.TestCase):
             online_meanings("PostgreSQL’s")
             fetch.assert_called_once_with("PostgreSQL")
 
-    def test_default_online_lookup_only_for_unknown_english_terms(self):
+    def test_online_lookup_requires_explicit_action(self):
         with TemporaryDirectory() as tmp, patch.object(QProcess, "start"), \
                 patch("app.search_entities", return_value=[("Q42", "百科说明", "zh")]) as fetch:
             window = Window(Notebook(Path(tmp) / "book.sqlite"))
@@ -116,6 +116,9 @@ class LookupTests(unittest.TestCase):
                 fetch.assert_not_called()
 
                 window.lookup_text(selected("The private project uses BlorpQuxV9.", "BlorpQuxV9"), point)
+                wait_for(card.online.isVisible)
+                fetch.assert_not_called()
+                card.online.click()
                 wait_for(card.save.isVisible)
                 fetch.assert_called_once_with("BlorpQuxV9")
                 self.assertIn("百科说明", card.text.toPlainText())
@@ -179,6 +182,8 @@ class LookupTests(unittest.TestCase):
                 window.auto_online.setChecked(True)
                 with patch("app.search_entities", side_effect=[OSError("offline"), []]) as fetch:
                     window.lookup_text(item, point)
+                    wait_for(card.online.isVisible)
+                    card.online.click()
                     wait_for(lambda: "无法连接" in card.text.toPlainText())
                     self.assertFalse(card.save.isVisible())
                     card.online.click()
@@ -193,6 +198,8 @@ class LookupTests(unittest.TestCase):
                     return [("Q1", "过期内容", "zh")]
                 with patch("app.search_entities", side_effect=delayed):
                     window.lookup_text(item, point)
+                    wait_for(card.online.isVisible)
+                    card.online.click()
                     wait_for(started.is_set)
                     stale = window.online_job
                     card.close()

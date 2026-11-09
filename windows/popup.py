@@ -267,7 +267,7 @@ class Card(QWidget):
             from dataclasses import replace
             passage = self.rule_state[0]
             try:
-                a, b = int(url.host()), int(url.path().strip('/'))
+                a, b = map(int,url.path().strip('/').split('/'))
             except ValueError:
                 return
             if 0 <= a < b <= len(passage.text):
@@ -382,7 +382,7 @@ class Card(QWidget):
                 body += plain(part.text[cursor:match.start()])
                 a,b = match.start()+offset,match.end()+offset
                 if (a,b) == passage.selection: body += '<b>'+plain(match.group())+'</b>'
-                elif chinese_context(passage): body += f'<a href="waxterm://{a}/{b}">{plain(match.group())}</a>'
+                elif chinese_context(passage): body += f'<a href="waxterm://term/{a}/{b}">{plain(match.group())}</a>'
                 else: body += plain(match.group())
                 cursor = match.end()
             body += plain(part.text[cursor:])
