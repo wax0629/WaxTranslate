@@ -52,6 +52,21 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
     }
 
     static func testCardPolicy() throws {
+        let comment = "// Explicit transport views avoid exposing future domain fields by accident."
+        let commentHit = NSRange(comment.range(of: "avoid")!, in: comment)
+        let commentLines = [TextLine(text: comment, frame: CGRect(x: 0, y: 100, width: 900, height: 18), hit: commentHit),
+                            TextLine(text: "type productView struct {", frame: CGRect(x: 0, y: 75, width: 400, height: 18), hit: nil),
+                            TextLine(text: "ID Name", frame: CGRect(x: 0, y: 50, width: 200, height: 18), hit: nil)]
+        let commentPassage = try SentenceContext.passage(in: commentLines, language: "en")
+        try expect(commentPassage.context == String(comment.dropFirst(3)))
+        try expect(commentPassage.text == "avoid" && commentPassage.selection?.location == commentHit.location - 3)
+        let multiline = [TextLine(text: "// Explicit transport views avoid exposing", frame: CGRect(x: 0, y: 100, width: 400, height: 18), hit: commentHit),
+                         TextLine(text: "// future domain fields by accident.", frame: CGRect(x: 0, y: 75, width: 400, height: 18), hit: nil),commentLines[1]]
+        let wrappedComment = try SentenceContext.passage(in: multiline, language: "en")
+        try expect(wrappedComment.context == "Explicit transport views avoid exposing future domain fields by accident.")
+        let urlSentence = "Visit https://example.com to avoid errors."
+        let urlPassage = try SentenceContext.passage(in: urlSentence, selection: NSRange(urlSentence.range(of: "avoid")!, in: urlSentence), language: "en")
+        try expect(urlPassage.context.contains("https://example.com"))
         let document = "• 更新README文档\n• 模型输入的token与访问token含义不同。\n\n下一段API。"
         let range = NSRange(document.range(of: "token")!, in: document)
         let scoped = try SentenceContext.passage(in: document, selection: range, language: "zh-Hans")

@@ -83,10 +83,13 @@ enum SentenceContext {
         var paragraph = ""
         var wordOffset = 0
         for index in Array(above.reversed()) + [anchor] + below {
-            let text = lines[index].text
+            let raw = lines[index].text
+            let prefix = commentPrefix(raw)
+            let strip = prefix > 0 && (index != anchor || wordRange.location >= prefix) ? prefix : 0
+            let text = String(raw.dropFirst(strip))
             if paragraph.last == "\u{00ad}" { paragraph.removeLast() }
             else if needsSpace(after: paragraph.last, before: text.first) { paragraph += " " }
-            if index == anchor { wordOffset = paragraph.utf16.count + wordRange.location }
+            if index == anchor { wordOffset = paragraph.utf16.count + wordRange.location - raw.prefix(strip).utf16.count }
             paragraph += text
         }
         let selected = String.Index(utf16Offset: wordOffset, in: paragraph)
@@ -147,6 +150,15 @@ enum SentenceContext {
             // and baseline spacing. Pixel distances scale with the recognized type.
             let candidates = lines.indices.filter { i in
                 let next = lines[i].frame
+                let currentIndex = result.last ?? anchor
+                let currentText = lines[currentIndex].text
+                let candidateText = lines[i].text
+                let currentComment = commentPrefix(currentText) > 0
+                let candidateComment = commentPrefix(candidateText) > 0
+                // A comment is a prose block, never the following declaration or
+                // field column. Each adjacent marked comment line may soft-wrap.
+                if currentComment != candidateComment { return false }
+                if codeLine(currentText) != codeLine(candidateText) { return false }
                 let listStart = #"^\s*(?:[•●▪◦*+-]|[0-9]+[.)、])\s*"#
                 if upward {
                     let currentLine = result.last.map { lines[$0].text } ?? lines[anchor].text
@@ -172,6 +184,18 @@ enum SentenceContext {
             current = lines[next].frame
         }
         return result
+    }
+
+    // Strip only a line-leading comment marker followed by whitespace.
+    // URLs, division, paths, and slashes inside the sentence remain untouched.
+    private static func commentPrefix(_ text: String) -> Int {
+        guard let range = text.range(of: #"^\s*//[/!]?(?:\s+|$)"#, options: .regularExpression) else { return 0 }
+        return text[range].count
+    }
+
+    private static func codeLine(_ text: String) -> Bool {
+        if commentPrefix(text) > 0 { return false }
+        return text.range(of: #"^\s*(?:(?:type|func|struct|class|enum|import|package|return|let|var|const)\s|[{}]\s*$|[A-Za-z_]\w*\s+(?:string|int|bool|float\d*|[A-Za-z_]\w*\.)\b)"#, options: .regularExpression) != nil
     }
 
     private static func needsSpace(after last: Character?, before first: Character?) -> Bool {
