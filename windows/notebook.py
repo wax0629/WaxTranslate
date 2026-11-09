@@ -145,7 +145,7 @@ class Notebook:
                           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(word, context, position, language) DO UPDATE SET
                           source=excluded.source, gloss=excluded.gloss, translation=excluded.translation, structure=excluded.structure""",
                        (passage.word, passage.text, passage.selection[0], source, gloss, translation,
-                        int(time.time()), passage.source_code or "en", passage.structure))
+                        int(time.time()), passage.source_code or "en", getattr(passage,"structure","sentence")))
 
     def entries(self):
         with self.connection() as db:
