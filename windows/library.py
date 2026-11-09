@@ -261,7 +261,11 @@ class Library(QWidget):
         row = self.current()
         self.speech_error.hide()
         if row:
-            self.listen.set_content(row["word"], row["context"], row["language"])
+            from card_policy import chinese_context
+            saved = Passage(row["context"], (row["position"], row["position"] + len(row["word"])),
+                            source_code=row["language"])
+            self.listen.set_content(row["word"], row["context"], row["language"],
+                                    sentence_language="zh" if chinese_context(saved) else row["language"])
         else:
             self.listen.set_content()
         self.empty.setVisible(not self.rows)

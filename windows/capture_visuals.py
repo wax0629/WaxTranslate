@@ -4,6 +4,7 @@ Pass --source-root to capture the baseline checkout with the same fixture runner
 No OCR, model inference, network request, registry write or physical input is used.
 """
 import argparse
+import ctypes
 import json
 import os
 from pathlib import Path
@@ -60,7 +61,11 @@ def main():
             app.processEvents()
 
         def capture(widget, name):
+            widget.repaint()
+            if hasattr(widget, "text"):
+                widget.text.viewport().repaint()
             settle()
+            ctypes.windll.dwmapi.DwmFlush()
             # Layered/translucent Windows cards return black through their
             # HWND DC. Capture the compositor's real screen rectangle instead.
             screen = widget.screen()
@@ -68,9 +73,13 @@ def main():
             pixmap = screen.grabWindow(0, point.x(), point.y(), widget.width(), widget.height())
             assert not pixmap.isNull(), name
             assert pixmap.save(str(args.output / (name + ".png"))), name
-            metadata["captures"].append(dict(name=name, width=widget.width(), height=widget.height(),
-                                              physical_width=pixmap.width(), physical_height=pixmap.height(),
-                                              device_ratio=widget.devicePixelRatioF()))
+            snapshot = dict(name=name, width=widget.width(), height=widget.height(),
+                            physical_width=pixmap.width(), physical_height=pixmap.height(),
+                            device_ratio=widget.devicePixelRatioF())
+            if hasattr(widget, "headword"):
+                snapshot.update(headword=widget.headword.text(), text=widget.text.toPlainText(),
+                                can_save=widget.save.isEnabled() and widget.save.isVisible())
+            metadata["captures"].append(snapshot)
 
         try:
             area = app.primaryScreen().availableGeometry()
@@ -92,22 +101,30 @@ def main():
             window.tabs.setCurrentIndex(0)
             point = window.mapToGlobal(QPoint(80, 90))
             card = window.card
-            card.show_result(passage, "句中释义", "河岸", "他们坐在河岸边，看着水。", point, language="英语", pos="名词", can_search=True)
+
+            def show_card(*args, **kwargs):
+                # Give each fixture a fresh native presentation. Reusing a
+                # layered HWND at the same height can retain the preceding
+                # compositor frame even after the Qt document has changed.
+                card.hide()
+                card.show_result(*args, **kwargs)
+
+            show_card(passage, "句中释义", "河岸", "他们坐在河岸边，看着水。", point, language="英语", pos="名词", can_search=True)
             capture(card, "lookup-context")
             for word, source, origin, gloss, kind in (
                 ('VoiceOver','在macOS辅助功能中启用VoiceOver。','名称参考','Apple 的屏幕朗读辅助功能。','功能名称'),
                 ('Redis','用Docker部署Redis，通过API访问缓存。','名称参考','一种内存数据存储系统，常用于缓存。','技术名称'),
                 ('UnknownSDK','用Docker部署UnknownSDK。','暂未收录','暂未确认这个代码名称的含义。','代码名称')):
                 a=source.index(word)
-                card.show_result(Passage(source,(a,a+len(word))),origin,gloss,'',point,pos=kind,can_save=word!='UnknownSDK',can_search=True)
+                show_card(Passage(source,(a,a+len(word))),origin,gloss,'',point,pos=kind,can_save=word!='UnknownSDK',can_search=True)
                 capture(card,'rules-'+word)
             card.close()
             word = Passage("warehouse", (0, 9), source_code="en")
-            card.show_result(word, "英汉词典 · ECDICT", "仓库", "", point, language="英语", pos="名词", can_search=True)
+            show_card(word, "英汉词典 · ECDICT", "仓库", "", point, language="英语", pos="名词", can_search=True)
             capture(card, "lookup-word")
             card.show_message("需要处理", "这里没有识别到文字。请移动到词语中央，或从托盘菜单使用框选翻译。", point)
             capture(card, "lookup-error")
-            card.show_result(Passage("Example. " * 90), "选区译文", "很长的示例译文。" * 90, "", point, language="英语")
+            show_card(Passage("Example. " * 90), "选区译文", "很长的示例译文。" * 90, "", point, language="英语")
             capture(card, "lookup-long")
         finally:
             window.card.close()

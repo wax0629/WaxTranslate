@@ -55,15 +55,15 @@ def explain(passage):
         if special:
             origin, gloss, kind = special
             return (origin, gloss, ""), None, "中文语境" if chinese_context(passage) else "英语", kind
-        if needs_confirmation(passage) and not resolve_term(passage, passage.context):
+        if needs_confirmation(passage) and not resolve_term(passage, passage.local_context):
             message = "可能指 Apple 的屏幕朗读功能，当前片段不足以确认。" if passage.word == "VoiceOver" else "暂未确认这个代码名称的含义。"
             return (UNKNOWN, message, ""), None, "中文语境" if chinese_context(passage) else "", "代码名称"
     # Determine the route before consulting English terminology, POS or ECDICT.
     # Unsupported mixed-script text may still contain an English identifier.
     try:
         code = passage.source_code or detect_source(passage.text)
-        if not code and passage.context and passage.text != passage.context.strip():
-            code = detect_source(passage.context)
+        if not code and passage.local_context and passage.text != passage.local_context.strip():
+            code = detect_source(passage.local_context)
     except UnsupportedLanguage as error:
         if not passage.selection:
             raise
@@ -77,8 +77,12 @@ def explain(passage):
         language = "按俄语查词" if passage.selection else "按俄语翻译"
     passage.source_code = code
     if code and code != "en":
+        if passage.selection and passage.structure in ("title", "fragment"):
+            word = Passage(passage.word, (0, len(passage.word)), source_code=code)
+            origin, gloss, _ = translate(word)
+            return (origin, gloss, ""), None, language, ""
         if code in ("ja", "ko") and passage.word.isascii() and passage.word:
-            term = resolve_term(passage, passage.context)
+            term = resolve_term(passage, passage.local_context)
             if term:
                 origin, gloss, pos = term
                 return (origin, gloss, ""), None, language + "语境", pos
@@ -88,7 +92,7 @@ def explain(passage):
         return result, excerpt, language, ""
 
     word = passage.word
-    term = resolve_term(passage, passage.context)
+    term = resolve_term(passage, passage.local_context)
     entry, common, passage.phonetic, dictionary_pos = lookup_details(word) if not term else ("", False, "", "")
     base = reference_word(word)
     if not term and not entry and base != word:
@@ -98,7 +102,7 @@ def explain(passage):
     identifier = bool(re.search(r"[a-z][A-Z]|\d|[+#_.]", word) or len(word) > 1 and word.isupper())
     start, end = passage.selection
     surrounding = passage.text[:start] + " " + passage.text[end:]
-    english_context = True
+    english_context = not chinese_context(passage)
     if unsupported:
         cjk_context = unsupported.language in ("中文", "繁体中文", "日语", "韩语")
         named = term and (term[0] == "文中定义" or term[2] not in ("缩写", "名称") or word.istitle())

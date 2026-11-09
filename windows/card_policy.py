@@ -4,11 +4,13 @@ from dataclasses import replace
 
 
 def chinese_context(passage):
+    if passage.source_code in ("ja", "ko"):
+        return False
     surrounding = passage.text
     if passage.selection:
         a, b = passage.selection
         surrounding = surrounding[:a] + surrounding[b:]
-    return bool(re.search(r"[\u3400-\u9fff]", surrounding)) and not re.search(r"[ぁ-ヺ]", surrounding)
+    return bool(re.search(r"[\u3400-\u9fff]", surrounding)) and not re.search(r"[ぁ-ヺ\uac00-\ud7af]", surrounding)
 
 
 def needs_confirmation(passage):
@@ -25,6 +27,8 @@ def local_reference(passage):
         return '术语参考','用容器打包和运行应用的平台。','开发工具'
     if word == 'Redis' and re.search(r'缓存|数据库|内存|部署|cache|database|deploy', context, re.I):
         return '名称参考', '一种内存数据存储系统，常用于缓存。', '技术名称'
+    if word == 'INTEGER' and re.search(r'字段|数据类型|整数|编程|数据库|\b(?:column|type|SQL)\b', context, re.I):
+        return '术语参考', '整数类型，用于存储没有小数部分的数值。', '数据类型'
     if word.lower() == 'transformer':
         if re.search(r'变电|电压|电力|电路|power|voltage', context, re.I):
             return '语境术语参考', '变压器，用于改变交流电压。', '技术词'

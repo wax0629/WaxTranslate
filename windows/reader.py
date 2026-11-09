@@ -156,38 +156,86 @@ class Passage:
     phonetic: str = field(default="", compare=False)
     ocr_line: str = field(default="", compare=False, repr=False)
     structure: str = field(default="sentence", compare=False)
+    context_bounds: tuple[int, int] | None = field(default=None, compare=False, repr=False)
 
     @property
     def word(self):
         return self.text[slice(*self.selection)] if self.selection else ""
 
+    @property
+    def local_context(self):
+        return self.context[slice(*self.context_bounds)] if self.context_bounds else self.context
+
+    @property
+    def local_context_offset(self):
+        if self.context_offset is None:
+            return None
+        return self.context_offset - (self.context_bounds[0] if self.context_bounds else 0)
+
 
 def sentence_at(text, start, end):
     """Keep the sentence and the exact selected occurrence across soft line wraps."""
-    left, right = 0, len(text)
     block_left = text.rfind("\n", 0, start) + 1
     block_end = text.find("\n", end)
     block_right = len(text) if block_end < 0 else block_end
     block = text[block_left:block_right]
-    structure = 'path' if re.fullmatch(r'(?:[A-Za-z]:)?[\w./\\-]+[/\\][\w.\-]+', block.strip()) else 'list' if re.match(r'\s*(?:[•●▪◦*+-]|[0-9]+[.)、])\s*', block) else 'fragment' if block.strip().startswith(('…','...')) or block.strip().endswith(('…','...')) else 'sentence'
-    if structure in ('path', 'list', 'fragment'):
+
+    def structure_of(line):
+        if re.fullmatch(r'(?:[A-Za-z]:)?[\w./\\-]+[/\\][\w.\-]+', line.strip()):
+            return 'path'
+        if re.match(r'\s*(?:[•●▪◦*+-]|[0-9]+[.)、])\s*', line):
+            return 'list'
+        if re.match(r'\s*#{1,6}\s+', line):
+            return 'title'
+        if line.strip().startswith(('…', '...')) or line.strip().endswith(('…', '...')):
+            return 'fragment'
+        return 'comment' if re.match(r'\s*//', line) else 'sentence'
+
+    structure = structure_of(block)
+    if structure in ('path', 'list', 'fragment', 'title'):
         return Passage(block, (start-block_left,end-block_left), block, start-block_left, structure=structure)
-    for boundary in re.finditer(r"""[。！？]+[」』”）]*\s*|[.!?]["”')]*\s+|\n[ \t]*\n""", text):
+
+    # A soft line wrap can continue a sentence, but a new item, heading or
+    # transition between comments and code is a separate source block.
+    lower, upper = block_left, block_right
+    for line in reversed(text[:block_left].splitlines(keepends=True)):
+        if not line.strip() or structure_of(line) != structure:
+            break
+        lower -= len(line)
+    for line in text[block_right:].splitlines(keepends=True)[1:]:
+        if not line.strip() or structure_of(line) != structure:
+            break
+        upper += 1 + len(line.rstrip('\n'))
+    left, right = lower, upper
+    for boundary in re.finditer(r"""[。！？]+[」』”）]*\s*|[.!?]["”')]*\s+|\n[ \t]*\n""", text[lower:upper]):
+        boundary_start, boundary_end = lower + boundary.start(), lower + boundary.end()
         if boundary.group().startswith(".") and re.search(
-                r"\b(?:Fig|Eq|Dr|Prof|e\.g|i\.e)$", text[max(0, boundary.start() - 6):boundary.start()], re.I):
+                r"\b(?:Fig|Eq|Dr|Prof|e\.g|i\.e)$", text[max(0, boundary_start - 6):boundary_start], re.I):
             continue
-        if boundary.end() <= start:
-            left = boundary.end()
-        elif boundary.start() >= end:
-            right = boundary.end()
+        if boundary_end <= start:
+            left = boundary_end
+        elif boundary_start >= end:
+            right = boundary_end
             break
     source = text[left:right].rstrip()
+    a, b = start - left, end - left
+    if structure == 'comment':
+        for marker in reversed(list(re.finditer(r'(?m)^[ \t]*//[/!]?[ \t]*', source))):
+            if marker.end() <= a:
+                a -= len(marker.group())
+                b -= len(marker.group())
+            source = source[:marker.start()] + source[marker.end():]
     leading = len(source) - len(source.lstrip())
-    marker = re.match(r'\s*//[/!]?(?:\s+|$)',source)
-    if marker and start-left >= marker.end(): leading = marker.end()
-    context_start = max(0, start - 4000)
-    return Passage(source[leading:].replace("\n", " "), (start - left - leading, end - left - leading),
-                   text[context_start:end + 4000], start - context_start)
+    source = source[leading:].replace("\n", " ")
+    selection = a - leading, b - leading
+    if structure == 'comment':
+        return Passage(source, selection, source, selection[0])
+    # Keep the original bounded capture for diagnostics while restricting
+    # semantic evidence to this paragraph or structural block.
+    context_start, context_end = max(0, start - 4000), min(len(text), end + 4000)
+    bounds = max(lower, context_start) - context_start, min(upper, context_end) - context_start
+    return Passage(source, selection, text[context_start:context_end], start - context_start,
+                   context_bounds=bounds)
 
 
 def context_excerpt(passage):

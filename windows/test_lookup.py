@@ -51,7 +51,7 @@ class LookupTests(unittest.TestCase):
             ("The request must be idempotent.", "idempotent", "幂等"),
             ("Use a mutex to serialize these threads.", "mutex", "互斥"),
             ("The surgeon quickly diagnosed pneumothorax after the injury.", "pneumothorax", "气胸"),
-            ("The authors introduce a query routing layer (QRL).\n\nThe QRL routes traffic.", "QRL", "query routing layer"),
+            ("The authors introduce a query routing layer (QRL). The QRL routes traffic.", "QRL", "query routing layer"),
             ("我们运行 ChatGPT 帮忙解释这篇中文文章中的句子。", "ChatGPT", "OpenAI"),
         ]:
             with self.subTest(word=word, text=text):

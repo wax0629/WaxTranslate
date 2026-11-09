@@ -274,7 +274,10 @@ class Card(QWidget):
             except ValueError:
                 return
             if 0 <= a < b <= len(passage.text):
-                self.term_requested.emit(replace(passage, selection=(a,b)))
+                offset = passage.context_offset
+                if offset is not None:
+                    offset += a - passage.selection[0]
+                self.term_requested.emit(replace(passage, selection=(a,b), context_offset=offset))
             return
         if url.scheme() == 'waxcard' and getattr(self, 'rule_state', None):
             action = url.host()
@@ -293,7 +296,7 @@ class Card(QWidget):
             elif action == 'title':
                 from dataclasses import replace
                 passage = self.rule_state[0]
-                self.term_requested.emit(replace(passage, selection=(0,len(passage.text))))
+                self.term_requested.emit(replace(passage, selection=None))
                 return
             self.render_rule_card()
             return
@@ -308,7 +311,8 @@ class Card(QWidget):
             self.show_rule_result(passage, origin, gloss, sentence, point, language, pos, can_save, can_search)
             return
         self.rule_state = None
-        self.listen.set_content(passage.word, passage.text, passage.source_code or "en")
+        self.listen.set_content(passage.word, passage.text, passage.source_code or "en",
+                                sentence_language="zh" if chinese_context(passage) else passage.source_code or "en")
         if not passage.selection:
             details = (language or "按英语翻译") + " → 简体中文"
             translation = gloss or sentence
@@ -371,8 +375,11 @@ class Card(QWidget):
 
     def render_rule_card(self):
         passage, origin, gloss, point, language, pos, can_save, can_search = self.rule_state
-        self.listen.set_content(passage.word, passage.text, 'en' if passage.word.isascii() else passage.source_code or 'en')
-        details = ' · '.join(filter(None,(pos, '中文语境' if chinese_context(passage) else language)))
+        mixed = chinese_context(passage)
+        word_language = passage.source_code or 'en'
+        self.listen.set_content(passage.word, passage.text, word_language,
+                                sentence_language='zh' if mixed else word_language)
+        details = ' · '.join(filter(None,(pos, '英语词条 · 中文语境' if mixed and passage.word.isascii() else '中文语境' if mixed else language)))
         content = f"<p class='details'>{plain(details)}</p><p class='gloss'>{plain(gloss)}</p><p class='details'>{plain(origin)}</p>"
         part, offset = (passage,0) if self.rule_expanded else bounded_context(passage)
         self.rule_displayed = part
@@ -404,7 +411,8 @@ class Card(QWidget):
             if passage.structure=='fragment': content += "<p class='details'>可重新取词或从菜单框选完整原文。</p>"
         elif passage.word != passage.text:
             content += '<p><a href="waxcard://context">查看相关原文</a></p>'
-        self.present(origin,content,point,gloss if can_save else '',can_save,can_search=can_search,word=passage.word)
+        self.present(origin,content,point,gloss if can_save else '',can_save,can_search=can_search,
+                     word=passage.word, phonetic=passage.phonetic)
         self.save.setVisible(True); self.save.setEnabled(can_save and not self.rule_saved)
         if self.rule_saved: self.save.setText("已收藏")
         self.actions.setVisible(True)

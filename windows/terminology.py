@@ -269,10 +269,10 @@ def resolve_term(passage, context=""):
             local_sense = matches[0]
     try_acronym = bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9]{1,11}", word) and (
             sum(char.isupper() for char in word) >= 2 or acronym or key in {"mvp", "prd"}))
-    nearby = context or passage.context
+    nearby = context or passage.local_context
     if try_acronym or re.search(r"\b(?:means?|denotes?|refers to)\b", nearby or passage.text, re.I):
-        if nearby and nearby == passage.context and passage.context_offset is not None:
-            item, direct = _written_definition(nearby, word, passage.context_offset, try_acronym)
+        if nearby and nearby == passage.local_context and passage.local_context_offset is not None:
+            item, direct = _written_definition(nearby, word, passage.local_context_offset, try_acronym)
         else:
             item, direct = _written_definition(passage.text, word, passage.selection[0], try_acronym)
             if not item and nearby and nearby != passage.text:
