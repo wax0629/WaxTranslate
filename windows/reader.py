@@ -351,7 +351,7 @@ def passage_from_lines(lines, point, source_code=""):
     start, end = offset + match.start(), offset + match.end()
     if re.match(r'\s*//', heading):
         cleaned = ''; new_start = start; new_end = end
-        for marker in list(re.finditer(r'(?<!:)//[/!]?(?:[ \t]+|$)',text))[::-1]:
+        for marker in list(re.finditer(r'(?<![\w:])//[/!]?(?:[ \t]+|$)',text))[::-1]:
             if marker.end() <= start:
                 new_start -= len(marker.group()); new_end -= len(marker.group())
             text = text[:marker.start()] + text[marker.end():]

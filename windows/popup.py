@@ -253,6 +253,8 @@ class Card(QWidget):
         self.copy.setToolTip("已复制")
 
     def show_message(self, caption, message, point):
+        self.rule_state = None
+        self.rule_request_id = getattr(self,"rule_request_id",0)+1
         self.listen.set_content()
         self.present(caption, f"<p class='message'>{plain(message)}</p>", point)
 
