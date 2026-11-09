@@ -280,7 +280,7 @@ class Library(QWidget):
             self.detail.clear()
             return
         pos, word, context = row["position"], row["word"], row["context"]
-        passage = Passage(context, (pos, pos + len(word)))
+        passage = Passage(context, (pos, pos + len(word)), source_code=row["language"], structure=row["structure"])
         if not self.testing or self.revealed:
             details = f"{NAMES.get(row['language'], row['language'])} · {row['source']}"
             content = result_html(passage, row["gloss"], row["translation"], details)

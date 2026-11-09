@@ -76,6 +76,13 @@ class Notebook:
                 if not db.execute("SELECT 1 FROM pragma_table_info('recent_lookups') WHERE name='looked_up_at'").fetchone():
                     db.execute("ALTER TABLE recent_lookups ADD COLUMN looked_up_at INTEGER")
                 db.commit()
+            if not db.execute("SELECT 1 FROM pragma_table_info('entries') WHERE name='structure'").fetchone():
+                try:
+                    db.execute("ALTER TABLE entries ADD COLUMN structure TEXT NOT NULL DEFAULT 'sentence'")
+                    db.commit()
+                except sqlite3.OperationalError:
+                    if not db.execute("SELECT 1 FROM pragma_table_info('entries') WHERE name='structure'").fetchone():
+                        raise
             yield db
 
     def record_lookup(self, now=None, *, word="", language="", gloss=""):
@@ -134,11 +141,11 @@ class Notebook:
     def save(self, passage, result):
         source, gloss, translation = result
         with self.connection() as db:
-            db.execute("""INSERT INTO entries(word, context, position, source, gloss, translation, due, language)
-                          VALUES(?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(word, context, position, language) DO UPDATE SET
-                          source=excluded.source, gloss=excluded.gloss, translation=excluded.translation""",
+            db.execute("""INSERT INTO entries(word, context, position, source, gloss, translation, due, language, structure)
+                          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(word, context, position, language) DO UPDATE SET
+                          source=excluded.source, gloss=excluded.gloss, translation=excluded.translation, structure=excluded.structure""",
                        (passage.word, passage.text, passage.selection[0], source, gloss, translation,
-                        int(time.time()), passage.source_code or "en"))
+                        int(time.time()), passage.source_code or "en", passage.structure))
 
     def entries(self):
         with self.connection() as db:

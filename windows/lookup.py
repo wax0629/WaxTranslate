@@ -133,6 +133,13 @@ def explain(passage):
             pos = pos or DICTIONARY_POS.get(dictionary_pos, "")
     else:
         origin, gloss = UNKNOWN, "本机资料和附近原文里都没有找到可靠解释。"
+        if not english_context and not identifier and word.isascii():
+            try:
+                candidate = translate(Passage(word, source_code='en'))[1].rstrip('。.!！')
+                if candidate and candidate.casefold() != word.casefold():
+                    origin,gloss = '单词参考',candidate
+            except (ValueError, RuntimeError, OSError):
+                pass
     sentence = sentence_translation(passage.text) if has_sentence and english_context and passage.structure not in ("title", "path", "fragment") else ""
     if sentence and not preserves_reference(word, "" if origin == UNKNOWN else gloss, sentence):
         sentence = ""

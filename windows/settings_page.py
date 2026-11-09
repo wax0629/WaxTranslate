@@ -197,7 +197,7 @@ class SettingsPage(QScrollArea):
         for code in NAMES:
             self.pack_choice.addItem(NAMES[code], code)
         defaults = "、".join(NAMES[c] for c in DEFAULT_LANGUAGES if c in NAMES)
-        setting_row(self.packs.options, "离线语言", self.pack_choice, f"默认提供{defaults}。每个语言包包含识字和简体中文翻译资源。")
+        setting_row(self.packs.options, "离线语言", self.pack_choice, f"默认提供{defaults}。每个语言包包含识字和简体中文翻译资源；另内置中文至英语模型，供中文语境按需句译。")
         actions = QHBoxLayout()
         self.pack_status = label("", "meta")
         self.pack_status.setWordWrap(True)

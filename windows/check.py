@@ -111,6 +111,16 @@ class Checks(unittest.TestCase):
             part,offset = bounded_context(long)
             self.assertEqual(part.word,'Redis')
             self.assertLessEqual(len(part.text),60)
+            with TemporaryDirectory() as temp:
+                book = Notebook(Path(temp)/'rules.sqlite3')
+                item.source_code = 'en'
+                book.save(item,('语境术语参考','词元','Only this item.'))
+                restored = book.entries()[0]
+                self.assertEqual(restored['structure'],'list')
+                self.assertEqual(restored['source'],'语境术语参考')
+                self.assertNotIn('README',restored['context'])
+            from translation import translate_leg
+            self.assertRegex(translate_leg(Passage('用Docker部署Redis，通过API访问缓存。'),'zh').text,r'[A-Za-z]')
         finally:
             card.close()
 
