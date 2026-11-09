@@ -7,6 +7,12 @@
 | Windows 11 x64 | 轻按并松开左 Ctrl | 按住取词键，用鼠标左键拖选 |
 | macOS 15.2 及以上 | 轻按并松开 Option | 按 ⌥⇧R 后拖选 |
 
+## 试用状态（2026-11-09）
+
+当前为开发版有限试用，尚未完成全面验收。Mac build11 新反馈暴露中文语境中的英文词未释义、代码名称缺少组成词参考；本轮补回归与修正，详情见[试用准入复查](docs/verification/macos-sync/trial-readiness.md)。通用语境准确率、真实历史词本升级、读屏和完整物理交互仍有待验收项，不应据 CI 全绿宣称产品验收全部完成。
+
+Windows 视觉同步 PR #82（`31e0c8d`）的独立桌面 100%/150% 各97项通过，可用于有限试用；尚未合并，不能把主分支旧包当成该版本。[已验证试用构建](https://github.com/wax0629/WaxTranslate/actions/runs/42579217313) · [待合并 PR #82](https://github.com/wax0629/WaxTranslate/pull/82)。Mac PR #80 同样保持待评审。
+
 ## 当前开发进度
 
 Windows 主分支已交付多语种离线翻译、对照阅读、生词复习和查词看板。macOS 本轮同步分支为 **0.3.0**：补齐首页四格统计、最近取词、对照阅读、紧凑取词卡与设置，接通已验收的英语短语修复，并改进孤立英文词语种判断。Mac 继续使用 Vision 和 Apple 本机翻译，系统语言包与 Windows 模型分别管理。[Mac 同步 #78](https://github.com/wax0629/WaxTranslate/issues/78) · [开发进度与验收记录](docs/development.md) · [双端路线图](https://github.com/wax0629/WaxTranslate/issues/3)

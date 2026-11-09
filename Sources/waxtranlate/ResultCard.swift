@@ -50,6 +50,7 @@ struct ResultCard: View {
         target = Locale.Language(identifier: language.hasPrefix("zh") ? "en" : "zh-Hans")
         let began = LookupTrace.now
         dictionary = CompactGloss.candidates(for: passage, language: language)
+            + (CompactGloss.mixedEnglishReference(for: passage).map { [$0] } ?? [])
         term = LocalTerminology.lookup(passage)
         trace.record("lookup.dictionary_and_terms", since: began)
         let cached = LookupCache.shared.result(for: passage)

@@ -418,6 +418,19 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         let reference = try await LookupTranslation.translate(unaligned, session: session, dictionary: ["结束"])
         print("Unaligned memory →", reference.meaning, "/", reference.sentenceTranslation ?? "")
         try expect(reference.origin == .standalone && reference.meaning != "结束" && reference.sentenceTranslation != nil)
+        let chinese = Locale.Language(identifier: "zh-Hans")
+        if await LanguageAvailability().status(from: chinese, to: source) == .installed {
+            let mixedSession = TranslationSession(installedSource: chinese, target: source)
+            for (word, context, expected) in [
+                ("INTEGER", "已安装测试版本，INTEGER现在显示简体整数。", "整数"),
+                ("LookupTranslation", "Sources/waxtranlate/LookupTranslation.swift", "名称组成词参考")
+            ] {
+                let sample = Passage(text: word, context: context, language: "zh-Hans")
+                let result = try await LookupTranslation.translate(sample, session: mixedSession, dictionary: [])
+                try expect(result.isUsable && result.meaning.contains(expected) && result.sentenceTranslation != nil)
+                print("Live mixed context →", word, result.meaning, "/", result.sentenceTranslation ?? "")
+            }
+        } else { print("Skipping mixed context translation: ZH/EN languages not installed.") }
         let japanese = Locale.Language(identifier: "ja")
         if await LanguageAvailability().status(from: japanese, to: target) == .installed {
             let passage = Passage(text: "猫", context: "猫が眠っています。")
@@ -623,6 +636,18 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         let manual = passage("OCR", "使用OCR识别图片文字。", language: "zh-Hans")
         try expect(manual.sourceLanguage == "zh-Hans" && LocalTerminology.lookup(manual)?.meaning.contains("光学字符识别") == true)
         try expect(manual.headwordLanguage == "en")
+        for (word, context, expected) in [
+            ("INTEGER", "已安装测试版本，INTEGER现在显示简体整数。", "整数"),
+            ("LookupTranslation", "Sources/waxtranlate/LookupTranslation.swift", "名称组成词参考")
+        ] {
+            let sample = passage(word, context, language: "zh-Hans")
+            let reference = LookupTranslation.makeResult(for: sample, meaning: word, origin: .standalone,
+                                                        sentence: "Translated context.")
+            try expect(reference.origin == .dictionary && reference.meaning.contains(expected))
+            try expect(reference.sentenceTranslation == "Translated context.")
+            print("Mixed English reference →", word, reference.meaning)
+        }
+        try expect(CompactGloss.mixedEnglishReference(for: passage("QzxUnknown", "这里有QzxUnknown名称。")) == nil)
         let unknown = passage("UnknownSDK", "这里有UnknownSDK这个名称。")
         let unchanged = LookupTranslation.makeResult(for: unknown, meaning: "UNKNOWNsdk", origin: .standalone)
         try expect(unchanged.origin == .unresolved && !unchanged.isUsable && unchanged.meaning.isEmpty)

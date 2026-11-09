@@ -1,6 +1,12 @@
 # 开发进度与验收记录
 
-截至 **2026-11-08**，此记录以合入 `main` 的功能提交 `38171df` 为基线。Windows 通过 GitHub Actions 提供测试过的便携构建，macOS 提供源码安装脚本。仓库当前处于开发版阶段。[基线提交](https://github.com/wax0629/WaxTranslate/commit/38171dfd50e54e3b53ea472ef95648e97347b46d) · [双端路线图](https://github.com/wax0629/WaxTranslate/issues/3)
+主分支历史基线截至 **2026-11-08**，此记录以合入 `main` 的功能提交 `38171df` 为基线。Windows 通过 GitHub Actions 提供测试过的便携构建，macOS 提供源码安装脚本。仓库当前处于开发版阶段。[基线提交](https://github.com/wax0629/WaxTranslate/commit/38171dfd50e54e3b53ea472ef95648e97347b46d) · [双端路线图](https://github.com/wax0629/WaxTranslate/issues/3)
+
+## 当前准入结论（2026-11-09）
+
+**有限试用不等于完整验收完成。** Windows 视觉同步分支 `31e0c8d`（PR #82）已有独立 Windows 桌面 100%/150% 各97项及便携包验证；实体 Windows 11、人工听音和读屏未执行。Mac build11（PR #80）固定样本、真实 Apple 服务与 CI 通过，但本轮用户截图暴露混排英文词和代码标识符的未释义遗漏，不能延用旧样本结论覆盖此场景。本轮修复、验证及剩余项见[试用准入复查](verification/macos-sync/trial-readiness.md)。两个 PR 均未合并。
+
+下方 Windows 93项和主分支0.2.2记录属于历史基线。新的Windows97项结果见[Issue #81](https://github.com/wax0629/WaxTranslate/issues/81)和[当前构建](https://github.com/wax0629/WaxTranslate/actions/runs/42579217313)，不可混用版本或统计。
 
 ## macOS 同步分支 0.3.0（2026-11-09）
 

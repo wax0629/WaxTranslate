@@ -8,7 +8,7 @@
 <key>CFBundleIconFile</key><string>AppIcon.icns</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.3.0</string>
-<key>CFBundleVersion</key><string>11</string>
+<key>CFBundleVersion</key><string>12</string>
 <key>LSMinimumSystemVersion</key><string>15.2</string>
 <key>LSUIElement</key><true/>
 <key>NSScreenCaptureUsageDescription</key><string>我靠翻译在你按快捷键时读取光标附近或框选区域，让系统在本机识别文字。</string>

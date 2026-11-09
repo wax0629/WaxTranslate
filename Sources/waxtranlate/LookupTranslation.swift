@@ -80,6 +80,28 @@ enum CompactGloss {
         return meanings(in: entry as String, partOfSpeech: part?.rawValue.lowercased())
     }
 
+    // A mixed Chinese sentence has a different translation direction from its
+    // English headword. Keep this as an explicitly independent reference.
+    static func mixedEnglishReference(for passage: Passage) -> String? {
+        guard (passage.sourceLanguage.hasPrefix("zh") || passage.sourceLanguage == "en"), !passage.isPhrase,
+              let selection = passage.selection, let range = Range(selection, in: passage.context),
+              passage.context[range] == passage.text,
+              passage.text.range(of: #"^[A-Za-z]+$"#, options: .regularExpression) != nil else { return nil }
+        func definition(_ word: String) -> String? {
+            let word = word.lowercased()
+            return candidates(for: Passage(text: word, context: word, language: "en"), language: "en").first
+        }
+        if let meaning = definition(passage.text) { return meaning }
+        let separated = passage.text
+            .replacingOccurrences(of: #"([A-Z]+)([A-Z][a-z])"#, with: "$1 $2", options: .regularExpression)
+            .replacingOccurrences(of: #"([a-z])([A-Z])"#, with: "$1 $2", options: .regularExpression)
+        let words = separated.split(separator: " ").map(String.init)
+        guard words.count > 1 else { return nil }
+        let meanings = words.compactMap { word in definition(word).map { word + "：" + $0 } }
+        guard meanings.count == words.count else { return nil }
+        return "名称组成词参考（不代表代码功能）：" + meanings.joined(separator: "；")
+    }
+
     static func meanings(in entry: String, partOfSpeech: String? = nil) -> [String] {
         // Some installed dictionaries interpret English strings as Chinese pinyin.
         guard entry.range(of: #"^[A-Za-z]"#, options: .regularExpression) != nil else { return [] }
@@ -125,6 +147,10 @@ enum LookupTranslation {
             word.range(of: #"\p{Latin}"#, options: .regularExpression) != nil
         // Shared Han spellings (e.g. Japanese 猫 → Chinese 猫) are valid.
         let unchanged = origin != .region && latin && gloss.caseInsensitiveCompare(passage.text.trimmingCharacters(in: trim)) == .orderedSame
+        if unchanged, let reference = CompactGloss.mixedEnglishReference(for: passage) {
+            return LookupResult(meaning: reference, origin: .dictionary,
+                                sentenceTranslation: sentence.map { TranslationOutput.normalize($0, target: target) })
+        }
         return LookupResult(meaning: unchanged || gloss.isEmpty ? "" : TranslationOutput.normalize(meaning, target: target),
                             origin: unchanged || gloss.isEmpty ? .unresolved : origin,
                             sentenceTranslation: sentence.map { TranslationOutput.normalize($0, target: target) })
