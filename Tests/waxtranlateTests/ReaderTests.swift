@@ -188,6 +188,14 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
             return
         }
         let session = TranslationSession(installedSource: source, target: target)
+        for context in ["tulip", "A red tulip blooms in the garden."] {
+            let passage = Passage(text: "tulip", context: context)
+            try expect(passage.sourceLanguage == "en")
+            let result = try await LookupTranslation.translate(passage, session: session,
+                dictionary: CompactGloss.candidates(for: passage, language: "en"))
+            try expect(result.meaning.contains("郁金香"))
+            print(context, "→", result.meaning)
+        }
         var meanings: [String] = []
         for sentence in ["They sat on the river bank and watched the water.", "She deposited her paycheck at the bank."] {
             let passage = Passage(text: "bank", context: sentence)
@@ -226,6 +234,16 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         let reference = try await LookupTranslation.translate(unaligned, session: session, dictionary: ["结束"])
         print("Unaligned memory →", reference.meaning, "/", reference.sentenceTranslation ?? "")
         try expect(reference.origin == .standalone && reference.meaning != "结束" && reference.sentenceTranslation != nil)
+        let japanese = Locale.Language(identifier: "ja")
+        if await LanguageAvailability().status(from: japanese, to: target) == .installed {
+            let passage = Passage(text: "猫", context: "猫が眠っています。")
+            try expect(passage.sourceLanguage == "ja")
+            let japaneseSession = TranslationSession(installedSource: japanese, target: target)
+            let result = try await LookupTranslation.translate(passage, session: japaneseSession, dictionary: [])
+            let full = try require(result.sentenceTranslation)
+            try expect(full.contains("猫") && ["睡", "眠"].contains(where: full.contains))
+            print("Japanese →", result.meaning, "/", full)
+        } else { print("Skipping live Japanese translation: JA/ZH languages not installed.") }
     }
 
     static func testSavingAndReview(_ passage: Passage) throws {
@@ -258,6 +276,12 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
     static func testLanguageRouting() throws {
         for word in ["tulip", "warehouse", "bank"] {
             try expect(Passage(text: word, context: word).sourceLanguage == "en")
+            try expect(LanguageResolver.resolve(word, englishDictionaryEvidence: false) == "en")
+        }
+        try expect(Passage(text: "tulip", context: "A red tulip blooms in the garden.").sourceLanguage == "en")
+        for (word, expected) in [("bonjour", "fr"), ("gatto", "it"), ("hola", "es"), ("hallo", "de"),
+                                 ("obrigado", "pt"), ("rumah", "id")] {
+            try expect(LanguageResolver.resolve(word, englishDictionaryEvidence: false) == expected)
         }
         for (text, expected) in [("これは日本語の文章です。", "ja"), ("이것은 한국어 문장입니다.", "ko"),
                                  ("Ceci est une phrase française.", "fr"), ("这是一个中文句子。", "zh")] {
@@ -372,8 +396,10 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
     }
 
     static func testPackedOCRAndManualLanguages() throws {
-        for font in [NSFont.systemFont(ofSize: 20), NSFont.systemFont(ofSize: 32),
-                     NSFont(name: "Baskerville", size: 24)!, NSFont.monospacedSystemFont(ofSize: 24, weight: .regular)] {
+        var fonts = [NSFont.systemFont(ofSize: 20), NSFont.systemFont(ofSize: 32), NSFont.monospacedSystemFont(ofSize: 24, weight: .regular)]
+        if let serif = NSFont(name: "Baskerville", size: 24) { fonts.insert(serif, at: 2) }
+        else { print("Skipping Baskerville fixture: font not installed.") }
+        for font in fonts {
             let fontSize = font.pointSize
             let text = "docs(logistics): warehouse/parcel; bank then bank."
             let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]

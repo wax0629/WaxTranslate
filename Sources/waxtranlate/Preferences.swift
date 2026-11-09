@@ -53,7 +53,7 @@ enum CaptureShortcut: String, CaseIterable, Identifiable {
 }
 
 enum LanguageResolver {
-    static func resolve(_ text: String) -> String {
+    static func resolve(_ text: String, englishDictionaryEvidence: Bool? = nil) -> String {
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(text)
         let detected = recognizer.dominantLanguage?.rawValue ?? "en"
@@ -63,7 +63,19 @@ enum LanguageResolver {
         if LocalTerminology.hasUnambiguousSpelling(word) { return "en" }
         if word.range(of: #"^[A-Za-z]+(?:['’-][A-Za-z]+)*[.!?]?$"#, options: .regularExpression) != nil {
             let probe = Passage(text: word.trimmingCharacters(in: .punctuationCharacters), context: word)
-            if !CompactGloss.candidates(for: probe, language: "en").isEmpty { return "en" }
+            let knownEnglish = englishDictionaryEvidence ?? !CompactGloss.candidates(for: probe, language: "en").isEmpty
+            if knownEnglish { return "en" }
+            // Fresh Macs and CI may have no bilingual dictionary. Recheck an
+            // isolated word against the app's common Latin reading languages;
+            // only replace an out-of-set guess when English wins this check.
+            // Full sentences and strong non-English alternatives stay intact.
+            let readingLanguages: [NLLanguage] = [.english, .french, .german, .spanish, .italian, .portuguese]
+            if !readingLanguages.contains(NLLanguage(rawValue: detected)) {
+                let shortlist = NLLanguageRecognizer()
+                shortlist.languageConstraints = readingLanguages
+                shortlist.processString(word)
+                if shortlist.dominantLanguage == .english { return "en" }
+            }
         }
         return detected
     }

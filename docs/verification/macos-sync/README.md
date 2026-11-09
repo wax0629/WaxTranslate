@@ -8,12 +8,14 @@
 | --- | --- | --- | --- |
 | `./scripts/check.sh` | Vision、词条定位、短语、旧数据、复习和新增流程通过 | 真实 Vision、重复词精确位置、同栏换行、标点边界、词本迁移、跨日统计、最近六条、损坏数据保留、阅读取消/过期结果、本机术语和百科请求边界均通过 | 通过，本机自动化 |
 | 紧排词的真实 OCR | docs 和 logistics、warehouse 和 parcel 各自命中 | 首次回归复现 logistics 被取成 docs；查明 Vision 返回相同联合词框后，使用共享框中的字形位置消歧。系统 20/32pt、Baskerville 24pt、等宽 24pt，分别检查五个落点，含第二次出现的 bank | 修复后 20 组通过；不是全字体准确率结论 |
-| Apple 英中翻译 | 句中词义与原句保真 | bank → 岸边／银行；rule out → 排除且保留否定；ran out of → 用完了；look up → 查一下／仰望；故意失配的 memory 使用独立参考且不取 ended 的「结束」 | 通过，真实本机服务 |
+| Apple 英中翻译 | 句中词义与原句保真 | 孤立及句中 tulip → 郁金香；bank → 岸边／银行；rule out → 排除且保留否定；ran out of → 用完了；look up → 查一下／仰望；故意失配的 memory 不取 ended 的「结束」；真实日中「猫が眠っています。」→「猫在睡觉。」 | 通过，真实本机服务 |
 | `swift build -c release -j 2` / 安装脚本 | 生成并安装 0.3.0 | Release 构建、资源打包、安装及 `codesign --verify --strict` 通过 | 通过，本机真实运行 |
 | 签名与权限 | 复用旧开发签名及授权 | bundle ID 仍为 local.luma.hovertranslate，签名要求与旧 0.2.3 相同；设置实际显示屏幕取词已授权 | 通过；未重新授予权限 |
 | Windows 词表一致性 | Mac 数据不漂移 | `scripts/sync-reading-terms.py --check` 通过；API、MVP 开发/体育、Codex 编程/手稿、Rust 与普通 rust、文中 MAR 展开及临近词义反例通过 | 通过；没有声称全部 Windows 句式等价 |
 
 共享词框的字形位置是几何估计。真实字体、低清画面、文字遮挡及系统识字仍可能造成偏差；没有将这 20 组回归外推为通用准确率。旧 macOS 未真机重测。
+
+首轮远程 CI 在 Xcode 26.6 下复现了全新机器没有英汉词典时 tulip 仍被判为印尼语的问题；不能用本机已装词典的通过结果掩盖这一失败。修复后增加强制无词典证据的回归，同时核对 bonjour、gatto、hola、hallo、obrigado 和真正的印尼语 rumah，不将所有拉丁短词强制改成英语。本机完整回归、真实孤立/句中 tulip 及日中翻译已重跑通过；最终远程结果见 PR 正文。
 
 ## 安装版实际界面操作
 
