@@ -10,6 +10,9 @@ import winsound
 from languages import NAMES
 
 
+VOICE_NAMES = {**NAMES, "zh": "中文"}
+
+
 class SpeechUnavailable(Exception):
     pass
 
@@ -46,7 +49,7 @@ async def modern_voice_audio(text, slow, language="en"):
 
     voice = next((v for v in SpeechSynthesizer.all_voices if v.language.split("-")[0].lower() == language), None)
     if voice is None:
-        raise SpeechUnavailable(f"请在 Windows「设置 → 时间和语言 → 语音」添加{NAMES[language]}声音，然后重试。")
+        raise SpeechUnavailable(f"请在 Windows「设置 → 时间和语言 → 语音」添加{VOICE_NAMES.get(language, language)}声音，然后重试。")
     with SpeechSynthesizer() as synth:
         synth.voice = voice
         synth.options.speaking_rate = 0.72 if slow else 1.0
@@ -90,5 +93,5 @@ if __name__ == "__main__":
         sys.stdout.buffer.write(str(error).encode("utf-8"))
         sys.exit(1)
     except Exception:
-        sys.stdout.buffer.write(f"未能播放语音。请检查 Windows 声音输出设备和已安装的{NAMES[language]}声音。".encode("utf-8"))
+        sys.stdout.buffer.write(f"未能播放语音。请检查 Windows 声音输出设备和已安装的{VOICE_NAMES.get(language, language)}声音。".encode("utf-8"))
         sys.exit(1)

@@ -1,7 +1,9 @@
 """Acceptance checks for query boundaries, pronunciation and saved context."""
 from concurrent.futures import Future
+import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import time
 import unittest
 from unittest.mock import patch
@@ -69,6 +71,10 @@ class CardRuleTests(unittest.TestCase):
         with patch.object(card.listen.player, "play") as play:
             card.listen.slow.trigger()
             self.assertEqual(play.call_args.args[1:], ("pain", True, "fr"))
+        from speech_worker import SpeechUnavailable, modern_voice_audio
+        with patch("winrt.windows.media.speechsynthesis.SpeechSynthesizer", SimpleNamespace(all_voices=[])):
+            with self.assertRaisesRegex(SpeechUnavailable, "添加中文声音"):
+                asyncio.run(modern_voice_audio(source, False, "zh"))
 
     def test_cjk_context_respects_japanese_and_korean(self):
         for passage in (Passage("東京銀行", (2, 4), source_code="ja"),
