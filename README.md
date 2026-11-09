@@ -11,7 +11,7 @@
 
 截至 2026-11-08，Windows 和 macOS 均有可运行的开发版。Windows 已交付九种原文语言到简体中文的离线翻译、对照阅读、生词复习和查词看板。最新一轮 Windows 便携版桌面回归在 100% 和 150% 缩放下各通过 93 项测试。macOS 主分支版本为 0.2.2，已支持系统取词、框选、朗读和复习；连续英语动词短语已在 Mac 上实测，仍待合并。[开发进度与验收记录](docs/development.md) · [双端路线图](https://github.com/wax0629/WaxTranslate/issues/3)
 
-![Windows 首页上的取词统计和最近查过的词](Assets/Previews/windows-home.png)
+Windows 界面正在按用户确认的 Mac 视觉同步，当前分支的实际前后截图、验证与试用包见 [PR #82](https://github.com/wax0629/WaxTranslate/pull/82)。主分支既有能力和本轮视觉交付分别记录。
 
 ## WaxTranslate Windows 桌面版
 
