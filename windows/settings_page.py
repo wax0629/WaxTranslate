@@ -188,8 +188,9 @@ class SettingsPage(QScrollArea):
         setting_row(reading, "屏幕取词键", self.trigger)
         reading.addWidget(QFrame(objectName="hairline"))
         self.auto_online = Switch()
-        setting_row(reading, "未收录词自动查百科", self.auto_online,
-                    "本机查不到时，仅将选中的英文词条发送给 Wikidata。")
+        # Retain legacy preference for compatibility; network lookup is now
+        # explicitly triggered from the card and has no automatic setting.
+        self.auto_online.hide()
         self.packs = PreferenceSection("语言包")
         layout.addWidget(self.packs)
         self.pack_choice = Choice()
