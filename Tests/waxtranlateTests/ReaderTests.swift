@@ -33,6 +33,7 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testSentenceAtExactOccurrence()
         try testPhraseAtExactOccurrence()
         try testConciseGloss()
+        try testContextExcerpt()
         try testSavingAndReview(ruledOut)
         try testLanguageRouting()
         try testActivityAndCorruptData(ruledOut)
@@ -46,7 +47,7 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testSimplifiedOutput()
         try testLookupCache()
         try await testInstalledTranslation(ruledOut: ruledOut, ranOut: ranOut)
-        print("Passed: capture geometry, cursor-free Retina configuration, small mixed text, OCR, packed typography, phrase selection, exact occurrences, vocabulary migration, review, language routing, dashboard persistence, corrupt-data preservation, reading cancellation, mixed-language terminology, unchanged-result boundaries, reference boundaries, Option tap guards and Dock preferences.")
+        print("Passed: capture geometry, cursor-free Retina configuration, small mixed text, OCR, packed typography, phrase selection, exact occurrences, vocabulary migration, review, language routing, dashboard persistence, corrupt-data preservation, reading cancellation, mixed-language terminology, unchanged-result boundaries, verified gloss boundaries, bounded bilingual context, reference boundaries, Option tap guards and Dock preferences.")
     }
 
     static func testLookupCache() throws {
@@ -65,6 +66,11 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         let oversized = Passage(text: String(repeating: "a", count: 1001), context: "", language: "en")
         cache.insert(LookupResult(meaning: "参考", origin: .region), for: oversized, now: now)
         try expect(cache.result(for: oversized, now: now) == nil)
+        let long = Passage(text: "magpie", context: String(repeating: "a long walk through the garden ", count: 12) + "magpie", language: "en")
+        cache.insert(LookupResult(meaning: "喜鹊", origin: .sentence, excerptTranslation: "花园里的喜鹊"), for: long, now: now)
+        try expect(cache.result(for: long, now: now) == nil)
+        cache.insert(LookupResult(meaning: "喜鹊", origin: .sentence, sentenceTranslation: "完整句译", excerptTranslation: "节选译文"), for: long, now: now)
+        try expect(cache.result(for: long, now: now)?.excerptTranslation == "节选译文")
     }
 
     static func testSimplifiedOutput() throws {
@@ -294,7 +300,17 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try expect(LookupTranslation.alignedMeaning(in: AttributedString("他们在") + gloss + AttributedString("上休息。")) == "河岸")
         var adjective = AttributedString("的新")
         adjective.inlinePresentationIntent = .stronglyEmphasized
-        try expect(LookupTranslation.alignedMeaning(in: AttributedString("一种测量压力") + adjective + AttributedString("方法。")) == "新")
+        try expect(LookupTranslation.alignedMeaning(in: AttributedString("一种测量压力") + adjective + AttributedString("方法。")) == "的新")
+        for (gloss, reference, expected) in [("喜鹊中", "喜鹊", "喜鹊"), ("在喜鹊", "喜鹊", "喜鹊"),
+            ("的新", "新", "新"), ("河岸上", "河岸", "河岸"), ("喜鵲中", "喜鹊", "喜鹊"),
+            ("进行中", "进行中", "进行中"), ("中国", "中国", "中国"), ("的确", "的确", "的确")] {
+            try expect(LookupTranslation.verifiedBoundaryMeaning(gloss, references: [reference]) == expected)
+        }
+        for (gloss, reference) in [("中国", "国"), ("地中海", "海"), ("中医", "医"), ("喜鹊种群中", "喜鹊"), ("在河岸", "银行")] {
+            try expect(LookupTranslation.verifiedBoundaryMeaning(gloss, references: [reference]) == nil)
+        }
+        try expect(LookupTranslation.needsBoundaryVerification("喜鹊中") && LookupTranslation.needsBoundaryVerification("在喜鹊"))
+        try expect(!LookupTranslation.needsBoundaryVerification("中国") && !LookupTranslation.needsBoundaryVerification("的确"))
         try expect(LookupTranslation.alignedMeaning(in: gloss) == nil)
         try expect(LookupTranslation.alignedMeaning(in: gloss + AttributedString("和") + gloss) == nil)
         for (fragment, expected) in [("一下", nil), ("查一下", "查一下")] as [(String, String?)] {
@@ -305,6 +321,35 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         }
     }
 
+    static func testContextExcerpt() throws {
+        let short = Passage(text: "magpie", context: "I saw a magpie in the garden.", language: "en")
+        try expect(!SentenceExcerpt(short).isTruncated && SentenceExcerpt(short).passage == short)
+        let long = "A magpie watched quietly while " + String(repeating: "the visitors walked slowly through the garden, ", count: 5) + "another magpie in the tree began to sing near the old house."
+        for range in [long.range(of: "magpie")!, long.range(of: "magpie", options: .backwards)!] {
+            let original = Passage(text: "magpie", context: long, selection: NSRange(range, in: long), language: "en")
+            let excerpt = SentenceExcerpt(original)
+            try expect(excerpt.isTruncated && excerpt.passage.context.count <= 181)
+            let selection = try require(excerpt.passage.selection.flatMap { Range($0, in: excerpt.passage.context) })
+            try expect(excerpt.passage.context[selection] == "magpie" && excerpt.passage.context.contains("another") == (range == long.range(of: "magpie", options: .backwards)!))
+            try expect(LookupTranslation.markedSentence(excerpt.passage) != nil && original.context == long)
+        }
+        for word in ["Beginning", "ending"] {
+            let sentence = "Beginning " + String(repeating: "a word with context ", count: 20) + "ending."
+            let excerpt = SentenceExcerpt(Passage(text: word, context: sentence, language: "en"))
+            try expect(excerpt.isTruncated && excerpt.passage.context.count <= 181 && LookupTranslation.markedSentence(excerpt.passage) != nil)
+        }
+        let chinese = String(repeating: "🪶这里的文字用于测试长句上下文，", count: 12) + "这里用OCR识别图片中的文字。"
+        let mixed = SentenceExcerpt(Passage(text: "OCR", context: chinese, language: "zh-Hans"))
+        try expect(mixed.isTruncated && mixed.passage.context.count <= 91 && mixed.passage.sourceLanguage == "zh-Hans")
+        try expect(LookupTranslation.markedSentence(mixed.passage) != nil)
+        let phraseContext = String(repeating: "They checked the data carefully, ", count: 8) + "but could not rule out infection."
+        let phrase = SentenceExcerpt(Passage(text: "rule out", context: phraseContext,
+                                            anchor: NSRange(phraseContext.range(of: "out")!, in: phraseContext), language: "en"))
+        try expect(phrase.passage.isPhrase && phrase.passage.context[Range(phrase.passage.anchor!, in: phrase.passage.context)!] == "out")
+        let invalid = Passage(text: "magpie", context: long, selection: NSRange(location: 0, length: 3), language: "en")
+        try expect(!SentenceExcerpt(invalid).isTruncated)
+    }
+
     static func testInstalledTranslation(ruledOut: Passage, ranOut: Passage) async throws {
         let source = Locale.Language(identifier: "en")
         let target = Locale.Language(identifier: "zh-Hans")
@@ -313,6 +358,20 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
             return
         }
         let session = TranslationSession(installedSource: source, target: target)
+        for context in ["In a magpie, the black and white feathers are easy to recognize.", "Among the magpie population, this behavior is common.", "I saw a magpie in the garden.", "The account is added to magpie."] {
+            let result = try await LookupTranslation.translate(Passage(text: "magpie", context: context, language: "en"), session: session, dictionary: [])
+            try expect(result.meaning == "喜鹊" && result.sentenceTranslation != nil)
+            print("Boundary check →", result.meaning, "/", result.sentenceTranslation ?? "")
+        }
+        let long = Passage(text: "bank", context: "After a very long walk through the quiet village and past the old houses where people were preparing for the evening, they sat on the river bank and watched the water flow slowly toward the distant mountains.", language: "en")
+        let longResult = try await LookupTranslation.translate(long, session: session, dictionary: [])
+        // The service may drop word emphasis in this long sample. Its independent
+        // word reference stays explicitly labeled; both context translations must
+        // describe the actual river-bank sentence rather than the isolated word.
+        try expect(longResult.isUsable && longResult.sentenceTranslation?.contains("岸") == true && longResult.excerptTranslation?.contains("岸") == true)
+        print("Long context →", longResult.meaning, "origin:", longResult.origin, "/", longResult.excerptTranslation ?? "")
+        let api = try await LookupTranslation.translate(Passage(text: "API", context: "The API returns a response.", language: "en"), session: session, dictionary: [])
+        try expect(api.origin == .term && api.meaning.contains("应用程序编程接口") && api.sentenceTranslation != nil)
         for context in ["tulip", "A red tulip blooms in the garden."] {
             let passage = Passage(text: "tulip", context: context)
             try expect(passage.sourceLanguage == "en")

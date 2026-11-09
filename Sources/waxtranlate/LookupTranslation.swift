@@ -8,12 +8,14 @@ struct LookupResult {
     let meaning: String
     let origin: Origin
     var sentenceTranslation: String? = nil
+    var excerptTranslation: String? = nil
     var isUsable: Bool { origin != .unresolved && !meaning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     static func initial(term: TermMeaning?, cached: LookupResult?, dictionary: [String]) -> LookupResult? {
         if let term {
             return LookupResult(meaning: TranslationOutput.normalize(term.meaning), origin: .term,
-                                sentenceTranslation: cached?.origin == .term ? cached?.sentenceTranslation : nil)
+                                sentenceTranslation: cached?.origin == .term ? cached?.sentenceTranslation : nil,
+                                excerptTranslation: cached?.origin == .term ? cached?.excerptTranslation : nil)
         }
         return cached ?? dictionary.first.map { LookupResult(meaning: $0, origin: .dictionary) }
     }
@@ -42,6 +44,7 @@ struct LookupResult {
     }
     func insert(_ result: LookupResult, for passage: Passage, now: Date = Date()) {
         guard result.isUsable, passage.text.count <= 1000, passage.context.count <= 4000 else { return }
+        if SentenceExcerpt(passage).isTruncated && (result.sentenceTranslation == nil || result.excerptTranslation == nil) { return }
         let key = Key(passage)
         entries[key] = (result, now.addingTimeInterval(600))
         order.removeAll { $0 == key }; order.append(key)
@@ -145,24 +148,75 @@ enum LookupTranslation {
         }
         guard let span else { return nil }
         let trim = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
-        var gloss = String(output[span].characters).trimmingCharacters(in: trim)
+        let gloss = String(output[span].characters).trimmingCharacters(in: trim)
         let sentence = String(output.characters).trimmingCharacters(in: trim)
         guard !gloss.isEmpty, gloss.count <= 40, gloss != sentence else { return nil }
-        // Apple can attach the preceding modifier particle to a Chinese adjective
-        // (e.g. "的新"). Leave words such as "的确" intact.
-        if gloss.first == "的" && gloss.count > 1 {
-            let tokenizer = NLTokenizer(unit: .word)
-            tokenizer.string = gloss
-            tokenizer.setLanguage(.simplifiedChinese)
-            let first = tokenizer.tokenRange(at: gloss.startIndex)
-            if gloss[first] == "的" { gloss = String(gloss[first.upperBound...]).trimmingCharacters(in: .whitespaces) }
-        }
         // For the supported verb phrases these fragments omit the verb itself.
         if isPhrase && ["了", "的", "着", "过", "一下"].contains(gloss) { return nil }
         return gloss
     }
 
+    private static let boundaryWords: Set<String> = ["的", "地", "得", "了", "着", "过", "中", "里", "上", "下", "内", "外", "在", "于", "从", "向", "到", "对", "与", "和"]
+
+    private static func glossWords(_ gloss: String) -> [Range<String.Index>] {
+        let tokenizer = NLTokenizer(unit: .word)
+        tokenizer.string = gloss
+        tokenizer.setLanguage(.simplifiedChinese)
+        return tokenizer.tokens(for: gloss.startIndex..<gloss.endIndex)
+    }
+
+    static func needsBoundaryVerification(_ gloss: String) -> Bool {
+        let words = glossWords(gloss)
+        guard let first = words.first, let last = words.last else { return false }
+        return boundaryWords.contains(String(gloss[first])) || boundaryWords.contains(String(gloss[last]))
+    }
+
+    static func verifiedBoundaryMeaning(_ gloss: String, references: [String]) -> String? {
+        let gloss = TranslationOutput.normalize(gloss)
+        let words = glossWords(gloss)
+        for reference in references {
+            let candidate = TranslationOutput.normalize(reference).trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+            guard !candidate.isEmpty else { continue }
+            if candidate == gloss { return gloss }
+            guard let core = gloss.range(of: candidate),
+                  words.contains(where: { $0.lowerBound == core.lowerBound }),
+                  words.contains(where: { $0.upperBound == core.upperBound }) else { continue }
+            let outside = words.filter { $0.upperBound <= core.lowerBound || $0.lowerBound >= core.upperBound }
+            // Never trim characters by suffix alone: the independent word gloss
+            // must match a complete token span, with only function words outside.
+            if !outside.isEmpty && outside.allSatisfy({ boundaryWords.contains(String(gloss[$0])) }) { return candidate }
+        }
+        return nil
+    }
+
     static func translate(_ passage: Passage, session: TranslationSession, dictionary: [String], trace: LookupTrace = LookupTrace()) async throws -> LookupResult {
+        let excerpt = SentenceExcerpt(passage)
+        var output: LookupResult
+        if let term = LocalTerminology.lookup(passage), !passage.context.isEmpty, passage.context != passage.text {
+            let began = LookupTrace.now
+            let sentence = try await session.translate(excerpt.passage.context).targetText
+            trace.record("translation.term_sentence", since: began)
+            output = LookupResult(meaning: TranslationOutput.normalize(term.meaning), origin: .term,
+                                  sentenceTranslation: TranslationOutput.normalize(sentence, target: passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans"))
+        } else {
+            output = try await translateMeaning(excerpt.passage, session: session, dictionary: dictionary, trace: trace)
+        }
+        try Task.checkCancellation()
+        if excerpt.isTruncated {
+            output.excerptTranslation = output.sentenceTranslation
+            output.sentenceTranslation = nil
+            let began = LookupTrace.now
+            do {
+                let translated = try await session.translate(passage.context).targetText
+                output.sentenceTranslation = TranslationOutput.normalize(translated, target: passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans")
+            } catch { try Task.checkCancellation() } // An optional full sentence must not erase the usable excerpt.
+            try Task.checkCancellation()
+            trace.record("translation.full_context", since: began)
+        }
+        return output
+    }
+
+    private static func translateMeaning(_ passage: Passage, session: TranslationSession, dictionary: [String], trace: LookupTrace) async throws -> LookupResult {
         func result(_ meaning: String, _ origin: LookupResult.Origin, _ sentence: String? = nil) -> LookupResult {
             makeResult(for: passage, meaning: meaning, origin: origin, sentence: sentence)
         }
@@ -174,19 +228,22 @@ enum LookupTranslation {
         }
 
         let sentence: String
+        var alignedGloss: String?
         let sentenceBegan = LookupTrace.now
         if #available(macOS 26.4, *), let marked = markedSentence(passage),
            let response = try? await session.translate(marked) {
             sentence = response.targetText
             trace.record("translation.aligned_sentence", since: sentenceBegan)
-            if let formatted = response.attributedTargetText,
-               let gloss = alignedMeaning(in: formatted, isPhrase: passage.isPhrase) {
-                return result(gloss, .sentence, sentence)
-            }
+            alignedGloss = response.attributedTargetText.flatMap { alignedMeaning(in: $0, isPhrase: passage.isPhrase) }
         } else {
             try Task.checkCancellation()
             sentence = try await session.translate(passage.context).targetText
             trace.record("translation.plain_sentence", since: sentenceBegan)
+        }
+
+        if let gloss = alignedGloss {
+            if passage.sourceLanguage.hasPrefix("zh") || passage.isPhrase || !needsBoundaryVerification(gloss) { return result(gloss, .sentence, sentence) }
+            if let verified = verifiedBoundaryMeaning(gloss, references: dictionary) { return result(verified, .sentence, sentence) }
         }
 
         // A dictionary gloss elsewhere in the sentence may translate a different word.
@@ -195,6 +252,9 @@ enum LookupTranslation {
             let wordBegan = LookupTrace.now
             let reference = try await session.translate(passage.text).targetText
             trace.record("translation.fallback_word", since: wordBegan)
+            if let alignedGloss, let verified = verifiedBoundaryMeaning(alignedGloss, references: [reference]) {
+                return result(verified, .sentence, sentence)
+            }
             return result(reference, .standalone, sentence)
         } catch {
             try Task.checkCancellation()
