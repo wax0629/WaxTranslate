@@ -8,6 +8,9 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QMenu, QToolButton
 
 
+from theme import theme_css
+
+
 WORKER = Path(__file__).with_name("speech_worker.py")
 
 
@@ -103,14 +106,14 @@ class ListenButton(QToolButton):
         self.setIconSize(QSize(16, 16))
         self.setPopupMode(QToolButton.MenuButtonPopup)
         self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.setStyleSheet("""
-            QToolButton#listen {font:12px 'Microsoft YaHei UI'; color:#363634;
-                background:#faf9f6; border:1px solid #bcbcb6; border-radius:5px; padding:3px 7px;}
-            QToolButton#listen:hover {background:#e6e5df;}
-            QToolButton#listen:focus {border-color:#555551;}
-            QToolButton#listen::menu-button {border:0; border-left:1px solid #d5d4ce;
+        self.setStyleSheet(theme_css("""
+            QToolButton#listen {font:12px 'Microsoft YaHei UI'; color:$ink;
+                background:$soft; border:1px solid transparent; border-radius:14px; padding:3px 7px;}
+            QToolButton#listen:hover {background:$rule;}
+            QToolButton#listen:focus {border-color:$focus;}
+            QToolButton#listen::menu-button {border:0; border-left:1px solid $rule;
                 border-top-right-radius:4px; border-bottom-right-radius:4px; width:16px;}
-        """)
+        """))
         menu = QMenu(self)
         self.setMenu(menu)
         self.slow = menu.addAction("慢速读词", lambda: self.play(self.word, True))

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QFrame, QGridLa
 
 from install_model import DEFAULT_LANGUAGES, install_language, language_ready, translation_dir
 from languages import NAMES
-from theme import label
+from theme import COLORS, label
 
 
 class Switch(QCheckBox):
@@ -32,7 +32,7 @@ class Switch(QCheckBox):
         if not self.isEnabled():
             fill, border = "#e6e5df", "#d5d4ce"
         elif self.isChecked():
-            fill, border = "#161615", "#161615"
+            fill, border = COLORS["accent"], COLORS["accent"]
         else:
             fill, border = "#bcbcb6", "#90908a"
         painter.setBrush(QColor(fill))
@@ -55,7 +55,7 @@ class Choice(QComboBox):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor("#595955"), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(QColor(COLORS["muted"]), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         x, y = self.width() - 11, self.height() / 2
         painter.drawPolyline([QPointF(x - 3, y - 1.5), QPointF(x, y + 1.5), QPointF(x + 3, y - 1.5)])
 
@@ -91,7 +91,7 @@ class SectionMark(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor("#161615"), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(QColor(COLORS["ink"]), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         painter.setBrush(Qt.NoBrush)
         if self.window_mark:
             painter.drawRoundedRect(QRectF(7.5, 9, 17, 14), 2, 2)
@@ -137,7 +137,9 @@ class SettingsPage(QScrollArea):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setFrameShape(QFrame.NoFrame)
         self.setFocusPolicy(Qt.NoFocus)
+        self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         content = QWidget(objectName="settingsSurface")
+        content.setMaximumWidth(780)
         self.setWidget(content)
         layout = QVBoxLayout(content)
         layout.setContentsMargins(32, 24, 32, 24)

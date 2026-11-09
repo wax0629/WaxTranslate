@@ -11,13 +11,13 @@
 
 截至 2026-11-08，Windows 和 macOS 均有可运行的开发版。Windows 已交付九种原文语言到简体中文的离线翻译、对照阅读、生词复习和查词看板。最新一轮 Windows 便携版桌面回归在 100% 和 150% 缩放下各通过 93 项测试。macOS 主分支版本为 0.2.2，已支持系统取词、框选、朗读和复习；连续英语动词短语已在 Mac 上实测，仍待合并。[开发进度与验收记录](docs/development.md) · [双端路线图](https://github.com/wax0629/WaxTranslate/issues/3)
 
-![Windows 首页上的取词统计和最近查过的词](Assets/Previews/windows-home.png)
+Windows 界面正在按用户确认的 Mac 视觉同步，当前分支的实际前后截图、验证与试用包见 [PR #82](https://github.com/wax0629/WaxTranslate/pull/82)。主分支既有能力和本轮视觉交付分别记录。
 
 ## WaxTranslate Windows 桌面版
 
 **使用便携包。** 登录 GitHub，打开一次成功的 Windows 桌面构建，在运行页底部的 Artifacts 下载 `WaxTranslate-Windows-x64`。解开下载文件，再完整解开其中的便携 ZIP，双击 `WaxTranslate.exe`。程序默认在系统托盘待命；点击托盘图标或再次双击启动器可打开首页。[已验证的构建](https://github.com/wax0629/WaxTranslate/actions/runs/42459577744) · [Windows 构建列表](https://github.com/wax0629/WaxTranslate/actions/workflows/windows-desktop.yml)
 
-- **查词与框选**　轻按左 Ctrl 查一个词，或在首页点「框选翻译」。游戏占用左 Ctrl 时，可以在「设置 → 屏幕取词键」改用右 Ctrl，或选「仅应用内查词」。
+- **查词与框选**　轻按左 Ctrl 查一个词，或从顶部应用菜单、托盘菜单进入「框选翻译」。游戏占用左 Ctrl 时，可以在「设置 → 屏幕取词键」改用右 Ctrl，或选「仅应用内查词」。
 - **语言包**　英语、日语、韩语随包提供。法语、德语、西班牙语、意大利语、葡萄牙语和俄语可在「设置 → 语言包」下载，安装后即可离线使用。
 - **阅读与复习**　在「对照翻译」粘贴文章，点词看释义，按 Ctrl+Enter 看整段译文。在取词卡上点「加入我的生词本」，以后可以按原句复习。[Windows 使用指南](docs/windows.md)
 
