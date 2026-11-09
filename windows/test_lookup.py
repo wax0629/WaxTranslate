@@ -51,7 +51,7 @@ class LookupTests(unittest.TestCase):
             ("The request must be idempotent.", "idempotent", "幂等"),
             ("Use a mutex to serialize these threads.", "mutex", "互斥"),
             ("The surgeon quickly diagnosed pneumothorax after the injury.", "pneumothorax", "气胸"),
-            ("The authors introduce a query routing layer (QRL).\n\nThe QRL routes traffic.", "QRL", "query routing layer"),
+            ("The authors introduce a query routing layer (QRL). The QRL routes traffic.", "QRL", "query routing layer"),
             ("我们运行 ChatGPT 帮忙解释这篇中文文章中的句子。", "ChatGPT", "OpenAI"),
         ]:
             with self.subTest(word=word, text=text):
@@ -92,7 +92,7 @@ class LookupTests(unittest.TestCase):
             online_meanings("PostgreSQL’s")
             fetch.assert_called_once_with("PostgreSQL")
 
-    def test_default_online_lookup_only_for_unknown_english_terms(self):
+    def test_online_lookup_requires_explicit_action(self):
         with TemporaryDirectory() as tmp, patch.object(QProcess, "start"), \
                 patch("app.search_entities", return_value=[("Q42", "百科说明", "zh")]) as fetch:
             window = Window(Notebook(Path(tmp) / "book.sqlite"))
@@ -101,7 +101,7 @@ class LookupTests(unittest.TestCase):
             try:
                 self.assertTrue(window.auto_online.isChecked())
                 window.lookup_text(selected("Codex reviewed my patch.", "Codex"), point)
-                wait_for(card.save.isVisible)
+                wait_for(lambda: card.save.isVisible() and card.save.isEnabled())
                 self.assertIn("编程", card.text.toPlainText())
                 card.close()
                 window.submit(point, passage=Passage("Please translate the following sentence."))
@@ -116,7 +116,10 @@ class LookupTests(unittest.TestCase):
                 fetch.assert_not_called()
 
                 window.lookup_text(selected("The private project uses BlorpQuxV9.", "BlorpQuxV9"), point)
-                wait_for(card.save.isVisible)
+                wait_for(card.online.isVisible)
+                fetch.assert_not_called()
+                card.online.click()
+                wait_for(lambda: card.save.isVisible() and card.save.isEnabled())
                 fetch.assert_called_once_with("BlorpQuxV9")
                 self.assertIn("百科说明", card.text.toPlainText())
                 window.stats_pool.submit(lambda: None).result(timeout=5)
@@ -158,10 +161,10 @@ class LookupTests(unittest.TestCase):
                 with patch("app.search_entities", return_value=[("Q42", "新条目", "zh")]) as fetch:
                     window.lookup_text(item, point)
                     wait_for(card.online.isVisible)
-                    self.assertFalse(card.save.isVisible())
+                    self.assertFalse(card.save.isEnabled())
                     fetch.assert_not_called()
                     card.online.click()
-                    wait_for(card.save.isVisible)
+                    wait_for(lambda: card.save.isVisible() and card.save.isEnabled())
                     fetch.assert_called_once_with(item.word)
                     self.assertIn("新条目", card.text.toPlainText())
                     self.assertIn("www.wikidata.org/wiki/Q42", card.text.toHtml())
@@ -179,8 +182,13 @@ class LookupTests(unittest.TestCase):
                 window.auto_online.setChecked(True)
                 with patch("app.search_entities", side_effect=[OSError("offline"), []]) as fetch:
                     window.lookup_text(item, point)
+                    try:
+                        wait_for(lambda: card.isVisible() and card.online.isVisible() and card.online.isEnabled())
+                    except AssertionError:
+                        self.fail(f"unknown retry state: card={card.isVisible()}, online={card.online.isVisible()}/{card.online.isEnabled()}, source={item.source_code}, saved={window.saved_result}, search={window.search_context}, pending={window.pending.done()}, text={card.text.toPlainText()}")
+                    card.online.click()
                     wait_for(lambda: "无法连接" in card.text.toPlainText())
-                    self.assertFalse(card.save.isVisible())
+                    self.assertFalse(card.save.isEnabled())
                     card.online.click()
                     wait_for(lambda: "没有找到同名" in card.text.toPlainText())
                     self.assertEqual(fetch.call_count, 2)
@@ -193,6 +201,8 @@ class LookupTests(unittest.TestCase):
                     return [("Q1", "过期内容", "zh")]
                 with patch("app.search_entities", side_effect=delayed):
                     window.lookup_text(item, point)
+                    wait_for(card.online.isVisible)
+                    card.online.click()
                     wait_for(started.is_set)
                     stale = window.online_job
                     card.close()

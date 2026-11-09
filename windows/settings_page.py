@@ -188,16 +188,17 @@ class SettingsPage(QScrollArea):
         setting_row(reading, "屏幕取词键", self.trigger)
         reading.addWidget(QFrame(objectName="hairline"))
         self.auto_online = Switch()
-        setting_row(reading, "未收录词自动查百科", self.auto_online,
-                    "本机查不到时，仅将选中的英文词条发送给 Wikidata。")
+        # Retain legacy preference for compatibility; network lookup is now
+        # explicitly triggered from the card and has no automatic setting.
+        self.auto_online.hide()
         self.packs = PreferenceSection("语言包")
         layout.addWidget(self.packs)
         self.pack_choice = Choice()
         self.pack_choice.setAccessibleName("选择要管理的语言包")
         for code in NAMES:
             self.pack_choice.addItem(NAMES[code], code)
-        defaults = "、".join(NAMES[c] for c in DEFAULT_LANGUAGES)
-        setting_row(self.packs.options, "离线语言", self.pack_choice, f"默认提供{defaults}。每个语言包包含识字和简体中文翻译资源。")
+        defaults = "、".join(NAMES[c] for c in DEFAULT_LANGUAGES if c in NAMES)
+        setting_row(self.packs.options, "离线语言", self.pack_choice, f"默认提供{defaults}。每个语言包包含识字和简体中文翻译资源；另内置中文至英语模型，供中文语境按需句译。")
         actions = QHBoxLayout()
         self.pack_status = label("", "meta")
         self.pack_status.setWordWrap(True)

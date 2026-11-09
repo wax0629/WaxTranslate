@@ -117,6 +117,11 @@ class Selection(QWidget):
 
 
 def analyze(image, point, passage, source_code=""):
+    # Pasted/editor selections already carry exact text and offsets. Resolve
+    # them directly so unknown identifiers do not wait behind OCR/model warmup.
+    if passage is not None and passage.selection is not None:
+        passage.source_code = passage.source_code or source_code
+        return passage, *explain(passage)
     if passage is None:
         passage = asyncio.run(recognize(image, point, source_code))
     passage.source_code = passage.source_code or source_code
@@ -136,6 +141,7 @@ class Window(QWidget):
     finished = Signal(int, object, object)
     online_finished = Signal(int, object)
     stats_ready = Signal(object)
+    context_finished = Signal(int, object, object)
 
     def __init__(self, notebook=None, login_startup=None):
         super().__init__()
@@ -150,6 +156,9 @@ class Window(QWidget):
         for menu in (self.card.listen.menu(), self.card.more.menu()):
             menu.aboutToShow.connect(self.watch_card)
         self.card.save_requested.connect(self.save_word)
+        self.card.term_requested.connect(self.query_term)
+        self.card.context_requested.connect(self.translate_card_context)
+        self.context_finished.connect(self.show_card_context)
         self.card.online.clicked.connect(self.search_online)
         self.online_finished.connect(self.show_online)
         self.search_context = None
@@ -487,6 +496,7 @@ class Window(QWidget):
         except (sqlite3.Error, OSError) as error:
             self.card.show_notice(f"收藏失败：{error}")
             return
+        if getattr(self.card,'rule_state',None): self.card.rule_saved = True
         self.card.save.setText("已收藏")
         self.card.save.setEnabled(False)
         self.refresh_home()
@@ -689,6 +699,34 @@ class Window(QWidget):
         if self.overlay is closed:
             self.overlay = None
 
+    def query_term(self, passage):
+        point = self.card.anchor
+        self.invalidate()
+        self.submit(point, passage=passage)
+
+    def translate_card_context(self, request):
+        ticket = self.ticket
+        request_id, passage = request
+        def translate_context():
+            from card_policy import chinese_context
+            from translation import translate_leg, translate
+            if chinese_context(passage):
+                return translate_leg(Passage(passage.text), 'zh').text
+            return translate(Passage(passage.text, source_code=passage.source_code))[1]
+        future = self.pool.submit(translate_context)
+        future.add_done_callback(lambda job: self.context_finished.emit(ticket,request_id,job) if not job.cancelled() else None)
+
+    def show_card_context(self, ticket, request_id, job):
+        if ticket != self.ticket: return
+        try: translated = job.result()
+        except Exception as error:
+            self.card.finish_context(request_id,error='句译未完成，可重试：'+str(error))
+            return
+        if self.card.finish_context(request_id,translated) and self.saved_result is not None:
+            passage,result = self.saved_result
+            if self.card.rule_displayed.text == passage.text:
+                self.saved_result = passage,(result[0],result[1],translated)
+
     def submit(self, point, image=None, hit=None, passage=None):
         ticket = self.ticket
         self.card.show_message("本机翻译", "正在读取并翻译…", point)
@@ -722,8 +760,7 @@ class Window(QWidget):
             gloss = result[0] if unknown or result[0] == "文中定义" else result[1]
             self.refresh_home(word=passage.word, language=passage.source_code or "en", gloss=gloss,
                               lookup_at=time.time())
-        if unknown and self.auto_online.isChecked() and any(c.isascii() and c.isalpha() for c in passage.word):
-            self.search_online()
+        # Encyclopedia requests are always explicit from the card.
 
     def search_online(self):
         if not self.search_context or self.online_job is not None:

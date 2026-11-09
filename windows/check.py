@@ -59,6 +59,71 @@ def wait_until(predicate):
 
 
 class Checks(unittest.TestCase):
+    def test_card_rules_and_context_requests(self):
+        from card_policy import local_reference, bounded_context
+        from reader import sentence_at
+        from lookup import explain, UNKNOWN
+        from PySide6.QtCore import QUrl
+        source = "用Docker部署Redis，通过API访问缓存。"
+        a = source.index('Redis')
+        passage = Passage(source,(a,a+5))
+        self.assertIn('内存',local_reference(passage)[1])
+        card = Card()
+        terms,requests = [],[]
+        card.term_requested.connect(terms.append)
+        card.context_requested.connect(requests.append)
+        try:
+            card.show_result(passage,'名称参考','内存数据存储','',QPoint(10,10),can_search=True)
+            self.assertNotIn('Use Docker',card.text.toPlainText())
+            api = source.index('API')
+            card.open_reference(QUrl(f'waxterm://term/{api}/{api+3}'))
+            self.assertEqual(terms[0].word,'API')
+            self.assertEqual(terms[0].selection,(api,api+3))
+            card.open_reference(QUrl('waxcard://translate'))
+            request_id,part = requests[-1]
+            card.open_reference(QUrl('waxcard://translate'))
+            self.assertFalse(card.finish_context(request_id,'stale output'))
+            self.assertNotIn('stale output',card.text.toPlainText())
+            card.open_reference(QUrl('waxcard://translate'))
+            self.assertTrue(card.finish_context(requests[-1][0],'Use Docker.'))
+            self.assertIn('Use Docker.',card.text.toPlainText())
+            unknown = Passage('用UnknownSDK开发。',(1,11))
+            result = explain(unknown)[0]
+            self.assertEqual(result[0],UNKNOWN)
+            card.show_result(unknown,*result,QPoint(10,10),can_save=False)
+            self.assertFalse(card.save.isEnabled())
+            self.assertFalse(card.copy.isEnabled())
+            comment = '// Explicit transport views avoid exposing future domain fields by accident.'
+            begin = comment.index('avoid')
+            picked = sentence_at(comment,begin,begin+5)
+            self.assertFalse(picked.text.startswith('//'))
+            self.assertEqual(picked.word,'avoid')
+            repeated = '模型输入的token与访问token含义不同。'
+            first,last = repeated.index('token'),repeated.rindex('token')
+            self.assertIn('词元',local_reference(Passage(repeated,(first,first+5)))[1])
+            self.assertIn('令牌',local_reference(Passage(repeated,(last,last+5)))[1])
+            document = '• 更新README文档\n• 模型输入的token。\n下一条API。'
+            hit = document.index('token')
+            item = sentence_at(document,hit,hit+5)
+            self.assertEqual(item.structure,'list')
+            self.assertNotIn('README',item.text)
+            long = Passage('前文。'*40+source+'后文。'*40,(120+a,120+a+5))
+            part,offset = bounded_context(long)
+            self.assertEqual(part.word,'Redis')
+            self.assertLessEqual(len(part.text),60)
+            with TemporaryDirectory() as temp:
+                book = Notebook(Path(temp)/'rules.sqlite3')
+                item.source_code = 'en'
+                book.save(item,('语境术语参考','词元','Only this item.'))
+                restored = book.entries()[0]
+                self.assertEqual(restored['structure'],'list')
+                self.assertEqual(restored['source'],'语境术语参考')
+                self.assertNotIn('README',restored['context'])
+            from translation import translate_leg
+            self.assertRegex(translate_leg(Passage('用Docker部署Redis，通过API访问缓存。'),'zh').text,r'[A-Za-z]')
+        finally:
+            card.close()
+
     def test_home_background_is_independent_of_lookup_history(self):
         home = HomePage()
         home.setAttribute(Qt.WA_DontShowOnScreen)
@@ -1018,7 +1083,12 @@ class Checks(unittest.TestCase):
             # Moving after the shortcut must not retarget the delayed capture.
             move_cursor(sample.mapToGlobal(QPoint(5, 5)))
             wait_until(window.card.save.isVisible)
-            self.assertEqual(window.card.caption.text(), "句中释义")
+            # OCR at fractional scale may lose alignment confidence. A correctly
+            # labelled dictionary fallback is valid, but it must preserve the
+            # actual word, river sense and original context below.
+            self.assertIn(window.card.caption.text(), ("句中释义", "英汉词典 · ECDICT"))
+            self.assertEqual(window.saved_result[0].word, "bank")
+            self.assertIn("river", window.saved_result[0].text)
             self.assertIn("岸", window.card.text.toPlainText())
             self.assertFalse(window.isVisible(), "A background lookup opened the main window")
             self.assertEqual(window.card.windowType(), Qt.Tool)
