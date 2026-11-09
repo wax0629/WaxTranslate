@@ -491,6 +491,7 @@ class Window(QWidget):
         except (sqlite3.Error, OSError) as error:
             self.card.show_notice(f"收藏失败：{error}")
             return
+        if getattr(self.card,'rule_state',None): self.card.rule_saved = True
         self.card.save.setText("已收藏")
         self.card.save.setEnabled(False)
         self.refresh_home()

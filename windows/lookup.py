@@ -55,7 +55,7 @@ def explain(passage):
         if special:
             origin, gloss, kind = special
             return (origin, gloss, ""), None, "中文语境" if chinese_context(passage) else "英语", kind
-        if needs_confirmation(passage):
+        if needs_confirmation(passage) and not resolve_term(passage, passage.context):
             message = "可能指 Apple 的屏幕朗读功能，当前片段不足以确认。" if passage.word == "VoiceOver" else "暂未确认这个代码名称的含义。"
             return (UNKNOWN, message, ""), None, "中文语境" if chinese_context(passage) else "", "代码名称"
     # Determine the route before consulting English terminology, POS or ECDICT.

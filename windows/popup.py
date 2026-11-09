@@ -357,6 +357,7 @@ class Card(QWidget):
     def show_rule_result(self, passage, origin, gloss, sentence, point, language, pos, can_save, can_search):
         self.rule_state = (passage, origin, gloss, point, language, pos, can_save, can_search)
         self.rule_context = origin not in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考') or (chinese_context(passage) and len(re.findall(r'[A-Za-z][A-Za-z0-9+#]*',passage.text)) > 1 and passage.word not in ('README','VoiceOver'))
+        self.rule_saved = False
         self.rule_expanded = False
         self.rule_translation = sentence
         self.rule_waiting = False
@@ -400,7 +401,8 @@ class Card(QWidget):
         elif passage.word != passage.text:
             content += '<p><a href="waxcard://context">查看相关原文</a></p>'
         self.present(origin,content,point,gloss if can_save else '',can_save,can_search=can_search,word=passage.word)
-        self.save.setVisible(True); self.save.setEnabled(can_save)
+        self.save.setVisible(True); self.save.setEnabled(can_save and not self.rule_saved)
+        if self.rule_saved: self.save.setText("已收藏")
         self.actions.setVisible(True)
         self.copy.setVisible(True); self.copy.setEnabled(can_save)
         self.copy.setAccessibleName('复制释义'); self.copy.setToolTip('复制释义')
