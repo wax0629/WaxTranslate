@@ -34,6 +34,7 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testPhraseAtExactOccurrence()
         try testConciseGloss()
         try testContextExcerpt()
+        try testCardPolicy()
         try testSavingAndReview(ruledOut)
         try testLanguageRouting()
         try testActivityAndCorruptData(ruledOut)
@@ -48,6 +49,36 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testLookupCache()
         try await testInstalledTranslation(ruledOut: ruledOut, ranOut: ranOut)
         print("Passed: capture geometry, cursor-free Retina configuration, small mixed text, OCR, packed typography, phrase selection, exact occurrences, vocabulary migration, review, language routing, dashboard persistence, corrupt-data preservation, reading cancellation, mixed-language terminology, unchanged-result boundaries, verified gloss boundaries, bounded bilingual context, reference boundaries, Option tap guards and Dock preferences.")
+    }
+
+    static func testCardPolicy() throws {
+        let voice = Passage(text: "VoiceOver", context: "人工听音与VoiceOver。", language: "zh-Hans")
+        try expect(LookupPolicy(voice).needsConfirmation)
+        let confirmed = LookupPolicy(Passage(text: "VoiceOver", context: "macOS辅助功能中的VoiceOver。", language: "zh-Hans"))
+        try expect(confirmed.term?.meaning.contains("屏幕朗读") == true && !confirmed.defaultsToContext)
+        let readme = LookupPolicy(Passage(text: "README", context: "更新README和开发文档。", language: "zh-Hans"))
+        try expect(readme.term != nil && !readme.automaticallyTranslatesContext)
+        let context = "用Docker部署Redis，通过API访问缓存。"
+        for word in ["Docker", "Redis", "API"] {
+            let policy = LookupPolicy(Passage(text: word, context: context, language: "zh-Hans"))
+            try expect(policy.term != nil && policy.defaultsToContext && !policy.automaticallyTranslatesContext)
+            try expect(policy.headwordLanguage == "en")
+        }
+        try expect(LookupPolicy(Passage(text: "UnknownSDK", context: "用Docker部署UnknownSDK。", language: "zh-Hans")).needsConfirmation)
+        try expect(!LookupPolicy(Passage(text: "INTEGER", context: "INTEGER代表整数。", language: "zh-Hans")).needsConfirmation)
+        try expect(LookupPolicy(Passage(text: "bank", context: "They sat on the river bank.", language: "en")).automaticallyTranslatesContext)
+        let lines = [TextLine(text: "• 更新README文档", frame: CGRect(x: 0, y: 60, width: 180, height: 16), hit: NSRange(location: 4, length: 6)),
+                     TextLine(text: "• 下一条API说明", frame: CGRect(x: 0, y: 36, width: 180, height: 16), hit: nil)]
+        let selected = try SentenceContext.passage(in: lines, language: "zh-Hans")
+        try expect(!selected.context.contains("下一条"))
+        let title = "ア・サマア・バケイション"
+        let titleLines = [TextLine(text: title, frame: CGRect(x: 0, y: 70, width: 400, height: 32), hit: NSRange(location: 2, length: 2)),
+                          TextLine(text: "专辑：ランプ幻想", frame: CGRect(x: 0, y: 40, width: 220, height: 17), hit: nil)]
+        let titleHit = try SentenceContext.passage(in: titleLines)
+        try expect(titleHit.text == title && titleHit.context == title && titleHit.sourceLanguage == "ja")
+        let prose = [TextLine(text: "サマー・キャンプに参加した。", frame: CGRect(x: 0, y: 40, width: 300, height: 18), hit: NSRange(location: 0, length: 3))]
+        let proseHit = try SentenceContext.passage(in: prose)
+        try expect(proseHit.text == "サマー")
     }
 
     static func testLookupCache() throws {

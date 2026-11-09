@@ -15,7 +15,7 @@ struct SentenceExcerpt {
 
     init(_ original: Passage) {
         let text = original.context
-        let limit = original.sourceLanguage.hasPrefix("zh") ? 90 : 180
+        let limit = original.sourceLanguage.hasPrefix("zh") ? 60 : 160
         guard text.count > limit, let selection = original.selection,
               let hit = Range(selection, in: text), text[hit] == original.text else {
             passage = original; isTruncated = false; return
@@ -69,6 +69,15 @@ enum SentenceContext {
               let wordRange = lines[anchor].hit,
               let range = Range(wordRange, in: lines[anchor].text) else { throw ReaderError.noText }
         let word = String(lines[anchor].text[range])
+        let heading = lines[anchor].text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let otherHeights = lines.enumerated().filter { $0.offset != anchor }.map { $0.element.frame.height }
+        let prominent = otherHeights.min().map { lines[anchor].frame.height >= $0 * 1.35 } ?? false
+        // A short, prominent all-katakana heading separated by middle dots is
+        // a title unit. Never apply this to ordinary Japanese prose or metadata.
+        if prominent, heading.count <= 48, heading.contains("・"),
+           heading.range(of: #"^[\p{Katakana}ー・ 　]+$"#, options: .regularExpression) != nil {
+            return Passage(text: heading, context: heading, language: language ?? "ja")
+        }
         let above = neighbors(from: anchor, in: lines, upward: true)
         let below = neighbors(from: anchor, in: lines, upward: false)
         var paragraph = ""
@@ -93,7 +102,7 @@ enum SentenceContext {
         let sentenceRange = NSRange(context.startIndex..., in: context)
         guard let match = englishPhrases.matches(in: context, range: sentenceRange).first(where: {
             NSIntersectionRange($0.range, hit) == hit
-        }), token.sourceLanguage == "en", let range = Range(match.range, in: context) else { return token }
+        }), (token.sourceLanguage == "en" || token.sourceLanguage.hasPrefix("zh")), let range = Range(match.range, in: context) else { return token }
         return Passage(text: String(context[range]), context: context, selection: match.range, anchor: hit, language: language)
     }
 
@@ -106,6 +115,8 @@ enum SentenceContext {
                 (?:rule|rules|ruled|ruling)    \h+ out
               | (?:run|runs|ran|running)       \h+ out \h+ of
               | (?:look|looks|looked|looking)  \h+ up
+              | attention \h+ mask
+              | padding \h+ token
             )
             (?![\w‐‑-])
             """#,
@@ -119,6 +130,13 @@ enum SentenceContext {
             // and baseline spacing. Pixel distances scale with the recognized type.
             let candidates = lines.indices.filter { i in
                 let next = lines[i].frame
+                let listStart = #"^\s*(?:[•●▪◦*+-]|[0-9]+[.)、])\s*"#
+                if upward {
+                    let currentLine = result.last.map { lines[$0].text } ?? lines[anchor].text
+                    if currentLine.range(of: listStart, options: .regularExpression) != nil { return false }
+                } else if lines[i].text.range(of: listStart, options: .regularExpression) != nil { return false }
+                // Prominent headings and smaller metadata are distinct blocks.
+                if max(current.height, next.height) > min(current.height, next.height) * 1.3 { return false }
                 let height = max(current.height, next.height)
                 let step = upward ? next.midY - current.midY : current.midY - next.midY
                 let overlap = min(current.maxX, next.maxX) - max(current.minX, next.minX)
