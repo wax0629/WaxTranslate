@@ -42,38 +42,60 @@ enum ReaderError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .permission: return "请在系统设置的「屏幕与系统音频录制」中允许「我靠翻译」，然后重新打开应用。"
-        case .noText: return "这里没有识别到文字。试着将光标移到词的中央，或使用区域翻译。"
+        case .noText: return "这里没有识别到文字。试着将光标移到词的中央，或从菜单使用框选翻译。"
         case .noScreen: return "没有找到光标所在的显示器。"
         }
     }
 }
 
 enum Reader {
-    // ScreenCaptureKit uses the primary display's top-left origin.
-    static func displayRect(_ rect: CGRect, primaryHeight: CGFloat) -> CGRect {
-        CGRect(x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height)
+    // SCStreamConfiguration samples points relative to the selected display's
+    // top-left corner; AppKit pointer coordinates use the global bottom-left.
+    static func sourceRect(_ rect: CGRect, on screen: CGRect) -> CGRect {
+        CGRect(x: rect.minX - screen.minX, y: screen.maxY - rect.maxY, width: rect.width, height: rect.height)
+    }
+
+    static func screenshotConfiguration(bounds: CGRect, screen: CGRect, scale: CGFloat) -> SCStreamConfiguration {
+        let configuration = SCStreamConfiguration()
+        configuration.sourceRect = sourceRect(bounds, on: screen)
+        configuration.width = max(1, Int((bounds.width * scale).rounded()))
+        configuration.height = max(1, Int((bounds.height * scale).rounded()))
+        configuration.showsCursor = false
+        return configuration
     }
 
     static func hoverRect(at point: CGPoint, on screen: CGRect) -> CGRect {
-        let height = screen.height / 4
+        let height = min(screen.height / 4, 180)
+        let width = min(screen.width, 900)
         let bottom = min(max(point.y - height / 2, screen.minY), screen.maxY - height)
-        return CGRect(x: screen.minX, y: bottom, width: screen.width, height: height)
+        let left = min(max(point.x - width / 2, screen.minX), screen.maxX - width)
+        return CGRect(x: left, y: bottom, width: width, height: height)
     }
 
-    @MainActor static func capture(point: CGPoint, region: CGRect?, language: String? = nil) async throws -> Passage {
+    @MainActor static func capture(point: CGPoint, region: CGRect?, language: String? = nil, trace: LookupTrace = LookupTrace()) async throws -> Passage {
         guard CGPreflightScreenCaptureAccess() else {
             throw ReaderError.permission
         }
-        guard let primary = NSScreen.screens.first,
-              let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) else {
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }),
+              let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
             throw ReaderError.noScreen
         }
         let bounds = region?.intersection(screen.frame) ?? hoverRect(at: point, on: screen.frame)
-        let image = try await SCScreenshotManager.captureImage(in: displayRect(bounds, primaryHeight: primary.frame.height))
+        let enumerateBegan = LookupTrace.now
+        let available = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        trace.record("capture.enumerate", since: enumerateBegan)
+        guard let display = available.displays.first(where: { $0.displayID == displayID }) else { throw ReaderError.noScreen }
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let configuration = screenshotConfiguration(bounds: bounds, screen: screen.frame, scale: screen.backingScaleFactor)
+        let captureBegan = LookupTrace.now
+        let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+        trace.record("capture.image", since: captureBegan)
         let target = region == nil ? CGPoint(x: (point.x - bounds.minX) / bounds.width,
                                                y: (point.y - bounds.minY) / bounds.height) : nil
+        let ocrBegan = LookupTrace.now
         return try await Task.detached(priority: .userInitiated) {
-            try recognize(image: image, target: target, language: language)
+            defer { trace.record("capture.ocr", since: ocrBegan) }
+            return try recognize(image: image, target: target, language: language)
         }.value
     }
 
@@ -129,7 +151,13 @@ enum Reader {
 
     private static func wordRange(at point: CGPoint,
         in words: [(range: Range<String.Index>, frame: CGRect)], text: String) -> Range<String.Index>? {
-        let hits = words.filter { $0.frame.contains(point) }
+        let exact = words.filter { $0.frame.contains(point) }
+        // Small UI text has tight glyph boxes rather than a full text line.
+        // Allow a little vertical leading while keeping the actual word's
+        // horizontal span, so nearby whitespace never selects another word.
+        let hits = exact.isEmpty ? words.filter {
+            $0.frame.insetBy(dx: 0, dy: -$0.frame.height * 0.2).contains(point)
+        } : exact
         guard let first = hits.first else { return nil }
         guard hits.count > 1, let last = hits.last else { return first.range }
         // Vision sometimes reports the same entire packed token box for every

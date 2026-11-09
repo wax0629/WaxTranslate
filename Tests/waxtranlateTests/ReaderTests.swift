@@ -40,8 +40,95 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testReferenceBoundary()
         try testTerminology()
         try testPackedOCRAndManualLanguages()
+        try testSmallMixedText()
+        try testShortcutAndDockPreferences()
+        try testSimplifiedOutput()
+        try testLookupCache()
         try await testInstalledTranslation(ruledOut: ruledOut, ranOut: ranOut)
-        print("Passed: capture geometry, OCR, packed typography, phrase selection, exact occurrences, vocabulary migration, review, language routing, dashboard persistence, corrupt-data preservation, reading cancellation, local terminology and reference boundaries.")
+        print("Passed: capture geometry, cursor-free Retina configuration, small mixed text, OCR, packed typography, phrase selection, exact occurrences, vocabulary migration, review, language routing, dashboard persistence, corrupt-data preservation, reading cancellation, local terminology, reference boundaries, Option tap guards and Dock preferences.")
+    }
+
+    static func testLookupCache() throws {
+        let cache = LookupCache(capacity: 2), now = Date(timeIntervalSince1970: 1_000)
+        let first = Passage(text: "bank", context: "bank then bank", selection: NSRange(location: 0, length: 4), language: "en")
+        let second = Passage(text: "bank", context: "bank then bank", selection: NSRange(location: 10, length: 4), language: "en")
+        let differentLanguage = first.using(language: "de")
+        cache.insert(LookupResult(meaning: "岸边", origin: .sentence), for: first, now: now)
+        try expect(cache.result(for: first, now: now)?.meaning == "岸边")
+        try expect(cache.result(for: second, now: now) == nil && cache.result(for: differentLanguage, now: now) == nil)
+        cache.insert(LookupResult(meaning: "银行", origin: .sentence), for: second, now: now)
+        _ = cache.result(for: first, now: now)
+        cache.insert(LookupResult(meaning: "德语参考", origin: .standalone), for: differentLanguage, now: now)
+        try expect(cache.result(for: second, now: now) == nil && cache.result(for: first, now: now) != nil)
+        try expect(cache.result(for: first, now: now.addingTimeInterval(601)) == nil)
+        let oversized = Passage(text: String(repeating: "a", count: 1001), context: "", language: "en")
+        cache.insert(LookupResult(meaning: "参考", origin: .region), for: oversized, now: now)
+        try expect(cache.result(for: oversized, now: now) == nil)
+    }
+
+    static func testSimplifiedOutput() throws {
+        try expect(TranslationOutput.normalize("整數與資料庫") == "整数与资料库")
+        try expect(TranslationOutput.normalize("整數", target: "en") == "整數")
+        try expect(TranslationOutput.normalize("體", target: "ja") == "體")
+        try expect(CompactGloss.meanings(in: "integer | A. noun 整數").first == "整数")
+        let domain = "WaxTranslate.Test.script." + UUID().uuidString
+        let defaults = try require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let book = Notebook(defaults: defaults)
+        let passage = Passage(text: "integer", context: "An integer is a whole number.", language: "en")
+        try expect(book.save(passage, translation: "整數", sentenceTranslation: "整數是整的數。"))
+        let saved = try require(Notebook(defaults: defaults).entries.first)
+        try expect(saved.target == "整数" && saved.displaySentenceTranslation == "整数是整的数。")
+        let document = ReadingDocument()
+        document.text = "An integer is a whole number."
+        document.begin(language: "en")
+        let request = try require(document.request)
+        document.complete(request, result: .success("整數是整的數。"))
+        try expect(document.translation == "整数是整的数。")
+        let reference = Data(#"{"search":[{"id":"Q1","description":"整數運算","match":{"text":"integer"}}]}"#.utf8)
+        try expect(try WordReferences.parse(reference, word: "integer").first?.description == "整数运算")
+    }
+
+    static func testShortcutAndDockPreferences() throws {
+        let domain = "WaxTranslate.Test.preferences." + UUID().uuidString
+        let defaults = try require(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let fresh = Preferences(defaults: defaults)
+        try expect(fresh.shortcut == .option && !fresh.showInDock)
+        fresh.shortcut = .controlOption
+        fresh.showInDock = true
+        let reloaded = Preferences(defaults: defaults)
+        try expect(reloaded.shortcut == .controlOption && reloaded.showInDock)
+        reloaded.showInDock = false
+        try expect(!Preferences(defaults: defaults).showInDock)
+        defaults.set("optionShift", forKey: "capture.shortcut")
+        try expect(Preferences(defaults: defaults).shortcut == .optionShift)
+
+        var tap = OptionTapTracker()
+        func event(_ down: Bool, _ time: Double, keys: UInt32 = 10, pointer: UInt32 = 20,
+                   modifiers: UInt32, blocked: Bool = false) -> Bool {
+            tap.update(optionDown: down, blocked: blocked, time: time, keys: keys, pointer: pointer, modifiers: modifiers)
+        }
+        try expect(!event(true, 1, modifiers: 1))
+        try expect(event(false, 1.12, modifiers: 2))
+        try expect(!event(false, 1.15, modifiers: 2)) // release never repeats
+        _ = event(true, 2, modifiers: 3)
+        try expect(!event(false, 2.1, keys: 11, modifiers: 4)) // Option + letter
+        _ = event(true, 3, modifiers: 5)
+        try expect(!event(false, 3.1, pointer: 21, modifiers: 6)) // click / drag / scroll
+        _ = event(true, 4, modifiers: 7)
+        try expect(!event(false, 5, modifiers: 8)) // long hold
+        _ = event(true, 6, modifiers: 9)
+        _ = event(true, 6.05, modifiers: 10, blocked: true) // Shift pressed
+        _ = event(true, 6.1, modifiers: 11) // releasing Shift must not rearm
+        try expect(!event(false, 6.15, modifiers: 12))
+        _ = event(true, 7, modifiers: 13, blocked: true) // key already held
+        try expect(!event(false, 7.1, modifiers: 14))
+        _ = event(true, 8, modifiers: .max)
+        try expect(event(false, 8.1, modifiers: 0)) // counter wraps
+        _ = event(true, 9, modifiers: 15)
+        tap = OptionTapTracker() // changing mode discards pending tap
+        try expect(!event(false, 9.1, modifiers: 16))
     }
 
     static func testHoverAndRegion(_ sentence: String, anchor: String = "out", expected: String) throws -> Passage {
@@ -70,16 +157,53 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
     }
 
     static func testSecondaryDisplayCoordinates() throws {
-        try expect(Reader.displayRect(CGRect(x: -920, y: 1000, width: 80, height: 120), primaryHeight: 900) ==
-                       CGRect(x: -920, y: -220, width: 80, height: 120))
+        let screen = CGRect(x: -1440, y: 900, width: 1440, height: 900)
+        let bounds = CGRect(x: -920, y: 1000, width: 80, height: 120)
+        try expect(Reader.sourceRect(bounds, on: screen) == CGRect(x: 520, y: 680, width: 80, height: 120))
+        for scale: CGFloat in [1, 2] {
+            let config = Reader.screenshotConfiguration(bounds: bounds, screen: screen, scale: scale)
+            try expect(config.sourceRect == CGRect(x: 520, y: 680, width: 80, height: 120))
+            try expect(config.width == Int(80 * scale) && config.height == Int(120 * scale) && !config.showsCursor)
+        }
+    }
+
+    static func testSmallMixedText() throws {
+        let sentence = "在 Codex 中阅读 English text，按 Option 查词。"
+        for size: CGFloat in [12, 14, 18] {
+            for dark in [false, true] {
+                let font = NSFont.systemFont(ofSize: size)
+                let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: dark ? NSColor.white : NSColor.black]
+                let canvas = NSSize(width: 600, height: 90)
+                let image = NSImage(size: canvas)
+                image.lockFocus()
+                (dark ? NSColor.black : NSColor.white).setFill()
+                NSRect(origin: .zero, size: canvas).fill()
+                (sentence as NSString).draw(at: NSPoint(x: 20, y: 25), withAttributes: attributes)
+                image.unlockFocus()
+                let bitmap = try require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+                for word in ["Codex", "English", "Option"] {
+                    let range = try require(sentence.range(of: word))
+                    let prefix = String(sentence[..<range.lowerBound]) as NSString
+                    let x = 20 + prefix.size(withAttributes: attributes).width + (word as NSString).size(withAttributes: attributes).width / 2
+                    let result = try Reader.recognize(image: bitmap, target: CGPoint(x: x / canvas.width,
+                                      y: (25 + font.ascender * 0.55) / canvas.height))
+                    try expect(result.text.caseInsensitiveCompare(word) == .orderedSame)
+                }
+                let empty = try? Reader.recognize(image: bitmap, target: CGPoint(x: 0.9, y: 0.8))
+                try expect(empty == nil)
+            }
+        }
     }
 
     static func testCaptureBand() throws {
         let display = CGRect(x: -1792, y: -100, width: 1792, height: 1120)
         let center = Reader.hoverRect(at: CGPoint(x: -1500, y: 460), on: display)
-        try expect(center == CGRect(x: -1792, y: 320, width: 1792, height: 280))
+        try expect(center == CGRect(x: -1792, y: 370, width: 900, height: 180))
+        try expect(Reader.hoverRect(at: CGPoint(x: -1, y: 500), on: display).maxX == display.maxX)
         try expect(Reader.hoverRect(at: CGPoint(x: -1, y: 1019), on: display).maxY == display.maxY)
         try expect(Reader.hoverRect(at: CGPoint(x: -1791, y: -99), on: display).minY == display.minY)
+        let small = CGRect(x: 100, y: 100, width: 600, height: 400)
+        try expect(Reader.hoverRect(at: CGPoint(x: 500, y: 300), on: small) == CGRect(x: 100, y: 250, width: 600, height: 100))
     }
 
     static func testWrappedOCRInTwoColumns() throws {

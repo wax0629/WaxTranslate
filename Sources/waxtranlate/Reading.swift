@@ -40,7 +40,7 @@ struct TranslationRequest: Identifiable, Equatable {
         busy = false
         self.request = nil
         switch result {
-        case .success(let output): translation = output; status = "译文已更新 · Apple 本机翻译"
+        case .success(let output): translation = TranslationOutput.normalize(output, target: request.target); status = "译文已更新 · Apple 本机翻译"
         case .failure: status = "翻译未完成。请检查语言包后重试，也可在设置中选择源语言。"
         }
     }

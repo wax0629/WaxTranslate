@@ -13,7 +13,6 @@ struct LibraryView: View {
     @ObservedObject var document: ReadingDocument
     let shortcutErrors: () -> [String]
     let lookup: (Passage) -> Void
-    let region: () -> Void
     let permission: () -> Void
     let speak: (String, String) -> Void
     @State private var page = Page.home
@@ -68,23 +67,19 @@ struct LibraryView: View {
                 MangaCover()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 19) {
-                        HStack(alignment: .top) {
-                            Button { page = .settings } label: {
-                                Text(preferences.shortcut == .disabled ? "在对照翻译中双击原文查词" : "指向生词，按 \(preferences.shortcut.hoverLabel) 查看释义")
-                                    .multilineTextAlignment(.leading)
-                            }.buttonStyle(.plain).font(.system(size: 12))
-                            Spacer(minLength: 6)
-                            Button(action: region) { Label("框选翻译", systemImage: "viewfinder") }
-                                .buttonStyle(ReaderActionStyle())
-                        }
+                        Button { page = .settings } label: {
+                            Text(preferences.shortcut == .disabled ? "在对照翻译中双击原文查词" : "指向生词，按 \(preferences.shortcut.hoverLabel) 查看释义")
+                                .multilineTextAlignment(.leading)
+                        }.buttonStyle(.plain).font(.system(size: 12))
                         TimelineView(.periodic(from: .now, by: 30)) { time in
                             VStack(alignment: .leading, spacing: 18) {
-                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 9) {
+                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 160, maximum: 210), spacing: 12),
+                                                         count: 2), alignment: .leading, spacing: 12) {
                                     stat(notebook.totalLookups, label: "次取词", detail: "今日 \(notebook.todayLookups(now: time.date)) 次")
                                     stat(notebook.entries.count, label: "已保存", detail: "生词本中的词条")
                                     stat(notebook.dueCount(now: time.date), label: "待复习", detail: "已到复习时间")
                                     stat(notebook.masteredCount, label: "已掌握", detail: "连续记住 3 次")
-                                }
+                                }.frame(maxWidth: 432, alignment: .leading)
                                 recentLookups(now: time.date)
                             }
                         }
@@ -101,7 +96,8 @@ struct LibraryView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("\(count)").font(.custom("Baskerville", size: 30)).monospacedDigit()
-                Text(label).font(.system(size: 12))
+                    .lineLimit(1).minimumScaleFactor(0.45).layoutPriority(1)
+                Text(label).font(.system(size: 12)).fixedSize()
             }
             Text(detail).font(.system(size: 11)).foregroundStyle(DeskTheme.muted)
         }.padding(.horizontal, 14).padding(.vertical, 11).frame(maxWidth: .infinity, alignment: .leading)
@@ -116,8 +112,6 @@ struct LibraryView: View {
             if notebook.recent.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("查过的词会出现在这里。").font(.callout).foregroundStyle(DeskTheme.muted)
-                    Button { page = .reading } label: { Label("打开对照翻译", systemImage: "book") }
-                        .buttonStyle(ReaderActionStyle(emphasized: true))
                 }.padding(.vertical, 12)
             } else {
                 ForEach(notebook.recent) { recent in
@@ -125,7 +119,7 @@ struct LibraryView: View {
                         HStack(spacing: 15) {
                             Text(recent.word).font(.custom("Baskerville", size: 18)).lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(recent.meaning).font(.system(size: 13)).lineLimit(1)
+                            Text(recent.displayMeaning).font(.system(size: 13)).lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Text(relative(recent.date, now: now)).font(.system(size: 10)).foregroundStyle(DeskTheme.muted)
                                 .frame(width: 56, alignment: .trailing)
@@ -167,7 +161,6 @@ struct LibraryView: View {
         if items.isEmpty {
             Text(query.isEmpty ? "查词时点「加入生词本」，词义和原句会保存在这里。" : "没有匹配的词条，换一个关键词试试。")
                 .foregroundStyle(DeskTheme.muted).padding(.vertical, 24)
-            if query.isEmpty { Button("打开对照翻译") { page = .reading }.buttonStyle(ReaderActionStyle()) }
         } else {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(items) { item in
@@ -178,7 +171,7 @@ struct LibraryView: View {
                                 Text(item.source).font(.custom("Baskerville", size: 25))
                                 Text(item.displayMeaning).font(.system(size: 15, weight: .medium))
                                 if !item.context.isEmpty { Text(item.context).font(.custom("Baskerville", size: 17)).foregroundStyle(DeskTheme.muted) }
-                                if let sentence = item.sentenceTranslation { Text(sentence).font(.callout).foregroundStyle(DeskTheme.muted) }
+                                if let sentence = item.displaySentenceTranslation { Text(sentence).font(.callout).foregroundStyle(DeskTheme.muted) }
                             }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                         }.buttonStyle(.plain)
                         Button { speak(item.source, item.language ?? item.passage.sourceLanguage) } label: { Image(systemName: "speaker.wave.2") }
@@ -206,7 +199,7 @@ struct LibraryView: View {
                     BookRule()
                     if revealed == item.id {
                         Text(item.displayMeaning).font(.title3)
-                        if let sentence = item.sentenceTranslation { Text(sentence).foregroundStyle(DeskTheme.muted) }
+                        if let sentence = item.displaySentenceTranslation { Text(sentence).foregroundStyle(DeskTheme.muted) }
                         HStack {
                             Button("再学一次") { notebook.review(item.id, remembered: false); revealed = nil }.buttonStyle(ReaderActionStyle())
                             Button("记住了") { notebook.review(item.id, remembered: true); revealed = nil }.buttonStyle(ReaderActionStyle(emphasized: true))
@@ -219,7 +212,6 @@ struct LibraryView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Label("当前没有待复习的词条", systemImage: "checkmark.circle").font(.title3)
                     Text("到期的词条会出现在这里。").foregroundStyle(DeskTheme.muted)
-                    Button("打开对照翻译") { page = .reading }.buttonStyle(ReaderActionStyle())
                 }.padding(.vertical, 24)
             }
         }
@@ -247,7 +239,7 @@ struct SettingsPage: View {
                     Picker("快捷键", selection: $preferences.shortcut) {
                         ForEach(CaptureShortcut.allCases) { Text($0.title).tag($0) }
                     }.frame(maxWidth: 430, alignment: .leading)
-                    Text("T 取词，R 框选。仅应用内模式仍可双击原文查词，也可点按钮框选。").font(.callout).foregroundStyle(DeskTheme.muted)
+                    Text(preferences.shortcut.help).font(.callout).foregroundStyle(DeskTheme.muted)
                     if !errors.isEmpty { Text("快捷键已被占用：" + errors.joined(separator: "、")).font(.callout).foregroundStyle(DeskTheme.accent) }
                     HStack {
                         Label(captureAllowed ? "屏幕取词已授权" : "屏幕取词待授权", systemImage: captureAllowed ? "checkmark.circle" : "lock")
@@ -270,6 +262,8 @@ struct SettingsPage: View {
                 BookRule()
                 VStack(alignment: .leading, spacing: 13) {
                     Text("启动与参考").font(.headline)
+                    Toggle("在 Dock 中显示", isOn: $preferences.showInDock)
+                    Text("关闭后仍在菜单栏待命，可随时从菜单栏打开主窗口。").font(.caption).foregroundStyle(DeskTheme.muted)
                     Toggle("打开应用时显示主窗口", isOn: $preferences.showOnLaunch)
                     Toggle("登录后在菜单栏待命", isOn: Binding(get: { loginEnabled }, set: setLogin))
                     Toggle("未收录的词自动补查百科参考", isOn: $preferences.onlineReferences)

@@ -1,5 +1,7 @@
 # macOS 0.3.0 同步验收
 
+后续用户反馈的默认 Option、Dock 设置、图标、两排布局、重复入口、简体输出和性能分段结果，见 [build 9 追加验收](followup.md)。本页原始截图保留其对应阶段，不代表最新布局。
+
 2026-11-09，本机 macOS 26.6.2 / Intel，Swift 6.3.3，macOS SDK 26.5。开发与验收对应 [#78](https://github.com/wax0629/WaxTranslate/issues/78)，去掉独立系统标题栏对应 [#79](https://github.com/wax0629/WaxTranslate/issues/79)。以 main `f6f651c` 为基线，最终产品提交及远程 CI 链接在本轮 PR 正文记录。
 
 ## 本机自动化与真实服务

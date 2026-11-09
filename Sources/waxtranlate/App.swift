@@ -5,10 +5,12 @@ import Combine
 @main @MainActor final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let notebook: Notebook
     private let preferences: Preferences
+    private let testHover: Bool
     private let document = ReadingDocument()
     private let voice = AVSpeechSynthesizer()
     private var status: NSStatusItem!
     private var library: NSWindow?
+    private var captureFixture: NSWindow?
     private var panel: NSPanel?
     private var overlay: SelectionPanel?
     private var job: Task<Void, Never>?
@@ -17,6 +19,7 @@ import Combine
     private var showedPermissionHint = false
     private var requestedAccess = false
     private var settingsObserver: AnyCancellable?
+    private var dockObserver: AnyCancellable?
     private var outsideClick: Any?
     private var pinned = false
     private var cardGeneration = UUID()
@@ -27,7 +30,8 @@ import Combine
         if let index = arguments.firstIndex(of: "--test-profile"), index + 1 < arguments.count,
            arguments[index + 1].hasPrefix("WaxTranslate.Test."), let suite = UserDefaults(suiteName: arguments[index + 1]) {
             defaults = suite
-        } else { defaults = .standard }
+            testHover = arguments.contains("--test-hover")
+        } else { defaults = .standard; testHover = false }
         notebook = Notebook(defaults: defaults)
         preferences = Preferences(defaults: defaults)
         super.init()
@@ -37,18 +41,24 @@ import Combine
         let app = NSApplication.shared
         let delegate = App()
         app.delegate = delegate
-        app.setActivationPolicy(.accessory)
+        app.setActivationPolicy(delegate.preferences.showInDock ? .regular : .accessory)
         withExtendedLifetime(delegate) { app.run() }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"), let icon = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = icon
+        }
         shortcuts = Shortcuts { [weak self] id in
             if id == 1 { self?.hover() } else { self?.chooseArea() }
         }
         shortcutErrors = shortcuts.start(mode: preferences.shortcut)
         settingsObserver = preferences.$shortcut.dropFirst().sink { [weak self] mode in
             self?.shortcutErrors = self?.shortcuts.start(mode: mode) ?? []
+        }
+        dockObserver = preferences.$showInDock.dropFirst().sink { [weak self] visible in
+            self?.setDockVisible(visible)
         }
         outsideClick = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             Task { @MainActor in
@@ -57,24 +67,66 @@ import Combine
             }
         }
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        status.button?.image = NSImage(systemSymbolName: "character.book.closed", accessibilityDescription: "我靠翻译")
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"), let icon = NSImage(contentsOf: url) {
+            icon.size = NSSize(width: 20, height: 20)
+            icon.accessibilityDescription = "我靠翻译"
+            status.button?.image = icon
+        }
         status.button?.toolTip = "我靠翻译"
         let menu = NSMenu()
-        for (title, action) in [("打开我靠翻译", #selector(showLibrary)), ("区域翻译…", #selector(chooseArea)),
+        for (title, action) in [("打开我靠翻译", #selector(showLibrary)), ("框选翻译…", #selector(chooseArea)),
                                  ("退出我靠翻译", #selector(quit))] {
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
             item.target = self
         }
         status.menu = menu
-        if preferences.showOnLaunch || ProcessInfo.processInfo.arguments.contains("--show") { showLibrary() }
+        // The UI harness can exercise real screen capture without synthesizing
+        // a modifier-only key. This is accepted only with an isolated test suite.
+        if testHover { runCaptureFixture() }
+        else if preferences.showOnLaunch || ProcessInfo.processInfo.arguments.contains("--show") { showLibrary() }
+        if !testHover { TranslationWarmup.start() }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if testHover { return false }
         showLibrary()
         return true
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
+
+    private func runCaptureFixture() {
+        guard readyToCapture(), let screen = NSScreen.main else { return }
+        let view = CaptureFixtureView(frame: NSRect(x: 0, y: 0, width: screen.visibleFrame.width - 40, height: 240))
+        let fixture = NSWindow(contentRect: view.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        fixture.title = "WaxTranslate · 隔离屏幕取词测试"
+        fixture.contentView = view
+        fixture.center()
+        fixture.isReleasedWhenClosed = false
+        captureFixture = fixture
+        NSApp.activate(ignoringOtherApps: true)
+        fixture.makeKeyAndOrderFront(nil)
+        view.displayIfNeeded()
+        let point = fixture.convertPoint(toScreen: view.convert(view.samplePoint, to: nil))
+        translate(at: point, region: nil)
+    }
+
+    private func setDockVisible(_ visible: Bool) {
+        let focused = NSApp.keyWindow
+        let active = NSApp.isActive
+        guard NSApp.setActivationPolicy(visible ? .regular : .accessory) else {
+            preferences.showInDock = NSApp.activationPolicy() == .regular
+            return
+        }
+        // Changing activation policy can briefly deactivate the app. Keep the
+        // settings window and the user's current editing state in place.
+        if active {
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+                focused?.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
 
     private func installMainMenu() {
         let bar = NSMenu()
@@ -83,6 +135,9 @@ import Combine
         let open = NSMenuItem(title: "打开我靠翻译", action: #selector(showLibrary), keyEquivalent: "0")
         open.target = self
         application.addItem(open)
+        let area = NSMenuItem(title: "框选翻译…", action: #selector(chooseArea), keyEquivalent: "")
+        area.target = self
+        application.addItem(area)
         application.addItem(.separator())
         let quit = NSMenuItem(title: "退出我靠翻译", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
@@ -114,7 +169,7 @@ import Combine
                 shortcutErrors: { [weak self] in self?.shortcutErrors ?? [] }, lookup: { [weak self] passage in
                     self?.reset()
                     self?.present(passage, at: NSEvent.mouseLocation, focus: true)
-                }, region: { [weak self] in self?.chooseArea() }, permission: { [weak self] in self?.openPermissionSettings() },
+                }, permission: { [weak self] in self?.openPermissionSettings() },
                 speak: { [weak self] text, language in self?.speak(text, language: language) })
             let window = NSWindow(contentViewController: NSHostingController(rootView: view))
             window.styleMask = [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
@@ -211,13 +266,16 @@ import Combine
     }
 
     private func translate(at point: CGPoint, region: CGRect?) {
+        let trace = LookupTrace()
         job = Task {
             do {
+                let began = LookupTrace.now
                 // Let the window server remove our previous panel or selection overlay.
                 try await Task.sleep(nanoseconds: 110_000_000)
-                let passage = try await Reader.capture(point: point, region: region, language: preferences.language.rawValue)
+                trace.record("capture.dismiss_wait", since: began)
+                let passage = try await Reader.capture(point: point, region: region, language: preferences.language.rawValue, trace: trace)
                 try Task.checkCancellation()
-                present(passage, at: point)
+                present(passage, at: point, focus: testHover, trace: trace)
             } catch {
                 guard !Task.isCancelled else { return }
                 if case ReaderError.permission = error { showedPermissionHint = true }
@@ -238,13 +296,13 @@ import Combine
             }
         }.padding().frame(width: 330)
             .foregroundStyle(DeskTheme.ink).tint(DeskTheme.accent).background(DeskTheme.sheet)
-        show(message, at: point)
+        show(message, at: point, focus: testHover)
     }
 
-    private func present(_ passage: Passage, at point: CGPoint, focus: Bool = false) {
+    private func present(_ passage: Passage, at point: CGPoint, focus: Bool = false, trace: LookupTrace = LookupTrace()) {
         let generation = UUID()
         cardGeneration = generation
-        let card = ResultCard(passage: passage, notebook: notebook, preferences: preferences, close: { [weak self] in self?.reset() },
+        let card = ResultCard(passage: passage, notebook: notebook, preferences: preferences, trace: trace, close: { [weak self] in self?.reset() },
                               speak: { [weak self] text, language in
             self?.speak(text, language: language)
         }, focusForDownload: { [weak self] in
@@ -309,4 +367,18 @@ import Combine
 private final class LookupPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+}
+
+private final class CaptureFixtureView: NSView {
+    private let sentence = "These results do not rule out infection."
+    private let font = NSFont.systemFont(ofSize: 24)
+    var samplePoint: CGPoint {
+        let prefix = "These results do not rule " as NSString
+        return CGPoint(x: 40 + prefix.size(withAttributes: [.font: font]).width + ("out" as NSString).size(withAttributes: [.font: font]).width / 2,
+                       y: 110 + font.ascender * 0.55)
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.white.setFill(); bounds.fill()
+        (sentence as NSString).draw(at: NSPoint(x: 40, y: 110), withAttributes: [.font: font, .foregroundColor: NSColor.black])
+    }
 }

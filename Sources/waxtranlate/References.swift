@@ -45,7 +45,7 @@ enum WordReferences {
                   item.id.range(of: #"^Q[1-9][0-9]*$"#, options: .regularExpression) != nil,
                   let description = item.description?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty,
                   !result.contains(where: { $0.description == description }) else { continue }
-            result.append(WordReference(id: item.id, description: String(description.prefix(350))))
+            result.append(WordReference(id: item.id, description: TranslationOutput.normalize(String(description.prefix(350)))))
             if result.count == 3 { break }
         }
         return result

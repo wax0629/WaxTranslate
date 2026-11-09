@@ -6,6 +6,7 @@ struct ResultCard: View {
     let passage: Passage
     @ObservedObject var notebook: Notebook
     @ObservedObject var preferences: Preferences
+    let trace: LookupTrace
     let close: () -> Void
     let speak: (String, String) -> Void
     let focusForDownload: () -> Void
@@ -15,6 +16,7 @@ struct ResultCard: View {
     private let target: Locale.Language
     private let dictionary: [String]
     private let term: TermMeaning?
+    private let cacheHit: Bool
     @State private var result: LookupResult?
     @State private var phase = Phase.checking
     @State private var configuration: TranslationSession.Configuration?
@@ -27,23 +29,31 @@ struct ResultCard: View {
     @State private var referenceBusy = false
     @State private var referenceAttempt = 0
 
-    init(passage: Passage, notebook: Notebook, preferences: Preferences, close: @escaping () -> Void,
+    init(passage: Passage, notebook: Notebook, preferences: Preferences, trace: LookupTrace = LookupTrace(), close: @escaping () -> Void,
          speak: @escaping (String, String) -> Void, focusForDownload: @escaping () -> Void,
          pin: @escaping (Bool) -> Void = { _ in }, resize: @escaping (CGSize) -> Void = { _ in }) {
         self.passage = passage
         self.notebook = notebook
         self.preferences = preferences
+        self.trace = trace
         self.close = close
         self.speak = speak
         self.focusForDownload = focusForDownload
         self.pin = pin
         self.resize = resize
+        let languageBegan = LookupTrace.now
         let language = passage.sourceLanguage
+        trace.record("lookup.language", since: languageBegan)
         source = Locale.Language(identifier: language)
         target = Locale.Language(identifier: language.hasPrefix("zh") ? "en" : "zh-Hans")
+        let began = LookupTrace.now
         dictionary = CompactGloss.candidates(for: passage, language: language)
         term = LocalTerminology.lookup(passage)
-        _result = State(initialValue: term.map { LookupResult(meaning: $0.meaning, origin: .term) }
+        trace.record("lookup.dictionary_and_terms", since: began)
+        let cached = LookupCache.shared.result(for: passage)
+        cacheHit = cached != nil
+        _phase = State(initialValue: cached == nil ? .checking : .done)
+        _result = State(initialValue: cached ?? term.map { LookupResult(meaning: TranslationOutput.normalize($0.meaning), origin: .term) }
                         ?? dictionary.first.map { LookupResult(meaning: $0, origin: .dictionary) })
     }
 
@@ -86,8 +96,11 @@ struct ResultCard: View {
         .background(GeometryReader { geometry in Color.clear.preference(key: CardSizeKey.self, value: geometry.size) })
         .onPreferenceChange(CardSizeKey.self, perform: resize)
         .task {
-            if let result { record(result) }
+            let began = LookupTrace.now
+            if let result { record(result); trace.record("lookup.first_reference", since: began) }
+            if cacheHit { trace.record("lookup.cache_hit", since: began); return }
             let availability = await LanguageAvailability().status(from: source, to: target)
+            trace.record("translation.availability", since: began)
             guard !Task.isCancelled else { return }
             switch availability {
             case .installed: start()
@@ -97,14 +110,18 @@ struct ResultCard: View {
         }
         .translationTask(configuration) { session in
             do {
+                let began = LookupTrace.now
                 try await session.prepareTranslation()
-                let translated = try await LookupTranslation.translate(passage, session: session, dictionary: dictionary)
+                trace.record("translation.prepare", since: began)
+                let translated = try await LookupTranslation.translate(passage, session: session, dictionary: dictionary, trace: trace)
                 try Task.checkCancellation()
-                let displayed = term.map { LookupResult(meaning: $0.meaning, origin: .term, sentenceTranslation: translated.sentenceTranslation) } ?? translated
+                let displayed = term.map { LookupResult(meaning: TranslationOutput.normalize($0.meaning), origin: .term, sentenceTranslation: translated.sentenceTranslation) } ?? translated
                 result = displayed
+                LookupCache.shared.insert(displayed, for: passage)
                 copied = false
                 phase = .done
                 record(displayed)
+                trace.record("lookup.complete", since: began)
             } catch {
                 if !Task.isCancelled { phase = .failed }
             }

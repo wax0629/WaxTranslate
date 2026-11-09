@@ -10,6 +10,50 @@ struct LookupResult {
     var sentenceTranslation: String? = nil
 }
 
+@MainActor final class LookupCache {
+    static let shared = LookupCache()
+    private struct Key: Hashable {
+        let text: String, context: String, language: String
+        let selection: NSRange?, anchor: NSRange?
+        init(_ passage: Passage) {
+            text = passage.text; context = passage.context; language = passage.sourceLanguage
+            selection = passage.selection; anchor = passage.anchor
+        }
+    }
+    private var entries: [Key: (LookupResult, Date)] = [:]
+    private var order: [Key] = []
+    private let capacity: Int
+    init(capacity: Int = 64) { self.capacity = max(1, capacity) }
+    func result(for passage: Passage, now: Date = Date()) -> LookupResult? {
+        let key = Key(passage)
+        guard let (value, expires) = entries[key] else { return nil }
+        guard expires > now else { entries[key] = nil; order.removeAll { $0 == key }; return nil }
+        order.removeAll { $0 == key }; order.append(key)
+        return value
+    }
+    func insert(_ result: LookupResult, for passage: Passage, now: Date = Date()) {
+        guard passage.text.count <= 1000, passage.context.count <= 4000 else { return }
+        let key = Key(passage)
+        entries[key] = (result, now.addingTimeInterval(600))
+        order.removeAll { $0 == key }; order.append(key)
+        while order.count > capacity { entries[order.removeFirst()] = nil }
+    }
+}
+
+@MainActor enum TranslationWarmup {
+    private static var task: Task<Void, Never>?
+    static func start() {
+        guard #available(macOS 26.0, *), task == nil else { return }
+        task = Task {
+            let source = Locale.Language(identifier: "en"), target = Locale.Language(identifier: "zh-Hans")
+            guard await LanguageAvailability().status(from: source, to: target) == .installed else { return }
+            let session = TranslationSession(installedSource: source, target: target)
+            // Fixed local sample only. Never download a pack or submit user text.
+            _ = try? await session.translate("Hello.")
+        }
+    }
+}
+
 enum CompactGloss {
     static func candidates(for passage: Passage, language: String) -> [String] {
         // Dictionary Services can return an entry for just one word of a phrase.
@@ -40,7 +84,7 @@ enum CompactGloss {
                 let definition = sense.components(separatedBy: "▸")[0]
                 for variant in definition.components(separatedBy: ";") {
                     guard let span = variant.range(of: #"[\p{Han}]+(?:[…·]+[\p{Han}]+)*"#, options: .regularExpression) else { continue }
-                    let gloss = String(variant[span])
+                    let gloss = TranslationOutput.normalize(String(variant[span]))
                     if gloss.count <= 32 && !result.contains(gloss) { result.append(gloss) }
                 }
             }
@@ -95,34 +139,46 @@ enum LookupTranslation {
         return gloss
     }
 
-    static func translate(_ passage: Passage, session: TranslationSession, dictionary: [String]) async throws -> LookupResult {
+    static func translate(_ passage: Passage, session: TranslationSession, dictionary: [String], trace: LookupTrace = LookupTrace()) async throws -> LookupResult {
+        let target = passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans"
+        func result(_ meaning: String, _ origin: LookupResult.Origin, _ sentence: String? = nil) -> LookupResult {
+            LookupResult(meaning: TranslationOutput.normalize(meaning, target: target), origin: origin,
+                         sentenceTranslation: sentence.map { TranslationOutput.normalize($0, target: target) })
+        }
         guard !passage.context.isEmpty, passage.context != passage.text else {
+            let began = LookupTrace.now
             let text = try await session.translate(passage.text).targetText
-            return LookupResult(meaning: text, origin: passage.context.isEmpty ? .region : .standalone)
+            trace.record("translation.word_or_region", since: began)
+            return result(text, passage.context.isEmpty ? .region : .standalone)
         }
 
         let sentence: String
+        let sentenceBegan = LookupTrace.now
         if #available(macOS 26.4, *), let marked = markedSentence(passage),
            let response = try? await session.translate(marked) {
             sentence = response.targetText
+            trace.record("translation.aligned_sentence", since: sentenceBegan)
             if let formatted = response.attributedTargetText,
                let gloss = alignedMeaning(in: formatted, isPhrase: passage.isPhrase) {
-                return LookupResult(meaning: gloss, origin: .sentence, sentenceTranslation: sentence)
+                return result(gloss, .sentence, sentence)
             }
         } else {
             try Task.checkCancellation()
             sentence = try await session.translate(passage.context).targetText
+            trace.record("translation.plain_sentence", since: sentenceBegan)
         }
 
         // A dictionary gloss elsewhere in the sentence may translate a different word.
         do {
             try Task.checkCancellation()
+            let wordBegan = LookupTrace.now
             let reference = try await session.translate(passage.text).targetText
-            return LookupResult(meaning: reference, origin: .standalone, sentenceTranslation: sentence)
+            trace.record("translation.fallback_word", since: wordBegan)
+            return result(reference, .standalone, sentence)
         } catch {
             try Task.checkCancellation()
             guard let reference = dictionary.first else { throw error }
-            return LookupResult(meaning: reference, origin: .dictionary, sentenceTranslation: sentence)
+            return result(reference, .dictionary, sentence)
         }
     }
 }

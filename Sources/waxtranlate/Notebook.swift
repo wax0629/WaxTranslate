@@ -14,8 +14,9 @@ struct Entry: Codable, Identifiable {
 
     var displayMeaning: String {
         if !context.isEmpty && target.contains(" | "), let gloss = CompactGloss.meanings(in: target).first { return gloss }
-        return target
+        return TranslationOutput.normalize(target, target: passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans")
     }
+    var displaySentenceTranslation: String? { sentenceTranslation.map { TranslationOutput.normalize($0, target: passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans") } }
     var passage: Passage { Passage(text: source, context: context, selection: selection, anchor: anchor, language: language) }
 }
 
@@ -25,6 +26,7 @@ struct RecentLookup: Codable, Identifiable {
     var meaning: String
     let date: Date
     var word: String { passage.text }
+    var displayMeaning: String { TranslationOutput.normalize(meaning, target: passage.language.hasPrefix("zh") ? "en" : "zh-Hans") }
 }
 
 struct StoredPassage: Codable {
@@ -82,8 +84,9 @@ private struct LookupActivity: Codable {
     @discardableResult func save(_ passage: Passage, translation: String, sentenceTranslation: String? = nil) -> Bool {
         guard !contains(passage), !translation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         var next = entries
-        next.insert(Entry(id: UUID(), source: passage.text, target: translation, context: passage.context,
-                          sentenceTranslation: sentenceTranslation, due: Date(), streak: 0,
+        let target = passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans"
+        next.insert(Entry(id: UUID(), source: passage.text, target: TranslationOutput.normalize(translation, target: target), context: passage.context,
+                          sentenceTranslation: sentenceTranslation.map { TranslationOutput.normalize($0, target: target) }, due: Date(), streak: 0,
                           language: passage.sourceLanguage, selection: passage.selection, anchor: passage.anchor), at: 0)
         return persist(next)
     }

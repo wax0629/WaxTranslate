@@ -5,6 +5,6 @@ cd "$(dirname "$0")/.."
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 swiftc -parse-as-library -target "$(uname -m)-apple-macosx15.2" \
-  Sources/waxtranlate/{Reader,SentenceContext,LookupTranslation,Notebook,Preferences,References,Reading,DeskTheme,Terminology}.swift Tests/waxtranlateTests/ReaderTests.swift \
+  Sources/waxtranlate/{Reader,SentenceContext,LookupTranslation,LookupTrace,Notebook,Preferences,References,Reading,DeskTheme,Terminology,Shortcuts}.swift Tests/waxtranlateTests/ReaderTests.swift \
   -o "$out/check"
 "$out/check"

@@ -23,17 +23,25 @@ enum ReadingLanguage: String, CaseIterable, Identifiable {
 }
 
 enum CaptureShortcut: String, CaseIterable, Identifiable {
-    case optionShift, controlOption, disabled
+    case option, optionShift, controlOption, disabled
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .option: return "Option（轻按并松开）"
         case .optionShift: return "Option + Shift + T / R"
         case .controlOption: return "Control + Option + T / R"
         case .disabled: return "仅应用内查词"
         }
     }
-    var hoverLabel: String { self == .controlOption ? "⌃⌥T" : "⌥⇧T" }
+    var hoverLabel: String { self == .option ? "Option" : self == .controlOption ? "⌃⌥T" : "⌥⇧T" }
     var regionLabel: String { self == .controlOption ? "⌃⌥R" : "⌥⇧R" }
+    var help: String {
+        switch self {
+        case .option: return "轻按并松开 Option 查词；组合键、拖动或长按不会触发。⌥⇧R 框选，也可从菜单选择「框选翻译」。"
+        case .optionShift, .controlOption: return "T 取词，R 框选。也可从菜单选择「框选翻译」。"
+        case .disabled: return "在对照翻译中双击原文查词，或从菜单选择「框选翻译」。"
+        }
+    }
 }
 
 @MainActor final class Preferences: ObservableObject {
@@ -41,13 +49,15 @@ enum CaptureShortcut: String, CaseIterable, Identifiable {
     @Published var language: ReadingLanguage { didSet { defaults.set(language.rawValue, forKey: "reading.sourceLanguage") } }
     @Published var shortcut: CaptureShortcut { didSet { defaults.set(shortcut.rawValue, forKey: "capture.shortcut") } }
     @Published var showOnLaunch: Bool { didSet { defaults.set(showOnLaunch, forKey: "window.showOnLaunch") } }
+    @Published var showInDock: Bool { didSet { defaults.set(showInDock, forKey: "window.showInDock") } }
     @Published var onlineReferences: Bool { didSet { defaults.set(onlineReferences, forKey: "lookup.onlineReferences") } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         language = ReadingLanguage(rawValue: defaults.string(forKey: "reading.sourceLanguage") ?? "") ?? .auto
-        shortcut = CaptureShortcut(rawValue: defaults.string(forKey: "capture.shortcut") ?? "") ?? .optionShift
+        shortcut = CaptureShortcut(rawValue: defaults.string(forKey: "capture.shortcut") ?? "") ?? .option
         showOnLaunch = defaults.bool(forKey: "window.showOnLaunch")
+        showInDock = defaults.bool(forKey: "window.showInDock")
         onlineReferences = defaults.object(forKey: "lookup.onlineReferences") == nil || defaults.bool(forKey: "lookup.onlineReferences")
     }
 }
