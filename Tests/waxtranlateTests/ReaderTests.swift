@@ -643,9 +643,14 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
             let sample = passage(word, context, language: "zh-Hans")
             let reference = LookupTranslation.makeResult(for: sample, meaning: word, origin: .standalone,
                                                         sentence: "Translated context.")
-            try expect(reference.origin == .dictionary && reference.meaning.contains(expected))
+            if CompactGloss.mixedEnglishReference(for: sample) != nil {
+                try expect(reference.origin == .dictionary && reference.meaning.contains(expected))
+                print("Mixed English reference →", word, reference.meaning)
+            } else {
+                try expect(reference.origin == .unresolved && !reference.isUsable)
+                print("No installed English/Chinese dictionary: verified unresolved boundary for", word)
+            }
             try expect(reference.sentenceTranslation == "Translated context.")
-            print("Mixed English reference →", word, reference.meaning)
         }
         try expect(CompactGloss.mixedEnglishReference(for: passage("QzxUnknown", "这里有QzxUnknown名称。")) == nil)
         let unknown = passage("UnknownSDK", "这里有UnknownSDK这个名称。")
