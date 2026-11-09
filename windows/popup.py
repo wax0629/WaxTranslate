@@ -450,7 +450,7 @@ class Card(QWidget):
         self.more.setVisible(bool(word and can_save))
         self.expand.setChecked(False)
         self.expand.setVisible(full_context is not None and expand_label != "更多释义")
-        self.actions.setVisible(bool(translation))
+        self.actions.setVisible(bool(translation) or can_search)
         self.display_context(False)
         if not self.isVisible():
             self.show()
