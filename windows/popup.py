@@ -253,6 +253,7 @@ class Card(QWidget):
         self.copy.setToolTip("已复制")
 
     def show_message(self, caption, message, point):
+        self.loading = caption == "本机翻译"
         self.rule_state = None
         self.rule_request_id = getattr(self,"rule_request_id",0)+1
         self.listen.set_content()
@@ -302,6 +303,7 @@ class Card(QWidget):
 
     def show_result(self, passage, origin, gloss, sentence, point, excerpt=None, language="", pos="",
                     can_save=True, can_search=False, references=(), web_search=False):
+        self.loading = False
         if passage.selection and not (references or web_search) and (chinese_context(passage) or passage.structure in ('path','fragment','title') or origin == '暂未收录' or origin in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考')):
             self.show_rule_result(passage, origin, gloss, sentence, point, language, pos, can_save, can_search)
             return
@@ -549,7 +551,7 @@ class Card(QWidget):
             super().mousePressEvent(event)
 
     def event(self, event):
-        if (event.type() == QEvent.WindowDeactivate and self.dismiss_on_deactivate and not self.pin.isChecked()
+        if (event.type() == QEvent.WindowDeactivate and not getattr(self,'loading',False) and self.dismiss_on_deactivate and not self.pin.isChecked()
                 and self.isVisible() and QApplication.activePopupWidget() is None):
             self.close()
         return super().event(event)
