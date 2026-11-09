@@ -167,7 +167,8 @@ class Checks(unittest.TestCase):
                 for width, height in ((1080, 675), (820, 500), (740, 480), (570, 485), (540, 610), (540, 800)):
                     window.resize(width, height)
                     QApplication.processEvents()
-                    self.assertEqual(window.sidebar.height(), 36 if window.compact else 38)
+                    self.assertGreaterEqual(window.sidebar.height(), 44)
+                    self.assertLessEqual(window.sidebar.height(), 56)
                     self.assertGreaterEqual(window.wordmark.width(), window.wordmark.sizeHint().width())
                     for button in nav:
                         self.assertTrue(window.sidebar.rect().contains(button.geometry()))
@@ -175,7 +176,7 @@ class Checks(unittest.TestCase):
                     self.assertGreater(nav[-1].x(), nav[-2].geometry().right())
                     self.assertTrue(all(v.isVisible() and v.text() == "0" for v in home.values.values()))
                     self.assertTrue(home.heading.isVisible())
-                    for control in (home.heading, home.instructions, home.region):
+                    for control in (home.heading, home.instructions):
                         bounds = QRect(control.mapTo(home, QPoint()), control.size())
                         self.assertTrue(home.rect().contains(bounds), (width, height, bounds))
                     self.assertGreaterEqual(home.instructions.width(), home.instructions.layout().sizeHint().width())
@@ -206,7 +207,9 @@ class Checks(unittest.TestCase):
                 for width, height in ((1000, 620), (540, 800), (540, 390)):
                     window.resize(width, height)
                     QApplication.processEvents()
-                    self.assertTrue(home.rect().contains(QRect(home.region.mapTo(home, QPoint()), home.region.size())))
+                    self.assertFalse(any(b.text() == "框选翻译" for b in home.findChildren(QPushButton)))
+                    self.assertTrue(window.app_menu.isVisible())
+                    self.assertIs(window.app_menu.menu(), window.tray.contextMenu())
                     self.assertLessEqual(abs(home.instructions.y() - home.page.contentsMargins().top()), 2)
                     if height >= 620:
                         self.assertEqual(home.table.verticalScrollBar().maximum(), 0)
@@ -223,10 +226,9 @@ class Checks(unittest.TestCase):
                     self.assertTrue(button.isChecked())
                 nav[2].click()
                 self.assertIs(window.tabs.currentWidget(), window.library)
-                read = next(button for button in window.library.empty.findChildren(QPushButton)
-                            if button.text() == "打开对照翻译")
-                read.setFocus()
-                QTest.keyClick(read, Qt.Key_Space)
+                self.assertFalse(any(button.text() == "打开对照翻译" for button in window.library.empty.findChildren(QPushButton)))
+                nav[1].setFocus()
+                QTest.keyClick(nav[1], Qt.Key_Space)
                 self.assertIs(window.tabs.currentWidget(), window.reader_page)
             finally:
                 window.shutdown()
@@ -350,7 +352,7 @@ class Checks(unittest.TestCase):
                 self.assertFalse(home.key.isVisible())
                 self.assertEqual(editor.toPlainText(), RIVER)
                 with patch.object(window, "begin") as begin:
-                    home.region.click()
+                    next(a for a in window.tray.contextMenu().actions() if a.text() == "框选翻译").trigger()
                     begin.assert_called_once_with(True)
 
                 # Neither a completed region nor a superseded word is a new word lookup.
@@ -676,7 +678,7 @@ class Checks(unittest.TestCase):
             first = doc.find("bank")
             second = doc.find("bank", first)
             self.assertEqual(first.charFormat().background().style(), Qt.NoBrush)
-            self.assertNotEqual(second.charFormat().background().style(), Qt.NoBrush)
+            self.assertGreater(second.charFormat().fontWeight(), first.charFormat().fontWeight())
 
             word = "inter" * 110
             card.show_result(Passage(word, (0, len(word))), "单词参考", "很长的释义" * 120, "译文", point)
@@ -738,7 +740,7 @@ class Checks(unittest.TestCase):
                 window.resize(610, 490)
                 wait_until(lambda: ui.output.mapTo(ui, QPoint()).y() > ui.input.mapTo(ui, QPoint()).y())
                 window.tabs.setCurrentWidget(window.home)
-                self.assertTrue(window.home.region.isVisible())
+                self.assertTrue(any(a.text() == "框选翻译" for a in window.tray.contextMenu().actions()))
                 self.assertEqual(ui.input.toPlainText(), RIVER)
             finally:
                 window.shutdown()
@@ -1067,7 +1069,7 @@ class Checks(unittest.TestCase):
             wait_until(lambda: native_target() == int(menu.winId()))
             user.mouse_event(2, 0, 0, 0, 0)
             user.mouse_event(4, 0, 0, 0, 0)
-            wait_until(lambda: card.copy.text() == "已复制")
+            wait_until(lambda: card.copy.toolTip() == "已复制")
             button = window.card.pin
             center = button.mapToGlobal(button.rect().center())
             move_cursor(center)

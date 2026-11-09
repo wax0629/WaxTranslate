@@ -22,7 +22,7 @@ from library import Library
 from reader import Passage, recognize
 from settings_page import SettingsPage
 from startup import LoginStartup
-from theme import APP_NAME, apply_theme, label, ui_icon
+from theme import APP_NAME, COLORS, apply_theme, label, ui_icon
 from languages import UnsupportedLanguage
 from workspace import TextWorkspace
 from window_frame import WindowOutline, configure_frame, frame_result
@@ -180,22 +180,26 @@ class Window(QWidget):
         self.wordmark = label(APP_NAME, "brand")
         self.wordmark.setAccessibleName(APP_NAME)
         rail.addWidget(self.wordmark)
+        rail.addStretch()
         self.tabs = QStackedWidget()
         outer.addWidget(self.tabs, 1)
         group = self.navigation = QButtonGroup(self)
         for index, name in enumerate(("首页", "对照翻译", "生词本", "设置")):
             nav = QPushButton(name)
             nav.setAccessibleName(name)
-            if name == "设置":
-                rail.addStretch()
-                nav.setIcon(ui_icon("settings"))
-                nav.setIconSize(QSize(14, 14))
             nav.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
             nav.setCheckable(True)
             nav.setProperty("role", "nav")
             nav.setCursor(Qt.PointingHandCursor)
             group.addButton(nav, index)
             rail.addWidget(nav, 0, Qt.AlignBottom)
+        self.app_menu = QPushButton(ui_icon("menu"), "", objectName="appMenu")
+        self.app_menu.setProperty("role", "windowControl")
+        self.app_menu.setAccessibleName("应用菜单")
+        self.app_menu.setToolTip("框选翻译与更多操作")
+        self.app_menu.setFixedSize(28, 28)
+        self.app_menu.setIconSize(QSize(17, 17))
+        rail.addWidget(self.app_menu)
         divider = QFrame(objectName="navDivider")
         divider.setFixedSize(1, 17)
         rail.addWidget(divider)
@@ -222,7 +226,6 @@ class Window(QWidget):
 
         self.home = HomePage()
         self.tabs.addWidget(self.home)
-        self.home.region_requested.connect(lambda: self.begin(True))
         self.home.settings_requested.connect(self.open_gesture_settings)
         self.home.stats_requested.connect(self.refresh_home)
         self.stats_ready.connect(self.home.set_stats)
@@ -267,12 +270,14 @@ class Window(QWidget):
         self.trigger.currentIndexChanged.connect(self.change_trigger)
         menu = QMenu(self)
         menu.addAction(f"打开 {APP_NAME}", self.open_home)
+        menu.addAction("对照翻译", self.open_reader)
         menu.addAction("生词本", self.open_library)
         menu.addAction("框选翻译", lambda: self.begin(True))
         menu.addSeparator()
         menu.addAction("设置", self.open_settings)
         menu.addAction("退出", QApplication.quit)
         self.tray.setContextMenu(menu)
+        self.app_menu.setMenu(menu)
         self.tray.activated.connect(self.tray_clicked)
         self.sync_tray_window()
         self.gesture_ready = False
@@ -290,52 +295,50 @@ class Window(QWidget):
         self.ensurePolished()
         self.arrange_shell(True)
         self.setMinimumSize(self.minimumSizeHint().boundedTo(size))
-        self.arrange_shell(size.width() < 820)
+        self.arrange_shell(size.width() < 760)
         self.resize(size)
         QApplication.instance().aboutToQuit.connect(self.shutdown)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.outline.setGeometry(self.rect())
-        self.arrange_shell(event.size().width() < 820)
+        self.arrange_shell(event.size().width() < 760)
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        if self.backdrop.isNull():
+        if self.backdrop.isNull() or self.tabs.currentWidget() is not self.home:
             return
+        bounds = QRectF(self.home.geometry()).translated(self.tabs.pos())
+        artwork = QRectF(bounds.right() - bounds.width() * 0.72, bounds.top(), bounds.width() * 0.72, bounds.height())
         w, h = self.backdrop.width(), self.backdrop.height()
-        scale = max(self.width() / w, self.height() / h)
-        crop_w, crop_h = self.width() / scale, self.height() / scale
-        x = max(0, min(w - crop_w, w * 0.72 - crop_w * 0.78))
-        y = max(0, min(h - crop_h, h * 0.32 - crop_h * 0.34))
+        scale = max(artwork.width() / w, artwork.height() / h)
+        crop_w, crop_h = artwork.width() / scale, artwork.height() / scale
         with QPainter(self) as painter:
             painter.setRenderHint(QPainter.SmoothPixmapTransform)
-            painter.drawPixmap(QRectF(self.rect()), self.backdrop, QRectF(x, y, crop_w, crop_h))
-            if self.tabs.currentWidget() is self.home:
-                return
-            wash = QLinearGradient(0, 0, self.width(), 0)
-            wash.setColorAt(0, QColor(250, 249, 246, 230))
-            compact = self.width() < 720
-            wash.setColorAt(0.49 if compact else 0.37, QColor(250, 249, 246, 202 if compact else 110))
-            wash.setColorAt(0.70, QColor(250, 249, 246, 0))
-            painter.fillRect(self.rect(), wash)
+            painter.drawPixmap(artwork, self.backdrop, QRectF((w - crop_w) / 2, (h - crop_h) / 2, crop_w, crop_h))
+            wash = QLinearGradient(bounds.topLeft(), bounds.topRight())
+            for position, alpha in ((0, 255), (0.39, 247), (0.55, 209), (0.82, 224 if self.width() < 760 else 31)):
+                color = QColor(COLORS["paper"])
+                color.setAlpha(alpha)
+                wash.setColorAt(position, color)
+            painter.fillRect(bounds, wash)
 
     def arrange_shell(self, compact):
         if self.compact == compact:
             return
         self.compact = compact
-        self.wordmark.setStyleSheet(f"font-size:{16 if compact else 20}px; padding-right:{8 if compact else 22}px;")
-        self.sidebar.setFixedHeight(36 if compact else 38)
+        self.wordmark.setStyleSheet(f"font-size:{20 if compact else 26}px; padding-right:4px;")
+        self.sidebar.setFixedHeight(46 if compact else 50)
         self.rail.setSpacing(2 if compact else 4)
         for button in self.navigation.buttons():
-            button.setStyleSheet(f"font-size:13px; min-height:{28 if compact else 30}px;"
-                                 f"padding:0 {8 if compact else 16}px;")
+            button.setStyleSheet(f"font-size:13px; min-height:{40 if compact else 44}px;"
+                                 f"padding:0 {7 if compact else 12}px;")
         if compact:
             self.rail.setContentsMargins(12, 0, 8, 0)
-            self.reading_layout.setContentsMargins(18, 18, 18, 18)
+            self.reading_layout.setContentsMargins(22, 24, 22, 24)
         else:
             self.rail.setContentsMargins(24, 0, 15, 0)
-            self.reading_layout.setContentsMargins(32, 24, 32, 24)
+            self.reading_layout.setContentsMargins(28, 28, 28, 28)
 
     def sync_tray_window(self):
         """Keep a normal, reachable window on desktops without a notification area."""
@@ -726,7 +729,7 @@ class Window(QWidget):
         if not self.search_context or self.online_job is not None:
             return
         ticket = self.ticket
-        self.card.online.setText("查询中…")
+        self.card.online.setToolTip("百科查询中…")
         self.card.online.setEnabled(False)
         future = self.online_pool.submit(online_meanings, self.search_context[0].word)
         self.online_job = future
@@ -757,7 +760,7 @@ class Window(QWidget):
             gloss = message if unknown else local_result[1] + "\n" + message
             self.card.show_result(passage, local_result[0], gloss, local_result[2], point,
                                   language=language, pos=pos, can_save=not unknown, can_search=True, web_search=True)
-            self.card.online.setText("再查一次")
+            self.card.online.setToolTip("百科暂不可用，点击重试")
 
     def closeEvent(self, event):
         if (self.preferences.close_behavior.currentData() == "tray" and self.tray.isVisible()

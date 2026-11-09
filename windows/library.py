@@ -2,8 +2,8 @@ from datetime import datetime, timedelta
 import sqlite3
 import time
 
-from PySide6.QtCore import QPointF, QRectF, QSize, QTimer, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeySequence, QPainter, QPainterPath, QPen, QPolygonF, QShortcut
+from PySide6.QtCore import QSize, QTimer, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeySequence, QPainter, QPen, QShortcut
 from PySide6.QtWidgets import (QBoxLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QListView, QListWidget,
                                QListWidgetItem, QMessageBox, QPushButton, QSizePolicy, QStyle,
                                QStyledItemDelegate, QTextBrowser, QVBoxLayout, QWidget)
@@ -11,46 +11,7 @@ from PySide6.QtWidgets import (QBoxLayout, QFrame, QHBoxLayout, QLabel, QLineEdi
 from reader import Passage
 from languages import NAMES
 from speech import ListenButton
-from theme import DOCUMENT_STYLE, label, marked_source, plain, result_html
-
-
-class NotebookCover(QWidget):
-    """A bookplate for the empty notebook."""
-
-    def __init__(self):
-        super().__init__()
-        self.setFixedSize(130, 85)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.translate(8, 0)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#d5d4ce"))
-        painter.drawEllipse(QRectF(3, 65, 108, 11))
-        for direction, color in ((-1, "#faf9f6"), (1, "#e6e5df")):
-            painter.save()
-            painter.translate(56, 0)
-            painter.scale(direction, 1)
-            page = QPainterPath(QPointF(0, 26))
-            page.cubicTo(13, 14, 32, 12, 48, 14)
-            page.lineTo(51, 59)
-            page.cubicTo(31, 58, 15, 63, 0, 71)
-            page.closeSubpath()
-            painter.setBrush(QColor("#161615"))
-            painter.drawPath(page.translated(0, 3))
-            painter.setBrush(QColor(color))
-            painter.setPen(QPen(QColor("#747470"), 1))
-            painter.drawPath(page)
-            for y in (28, 33, 38):
-                lines = QPainterPath(QPointF(12, y + 3))
-                lines.quadTo(25, y - 3, 38, y - 3)
-                painter.drawPath(lines)
-            painter.restore()
-        painter.setBrush(QColor("#161615"))
-        painter.drawPolygon(QPolygonF([QPointF(66, 20), QPointF(72, 17), QPointF(73, 39),
-                                       QPointF(69, 36), QPointF(66, 41)]))
+from theme import COLORS, DOCUMENT_STYLE, label, marked_source, plain, result_html
 
 
 class WordDelegate(QStyledItemDelegate):
@@ -64,16 +25,14 @@ class WordDelegate(QStyledItemDelegate):
         selected = bool(option.state & QStyle.State_Selected)
         painter.setPen(Qt.NoPen)
         if selected or option.state & QStyle.State_MouseOver:
-            painter.setBrush(QColor("#e6e5df" if selected else "#f0efea"))
+            painter.setBrush(QColor(COLORS["soft"] if selected else COLORS["paper"]))
             painter.drawRoundedRect(bounds, 4, 4)
-        if selected:
-            painter.fillRect(bounds.left(), bounds.top() + 10, 2, bounds.height() - 20, QColor("#161615"))
         if option.state & QStyle.State_HasFocus:
-            painter.setPen(QPen(QColor("#747470"), 1))
+            painter.setPen(QPen(QColor(COLORS["focus"]), 1))
             painter.setBrush(Qt.NoBrush)
             painter.drawRoundedRect(bounds, 4, 4)
         word, _, gloss = index.data().partition("\n")
-        rows = ((word, QFont("Spectral"), 21, "#161615"), (gloss, option.font, 12, "#595955"))
+        rows = ((word, QFont("Spectral"), 22, COLORS["ink"]), (gloss, option.font, 12, COLORS["muted"]))
         y = bounds.y() + 4
         for value, font, pixels, color in rows:
             font.setPixelSize(pixels)
@@ -134,19 +93,13 @@ class Library(QWidget):
         empty_layout.setContentsMargins(20, 18, 20, 18)
         empty_layout.setSpacing(8)
         empty_layout.addStretch()
-        empty_layout.addWidget(NotebookCover(), 0, Qt.AlignHCenter)
         empty_title = label("还没有收藏的生词", "subhead")
         empty_title.setAlignment(Qt.AlignCenter)
         empty_layout.addWidget(empty_title)
-        hint = label("查词时点「收藏生词」，即可在这里复习原句。", "meta")
+        hint = label("查词时点「加入生词本」，即可在这里复习原句。", "meta")
         hint.setAlignment(Qt.AlignCenter)
         hint.setWordWrap(True)
         empty_layout.addWidget(hint)
-        read = QPushButton("打开对照翻译")
-        read.setProperty("role", "primary")
-        read.clicked.connect(self.reader_requested)
-        empty_layout.addSpacing(3)
-        empty_layout.addWidget(read, 0, Qt.AlignHCenter)
         empty_layout.addStretch()
         layout.addWidget(self.empty, 1)
         self.entries = QWidget()
@@ -176,7 +129,7 @@ class Library(QWidget):
         card.addWidget(self.no_matches, 1)
         self.detail = QTextBrowser(objectName="entry")
         self.detail.setFrameShape(QFrame.NoFrame)
-        self.detail.document().setDefaultStyleSheet(DOCUMENT_STYLE + ".word {font-size:40px;}")
+        self.detail.document().setDefaultStyleSheet(DOCUMENT_STYLE)
         self.detail.document().setDocumentMargin(1)
         self.detail.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         self.detail.setOpenLinks(False)

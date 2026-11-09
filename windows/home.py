@@ -2,38 +2,34 @@
 from datetime import datetime
 import time
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView, QFrame, QGridLayout, QHeaderView, QHBoxLayout, QLabel, QLayout, QPushButton,
     QStackedWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from languages import NAMES
-from theme import ui_icon
+from theme import COLORS, theme_css
 
 
-HOME_STYLE = """
+HOME_STYLE = theme_css("""
     QWidget#home {background:transparent;}
-    QPushButton#useHint {background:rgba(250,249,246,220); border:1px solid transparent; border-radius:4px; padding:0;}
+    QPushButton#useHint {background:transparent; border:1px solid transparent; border-radius:4px; padding:0;}
     QPushButton#useHint:focus, QPushButton#useHint:hover {border-bottom:1px solid #79756e;}
-    QPushButton#useHint QLabel {color:#403e39; font-size:13px;}
-    QLabel#shortcutKey {background:#f7f5ef; border:1px solid #b8b4aa; border-bottom:2px solid #aaa69c;
-        border-radius:4px; padding:1px 5px; font-weight:600;}
-    QPushButton#region {background:rgba(250,249,246,185); color:#292824; border:1px solid #aaa69c;
-        border-radius:5px; padding:4px 8px; font-size:13px;}
-    QPushButton#region:hover, QPushButton#region:focus {background:#efede6; border-color:#494740;}
-    QFrame#statTile {background:rgba(255,254,251,229); border:1px solid rgba(117,113,102,44); border-radius:10px;}
-    QLabel#statValue {color:#201f1c; font:600 29px 'Segoe UI','Microsoft YaHei UI';}
-    QLabel#statName {color:#393832; font-size:13px;}
-    QLabel#statNote, QLabel#historyNotice {color:#5b5951; font-size:12px;}
-    QLabel#recentTitle {color:#45423c; font-size:14px; font-weight:600;}
+    QPushButton#useHint QLabel {color:$ink; font-size:12px;}
+    QLabel#shortcutKey {background:transparent; border:0; padding:0; font-weight:400;}
+    QFrame#statTile {background:$sheet; border:1px solid $rule; border-radius:10px;}
+    QLabel#statValue {color:$ink; font:30px 'Spectral';}
+    QLabel#statName {color:$ink; font-size:12px;}
+    QLabel#statNote, QLabel#historyNotice {color:$muted; font-size:11px;}
+    QLabel#recentTitle {color:$ink; font-size:13px; font-weight:600;}
     QTableWidget#recentWords {background:transparent; border:0; outline:0;
-        selection-background-color:#e6e4dd; selection-color:#171715;}
+        selection-background-color:$soft; selection-color:$ink;}
     QTableWidget#recentWords::item {border:0; padding:0 2px;}
     QTableWidget#recentWords::item:focus {border:1px solid #767369;}
-    QLabel#homeWarning {color:#862d21; font-size:13px;}
-"""
+    QLabel#homeWarning {color:$accent; font-size:13px;}
+""")
 
 
 def elapsed_label(stamp, now):
@@ -50,7 +46,6 @@ def elapsed_label(stamp, now):
 
 
 class HomePage(QWidget):
-    region_requested = Signal()
     settings_requested = Signal()
     stats_requested = Signal()
 
@@ -65,7 +60,7 @@ class HomePage(QWidget):
         outer.addWidget(self.column)
         outer.addStretch()
         self.page = QVBoxLayout(self.column)
-        self.page.setSpacing(9)
+        self.page.setSpacing(18)
         tools = QHBoxLayout()
         self.instructions = QPushButton(objectName="useHint")
         self.instructions.setToolTip("更改取词键")
@@ -74,7 +69,7 @@ class HomePage(QWidget):
         hint = QHBoxLayout(self.instructions)
         hint.setSizeConstraint(QLayout.SetFixedSize)
         hint.setSpacing(4)
-        hint.setContentsMargins(4, 3, 4, 3)
+        hint.setContentsMargins(0, 3, 0, 3)
         self.hint_start = QLabel()
         self.key = QLabel(objectName="shortcutKey")
         self.hint_end = QLabel("查看释义")
@@ -83,15 +78,13 @@ class HomePage(QWidget):
             hint.addWidget(part)
         tools.addWidget(self.instructions)
         tools.addStretch()
-        self.region = QPushButton(ui_icon("region"), "框选翻译", objectName="region")
-        self.region.setIconSize(QSize(14, 14))
-        self.region.setCursor(Qt.PointingHandCursor)
-        self.region.clicked.connect(self.region_requested)
-        tools.addWidget(self.region)
         self.page.addLayout(tools)
 
-        self.grid = QGridLayout()
-        self.grid.setSpacing(8)
+        self.statistics = QWidget()
+        self.statistics.setMaximumWidth(432)
+        self.grid = QGridLayout(self.statistics)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setSpacing(12)
         self.grid.setColumnStretch(0, 1)
         self.grid.setColumnStretch(1, 1)
         self.values = {}
@@ -99,14 +92,14 @@ class HomePage(QWidget):
                                               ("待复习", "已到复习时间"), ("已掌握", "连续记住 3 次"))):
             tile = QFrame(objectName="statTile")
             content = QVBoxLayout(tile)
-            content.setContentsMargins(14, 6, 12, 9)
-            content.setSpacing(1)
+            content.setContentsMargins(14, 9, 14, 11)
+            content.setSpacing(2)
             line = QHBoxLayout()
             line.setSpacing(5)
             value = QLabel("—", objectName="statValue")
             self.values[name] = value
             line.addWidget(value)
-            line.addWidget(QLabel(name, objectName="statName"), 0, Qt.AlignVCenter)
+            line.addWidget(QLabel(name, objectName="statName"), 0, Qt.AlignBaseline)
             line.addStretch()
             content.addLayout(line)
             description = QLabel(note, objectName="statNote")
@@ -114,7 +107,7 @@ class HomePage(QWidget):
                 self.today = description
             content.addWidget(description)
             self.grid.addWidget(tile, index // 2, index % 2)
-        self.page.addLayout(self.grid)
+        self.page.addWidget(self.statistics)
         self.heading = QLabel("最近取词", objectName="recentTitle")
         self.heading.setContentsMargins(1, 5, 0, 0)
         self.page.addWidget(self.heading)
@@ -135,7 +128,7 @@ class HomePage(QWidget):
         self.table.viewport().setAutoFillBackground(False)
         self.table.setFrameShape(QFrame.NoFrame)
         self.table.verticalHeader().hide()
-        self.table.verticalHeader().setDefaultSectionSize(34)
+        self.table.verticalHeader().setDefaultSectionSize(38)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Fixed)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
@@ -178,11 +171,11 @@ class HomePage(QWidget):
             for row, (word, language, gloss, stamp) in enumerate(recent):
                 for column, value in enumerate((word, gloss, "")):
                     item = QTableWidgetItem(value)
-                    font = QFont({"ja": "Yu Gothic UI", "ko": "Malgun Gothic"}.get(language, "Segoe UI")
+                    font = QFont({"ja": "Yu Gothic UI", "ko": "Malgun Gothic"}.get(language, "Spectral")
                                  if column == 0 else "Microsoft YaHei UI")
-                    font.setPixelSize((15, 14, 12)[column])
+                    font.setPixelSize((18, 13, 10)[column])
                     item.setFont(font)
-                    item.setForeground(QColor(("#201f1c", "#383731", "#5a5851")[column]))
+                    item.setForeground(QColor(COLORS["muted"] if column == 2 else COLORS["ink"]))
                     if column == 2:
                         item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                         item.setToolTip(datetime.fromtimestamp(stamp).strftime("%Y-%m-%d %H:%M") if stamp else "")
@@ -202,21 +195,13 @@ class HomePage(QWidget):
 
     def arrange(self):
         compact = self.width() < 760
-        width = min(self.width(), max(445, min(710, round(self.width() * 0.58))))
+        width = self.width() if compact else min(640, round(self.width() * 0.64))
         self.column.setFixedWidth(width)
-        margin = 16 if compact else 28
-        self.page.setContentsMargins(margin, 14, 12, 14)
-        self.table.setColumnWidth(0, (width - margin - 12) // 3)
-        self.table.setColumnWidth(2, 76)
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        edge = self.column.width()
-        wash = QLinearGradient(0, 0, edge + self.width() * 0.13, 0)
-        for position, opacity in ((0, 244), (0.75, 235), (0.87, 207), (1, 0)):
-            wash.setColorAt(position, QColor(250, 249, 246, opacity))
-        with QPainter(self) as painter:
-            painter.fillRect(self.rect(), wash)
+        margin = 22 if compact else 26
+        self.statistics.setFixedWidth(min(432, max(1, width - margin * 2)))
+        self.page.setContentsMargins(margin, 24, margin, 24)
+        self.table.setColumnWidth(0, max(100, (width - margin * 2 - 60) // 2))
+        self.table.setColumnWidth(2, 60)
 
     def showEvent(self, event):
         super().showEvent(event)
