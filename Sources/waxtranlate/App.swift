@@ -315,7 +315,7 @@ import Combine
             let area = (NSScreen.screens.first(where: { $0.frame.contains(panel.frame.origin) }) ?? NSScreen.main)?.visibleFrame ?? .zero
             panel.setFrameOrigin(CGPoint(x: min(max(area.minX, panel.frame.minX), area.maxX - panel.frame.width),
                                          y: max(area.minY, min(top - panel.frame.height, area.maxY - panel.frame.height))))
-        })
+        }, query: { [weak self] next in self?.present(next, at: point, focus: true) })
         show(card, at: point, focus: focus)
     }
 

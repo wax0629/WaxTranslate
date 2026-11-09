@@ -12,6 +12,7 @@ struct ResultCard: View {
     let focusForDownload: () -> Void
     let pin: (Bool) -> Void
     let resize: (CGSize) -> Void
+    let query: (Passage) -> Void
     private let source: Locale.Language
     private let target: Locale.Language
     private let dictionary: [String]
@@ -36,7 +37,7 @@ struct ResultCard: View {
 
     init(passage: Passage, notebook: Notebook, preferences: Preferences, trace: LookupTrace = LookupTrace(), close: @escaping () -> Void,
          speak: @escaping (String, String) -> Void, focusForDownload: @escaping () -> Void,
-         pin: @escaping (Bool) -> Void = { _ in }, resize: @escaping (CGSize) -> Void = { _ in }) {
+         pin: @escaping (Bool) -> Void = { _ in }, resize: @escaping (CGSize) -> Void = { _ in }, query: @escaping (Passage) -> Void = { _ in }) {
         self.passage = passage
         self.notebook = notebook
         self.preferences = preferences
@@ -46,6 +47,7 @@ struct ResultCard: View {
         self.focusForDownload = focusForDownload
         self.pin = pin
         self.resize = resize
+        self.query = query
         policy = LookupPolicy(passage)
         _contextVisible = State(initialValue: LookupPolicy(passage).defaultsToContext)
         excerpt = SentenceExcerpt(passage)
@@ -223,6 +225,13 @@ struct ResultCard: View {
             else if expanded && result?.excerptTranslation != nil {
                 Text("完整句译暂不可用，可收起查看节选对照。").font(.caption).foregroundStyle(DeskTheme.muted)
             }
+            if policy.isChineseContext && policy.defaultsToContext {
+                HStack(spacing: 12) {
+                    ForEach(relatedTerms.indices, id: \.self) { index in
+                        Button(relatedTerms[index].text) { query(relatedTerms[index]) }
+                    }
+                }.buttonStyle(.plain).font(.caption).foregroundStyle(DeskTheme.accent)
+            }
             HStack(spacing: 18) {
                 if hasSentence && excerpt.isTruncated {
                     Button(expanded ? "收起" : "展开当前句") {
@@ -238,6 +247,19 @@ struct ResultCard: View {
                     if !policy.defaultsToContext { Button("收起原文") { contextVisible = false } }
                 }
             }.buttonStyle(.plain).font(.caption).foregroundStyle(DeskTheme.muted)
+        }
+    }
+
+    private var relatedTerms: [Passage] {
+        let regex = try! NSRegularExpression(pattern: "[A-Za-z][A-Za-z0-9+#]*")
+        let context = displayedPassage.context
+        return regex.matches(in: context, range: NSRange(context.startIndex..., in: context)).compactMap { match in
+            guard let range = Range(match.range, in: context) else { return nil }
+            let text = String(context[range])
+            let offset = expanded ? 0 : (passage.selection?.location ?? 0) - (excerpt.passage.selection?.location ?? 0)
+            let selection = NSRange(location: match.range.location + offset, length: match.range.length)
+            guard selection != passage.selection else { return nil }
+            return Passage(text: text, context: passage.context, selection: selection, language: passage.language)
         }
     }
 
