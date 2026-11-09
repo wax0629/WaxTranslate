@@ -58,7 +58,7 @@ struct SentenceExcerpt {
             range.map { NSRange(location: $0.location - offset, length: $0.length) }
         }
         return Passage(text: original.text, context: context, selection: shifted(original.selection),
-                       anchor: shifted(original.anchor), language: original.sourceLanguage)
+                       anchor: shifted(original.anchor), language: original.sourceLanguage, structure: original.structure)
     }
 
 }
@@ -76,7 +76,7 @@ enum SentenceContext {
         // a title unit. Never apply this to ordinary Japanese prose or metadata.
         if prominent, heading.count <= 48, heading.contains("・"),
            heading.range(of: #"^[\p{Katakana}ー・ 　]+$"#, options: .regularExpression) != nil {
-            return Passage(text: heading, context: heading, language: language ?? "ja")
+            return Passage(text: heading, context: heading, language: language ?? "ja", structure: .title)
         }
         let above = neighbors(from: anchor, in: lines, upward: true)
         let below = neighbors(from: anchor, in: lines, upward: false)
@@ -97,13 +97,30 @@ enum SentenceContext {
         let context = String(slice).trimmingCharacters(in: .whitespacesAndNewlines)
         let offset = wordOffset - slice.startIndex.utf16Offset(in: paragraph)
         let hit = NSRange(location: offset, length: wordRange.length)
+        let isList = heading.range(of: #"^\s*(?:[•●▪◦*+-]|[0-9]+[.)、])\s*"#, options: .regularExpression) != nil
+        let isPath = heading.range(of: #"^(?:[A-Za-z]:)?[\w./\\-]+[/\\][\w.\-]+$"#, options: .regularExpression) != nil
+        let incomplete = context.hasPrefix("…") || context.hasSuffix("…") || context.hasPrefix("...") || context.hasSuffix("...")
+        let possibleTitle = prominent && heading.count <= 100 && heading.range(of: "[。！？.!?]", options: .regularExpression) == nil
+        let structure: Passage.Structure = isPath ? .path : isList ? .list : incomplete ? .fragment : possibleTitle ? .title : .sentence
         let token = Passage(text: word, context: context, selection: hit, language: language,
-                            nearbyContext: paragraph, nearbySelection: NSRange(location: wordOffset, length: wordRange.length))
+                            nearbyContext: paragraph, nearbySelection: NSRange(location: wordOffset, length: wordRange.length), structure: structure)
         let sentenceRange = NSRange(context.startIndex..., in: context)
         guard let match = englishPhrases.matches(in: context, range: sentenceRange).first(where: {
             NSIntersectionRange($0.range, hit) == hit
         }), (token.sourceLanguage == "en" || token.sourceLanguage.hasPrefix("zh")), let range = Range(match.range, in: context) else { return token }
-        return Passage(text: String(context[range]), context: context, selection: match.range, anchor: hit, language: language)
+        return Passage(text: String(context[range]), context: context, selection: match.range, anchor: hit, language: language, structure: structure)
+    }
+
+    // Text editors preserve hard block boundaries. Never flatten the whole
+    // document into one OCR line, or let a definition leak from another item.
+    static func passage(in text: String, selection: NSRange, language: String? = nil) throws -> Passage {
+        guard let selected = Range(selection, in: text) else { throw ReaderError.noText }
+        let left = text[..<selected.lowerBound].lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
+        let right = text[selected.upperBound...].firstIndex(of: "\n") ?? text.endIndex
+        let block = String(text[left..<right])
+        let offset = left.utf16Offset(in: text)
+        return try passage(in: [TextLine(text: block, frame: CGRect(x: 0, y: 0, width: 1, height: 1),
+                                        hit: NSRange(location: selection.location - offset, length: selection.length))], language: language)
     }
 
     // Match only contiguous expressions, including ordinary inflections. Keep the

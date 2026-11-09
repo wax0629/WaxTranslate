@@ -29,6 +29,10 @@ struct ResultCard: View {
     @State private var contextVisible = false
     @State private var contextRequested = false
     @State private var secondaryVisible = false
+    @State private var manualRequest: TranslationRequest?
+    @State private var manualID: UUID?
+    @State private var manualError = ""
+    @State private var wordRequest: TranslationRequest?
     @State private var recordID: UUID?
     @State private var references: [WordReference] = []
     @State private var referenceStatus = ""
@@ -113,6 +117,9 @@ struct ResultCard: View {
             if policy.needsConfirmation { phase = .done; return }
             if !policy.automaticallyTranslatesContext {
                 if result == nil { result = LookupResult(meaning: "", origin: .unresolved) }
+                if policy.object == .word && policy.isChineseContext && result?.isUsable != true && policy.headwordLanguage == "en" {
+                    wordRequest = TranslationRequest(text: passage.text, source: "en")
+                }
                 phase = .done
                 // A mixed-language word needs an independent English reference,
                 // never a Chinese→English sentence call to explain its headword.
@@ -123,27 +130,13 @@ struct ResultCard: View {
         }
         .translationTask(configuration) { session in
             do {
-                let requestedContext = contextRequested
-                let requestedExpanded = expanded
-                let requestedPassage = displayedPassage
                 let began = LookupTrace.now
                 try await session.prepareTranslation()
                 trace.record("translation.prepare", since: began)
-                let translated: LookupResult
-                if requestedContext {
-                    var preserved = result ?? LookupResult(meaning: "", origin: .unresolved)
-                    let text = try await session.translate(requestedPassage.context).targetText
-                    if !requestedExpanded && excerpt.isTruncated { preserved.excerptTranslation = TranslationOutput.normalize(text, target: target.minimalIdentifier) }
-                    else { preserved.sentenceTranslation = TranslationOutput.normalize(text, target: target.minimalIdentifier) }
-                    translated = preserved
-                } else {
-                    translated = try await LookupTranslation.translate(passage, session: session, dictionary: dictionary, trace: trace)
-                }
+                let displayed = try await LookupTranslation.translate(passage, session: session, dictionary: dictionary, trace: trace)
                 try Task.checkCancellation()
-                guard !requestedContext || (contextRequested && expanded == requestedExpanded) else { phase = .done; return }
-                let displayed = translated
                 result = displayed
-                if !requestedContext { LookupCache.shared.insert(displayed, for: passage) }
+                LookupCache.shared.insert(displayed, for: passage)
                 copied = false
                 phase = .done
                 record(displayed)
@@ -152,6 +145,38 @@ struct ResultCard: View {
                 if !Task.isCancelled { phase = .failed }
             }
         }
+        .background {
+            if let request = manualRequest {
+                TranslationRunner(request: request) { completed, outcome in
+                    guard manualID == completed.id, contextRequested else { return }
+                    manualRequest = nil
+                    switch outcome {
+                    case .success(let text):
+                        let text = TranslationOutput.normalize(text, target: completed.target)
+                        var value = result ?? LookupResult(meaning: "", origin: .unresolved)
+                        if completed.text == passage.context { value.sentenceTranslation = text }
+                        else { value.excerptTranslation = text }
+                        result = value
+                    case .failure: manualError = "这段原文翻译未完成，可重试。"
+                    }
+                }.id(request.id)
+            }
+            if let request = wordRequest {
+                TranslationRunner(request: request) { completed, outcome in
+                    guard wordRequest?.id == completed.id else { return }
+                    wordRequest = nil
+                    if case .success(let text) = outcome {
+                        let value = LookupTranslation.makeResult(for: passage, meaning: text, origin: .standalone)
+                        result = value; record(value)
+                    }
+                }.id(request.id)
+            }
+        }
+        .environment(\.openURL, OpenURLAction { url in
+            guard url.scheme == "waxterm" else { return .systemAction }
+            openTerm(url)
+            return .handled
+        })
         .task(id: referenceAttempt) {
             guard referenceAvailable, referenceAttempt > 0 else { return }
             referenceBusy = true
@@ -166,6 +191,11 @@ struct ResultCard: View {
     }
 
     @ViewBuilder private var queryExtras: some View {
+                    if passage.structure == .title && hasSentence {
+                        Button("翻译整个标题") {
+                            query(Passage(text: passage.context, context: passage.context, language: passage.language, structure: .title))
+                        }.buttonStyle(.plain).font(.caption)
+                    }
                     if policy.needsConfirmation {
                         Button(secondaryVisible ? "收起参考" : policy.object == .code ? "查看组成词" : "查看候选解释") { secondaryVisible.toggle() }
                             .buttonStyle(.plain).font(.caption).foregroundStyle(DeskTheme.muted)
@@ -214,40 +244,71 @@ struct ResultCard: View {
         VStack(alignment: .leading, spacing: 10) {
             BookRule()
             HStack {
-                Text(isRegion ? "原文" : !expanded && excerpt.isTruncated ? "相关原文节选" : "相关原文").font(.caption).foregroundStyle(DeskTheme.muted)
+                Text(isRegion ? "原文" : passage.structure == .fragment ? "识别片段" : passage.structure == .path ? "所在路径" : !expanded && excerpt.isTruncated ? "相关原文节选" : "相关原文").font(.caption).foregroundStyle(DeskTheme.muted)
                 Spacer()
                 Button { speak(isRegion ? passage.text : displayedPassage.context, source.minimalIdentifier) } label: { Image(systemName: "speaker.wave.2") }
                     .buttonStyle(.plain).help("朗读原句").accessibilityLabel("朗读原句")
             }
-            Text(LookupTranslation.markedSentence(displayedPassage) ?? AttributedString(isRegion ? passage.text : displayedPassage.context))
+            Text(contextText)
                 .font(.custom("Baskerville", size: 16)).lineSpacing(3)
             if (policy.automaticallyTranslatesContext || contextRequested), let translated = displayedSentenceTranslation { Text(translated).font(.system(size: 13)).lineSpacing(3) }
             else if expanded && result?.excerptTranslation != nil {
                 Text("完整句译暂不可用，可收起查看节选对照。").font(.caption).foregroundStyle(DeskTheme.muted)
             }
-            if policy.isChineseContext && policy.defaultsToContext {
-                HStack(spacing: 12) {
-                    ForEach(relatedTerms.indices, id: \.self) { index in
-                        Button(relatedTerms[index].text) { query(relatedTerms[index]) }
-                    }
-                }.buttonStyle(.plain).font(.caption).foregroundStyle(DeskTheme.accent)
-            }
             HStack(spacing: 18) {
                 if hasSentence && excerpt.isTruncated {
-                    Button(expanded ? "收起" : "展开当前句") {
+                    Button(expanded ? "收起" : passage.structure == .list ? "展开当前项" : passage.structure == .fragment ? "展开识别片段" : "展开当前句") {
                         expanded.toggle()
-                        if contextRequested { contextRequested = false; phase = .done; configuration = nil }
+                        cancelManualTranslation()
                     }
                 }
-                if !policy.automaticallyTranslatesContext {
+                if !policy.automaticallyTranslatesContext && passage.structure != .path && passage.structure != .fragment {
                     Button(contextRequested && displayedSentenceTranslation != nil ? "收起句译" : "翻译这句") {
-                        if contextRequested && displayedSentenceTranslation != nil { contextRequested = false; configuration = nil; phase = .done }
-                        else { contextRequested = true; Task { await prepare() } }
+                        if contextRequested { cancelManualTranslation() }
+                        else { requestContextTranslation() }
                     }
-                    if !policy.defaultsToContext { Button("收起原文") { contextVisible = false } }
+                    if !policy.defaultsToContext { Button("收起原文") { contextVisible = false; cancelManualTranslation() } }
                 }
             }.buttonStyle(.plain).font(.caption).foregroundStyle(DeskTheme.muted)
+            if manualRequest != nil { ProgressView("正在翻译这段原文…").controlSize(.small) }
+            if !manualError.isEmpty { Button(manualError + " 重试") { requestContextTranslation() }.font(.caption) }
+            if passage.structure == .fragment { Text("可重新取词或从菜单框选完整原文。").font(.caption).foregroundStyle(DeskTheme.muted) }
         }
+    }
+
+    private func openTerm(_ url: URL) {
+        guard let location = Int(url.host ?? ""), let length = Int(url.path.dropFirst()),
+              let range = Range(NSRange(location: location, length: length), in: passage.context) else { return }
+        query(Passage(text: String(passage.context[range]), context: passage.context,
+                      selection: NSRange(location: location, length: length), language: passage.language, structure: passage.structure))
+    }
+    private func cancelManualTranslation() {
+        manualID = nil; manualRequest = nil; contextRequested = false; manualError = ""
+    }
+    private func requestContextTranslation() {
+        let request = TranslationRequest(text: displayedPassage.context, source: passage.sourceLanguage)
+        manualError = ""; contextRequested = true; manualID = request.id; manualRequest = request
+    }
+    private var contextText: AttributedString {
+        var text = LookupTranslation.markedSentence(displayedPassage) ?? AttributedString(isRegion ? passage.text : displayedPassage.context)
+        if !expanded && excerpt.isTruncated {
+            let offset = (passage.selection?.location ?? 0) - (excerpt.passage.selection?.location ?? 0)
+            if offset > 0 { text = AttributedString("…") + text }
+            if offset + excerpt.passage.context.utf16.count < passage.context.utf16.count { text += AttributedString("…") }
+        }
+        guard policy.isChineseContext else { return text }
+        for candidate in relatedTerms {
+            guard let selection = candidate.selection,
+                  let local = relatedLocalRange(selection),
+                  let range = Range(local, in: text) else { continue }
+            text[range].link = URL(string: "waxterm://\(selection.location)/\(selection.length)")
+        }
+        return text
+    }
+    private func relatedLocalRange(_ selection: NSRange) -> NSRange? {
+        let offset = expanded ? 0 : (passage.selection?.location ?? 0) - (excerpt.passage.selection?.location ?? 0)
+        let range = NSRange(location: selection.location - offset + ((!expanded && excerpt.isTruncated && offset > 0) ? 1 : 0), length: selection.length)
+        return range.location >= 0 ? range : nil
     }
 
     private var relatedTerms: [Passage] {
@@ -259,7 +320,7 @@ struct ResultCard: View {
             let offset = expanded ? 0 : (passage.selection?.location ?? 0) - (excerpt.passage.selection?.location ?? 0)
             let selection = NSRange(location: match.range.location + offset, length: match.range.length)
             guard selection != passage.selection else { return nil }
-            return Passage(text: text, context: passage.context, selection: selection, language: passage.language)
+            return Passage(text: text, context: passage.context, selection: selection, language: passage.language, structure: passage.structure)
         }
     }
 
@@ -272,7 +333,7 @@ struct ResultCard: View {
         HStack(spacing: 14) {
             Button {
                 guard let result, result.isUsable else { return }
-                notebook.save(passage, translation: result.meaning, sentenceTranslation: result.sentenceTranslation)
+                notebook.save(passage, translation: result.meaning, sentenceTranslation: result.sentenceTranslation, origin: String(describing: result.origin))
             } label: {
                 Label(notebook.contains(passage) ? "已加入生词本" : "加入生词本", systemImage: notebook.contains(passage) ? "bookmark.fill" : "bookmark")
             }.disabled(result?.isUsable != true || notebook.contains(passage) || (phase == .translating && term == nil))

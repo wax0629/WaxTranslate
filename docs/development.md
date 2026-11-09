@@ -70,3 +70,6 @@ macOS 15.2 为最低运行版本。macOS 26.4 及以上可尝试从整句译文�
 ### macOS
 
 在装有 Swift 6 和 macOS 26.4 或更新 SDK 的 Mac 上，运行 `./scripts/check.sh` 和 `swift build -c release`。脚本覆盖 Vision 双栏跨行识字、屏幕边缘、重复词的命中位置、旧格式生词及复习记录。在系统支持并已安装英中翻译包时，还会检查 `bank` 在河边和存款两种语境中的真实译义。Mac 验收记录来自对应 issue 和 PR，这次文档整理在 Windows 上完成。[检查脚本](../scripts/check.sh) · [测试样例](../Tests/waxtranlateTests/ReaderTests.swift)
+
+
+2026-11-09：Mac build14 接入 #83 语境与卡片规则，四类实际界面截图和完整验证见 [卡片规则验收](verification/card-rules/README.md)。中文混排按需句译，原文其他术语可直接点击，名称默认折叠原文，未知名称禁止收藏。Windows规则接入由 #86 独立跟踪。

@@ -52,6 +52,29 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
     }
 
     static func testCardPolicy() throws {
+        let document = "• 更新README文档\n• 模型输入的token与访问token含义不同。\n\n下一段API。"
+        let range = NSRange(document.range(of: "token")!, in: document)
+        let scoped = try SentenceContext.passage(in: document, selection: range, language: "zh-Hans")
+        try expect(!scoped.context.contains("README") && !scoped.context.contains("下一段"))
+        try expect(scoped.structure == .list && LocalTerminology.lookup(scoped)?.meaning.contains("词元") == true)
+        let repeated = "模型输入的token与访问token含义不同。"
+        let last = NSRange(repeated.range(of: "token", options: .backwards)!, in: repeated)
+        try expect(LocalTerminology.lookup(Passage(text: "token", context: repeated, selection: last, language: "zh-Hans"))?.meaning.contains("令牌") == true)
+        for (context, expected) in [("用Transformer实现OCR。", "神经网络"), ("变电站的transformer。", "变压器")] {
+            let word = context.contains("Transformer") ? "Transformer" : "transformer"
+            try expect(LocalTerminology.lookup(Passage(text: word, context: context, language: "zh-Hans"))?.meaning.contains(expected) == true)
+        }
+        let fragment = Passage(text: "token", context: "…输入token与…", language: "en", structure: .fragment)
+        try expect(!LookupPolicy(fragment).automaticallyTranslatesContext)
+        let path = try SentenceContext.passage(in: "Sources/waxtranlate/LookupTranslation.swift", selection: NSRange(location: 19, length: 17), language: "en")
+        try expect(path.structure == .path && LookupPolicy(path).needsConfirmation)
+        let suite = "WaxTranslate.Test.rules." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let book = Notebook(defaults: defaults)
+        _ = book.save(scoped, translation: "词元", sentenceTranslation: "Only this item.", origin: "term")
+        let restored = Notebook(defaults: defaults).entries[0]
+        try expect(restored.passage.structure == .list && restored.origin == "term" && !restored.context.contains("README"))
         let voice = Passage(text: "VoiceOver", context: "人工听音与VoiceOver。", language: "zh-Hans")
         try expect(LookupPolicy(voice).needsConfirmation)
         let confirmed = LookupPolicy(Passage(text: "VoiceOver", context: "macOS辅助功能中的VoiceOver。", language: "zh-Hans"))
@@ -76,6 +99,10 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
                           TextLine(text: "专辑：ランプ幻想", frame: CGRect(x: 0, y: 40, width: 220, height: 17), hit: nil)]
         let titleHit = try SentenceContext.passage(in: titleLines)
         try expect(titleHit.text == title && titleHit.context == title && titleHit.sourceLanguage == "ja")
+        let englishTitle = try SentenceContext.passage(in: [TextLine(text: "A Summer Vacation", frame: CGRect(x: 0, y: 70, width: 400, height: 32), hit: NSRange(location: 2, length: 6)), titleLines[1]], language: "en")
+        try expect(englishTitle.structure == .title && englishTitle.text == "Summer" && !LookupPolicy(englishTitle).automaticallyTranslatesContext)
+        let mixedResult = LookupTranslation.makeResult(for: Passage(text: "integer", context: "顯示integer。", language: "zh-Hans"), meaning: "整數", origin: .standalone)
+        try expect(mixedResult.meaning == "整数")
         let prose = [TextLine(text: "サマー・キャンプに参加した。", frame: CGRect(x: 0, y: 40, width: 300, height: 18), hit: NSRange(location: 0, length: 3))]
         let proseHit = try SentenceContext.passage(in: prose)
         try expect(proseHit.text == "サマー")

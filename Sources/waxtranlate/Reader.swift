@@ -13,10 +13,13 @@ struct Passage: Equatable {
     let language: String?
     let nearbyContext: String?
     let nearbySelection: NSRange?
+    enum Structure: String, Codable { case sentence, list, title, path, fragment }
+    let structure: Structure
     var isPhrase: Bool { selection != anchor }
 
     init(text: String, context: String, selection: NSRange? = nil, anchor: NSRange? = nil, language: String? = nil,
-         nearbyContext: String? = nil, nearbySelection: NSRange? = nil) {
+         nearbyContext: String? = nil, nearbySelection: NSRange? = nil, structure: Structure = .sentence) {
+        self.structure = structure
         self.text = text
         self.context = context
         // OCR supplies the exact occurrence. Demo/manual passages can infer it.
@@ -35,7 +38,7 @@ struct Passage: Equatable {
 
     func using(language: String?) -> Passage {
         Passage(text: text, context: context, selection: selection, anchor: anchor, language: language,
-                nearbyContext: nearbyContext, nearbySelection: nearbySelection)
+                nearbyContext: nearbyContext, nearbySelection: nearbySelection, structure: structure)
     }
 }
 

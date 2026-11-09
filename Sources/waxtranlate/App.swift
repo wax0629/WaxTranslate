@@ -83,12 +83,22 @@ import Combine
         // The UI harness can exercise real screen capture without synthesizing
         // a modifier-only key. This is accepted only with an isolated test suite.
         if testHover { runCaptureFixture() }
+        else if let index = ProcessInfo.processInfo.arguments.firstIndex(of: "--test-card"),
+                ProcessInfo.processInfo.arguments.contains("--test-profile"),
+                index + 1 < ProcessInfo.processInfo.arguments.count,
+                let recent = notebook.recent.first(where: { $0.word == ProcessInfo.processInfo.arguments[index + 1] }) {
+            present(recent.passage.value, at: CGPoint(x: NSScreen.main?.visibleFrame.midX ?? 400, y: NSScreen.main?.visibleFrame.midY ?? 400), focus: true)
+        }
         else if preferences.showOnLaunch || ProcessInfo.processInfo.arguments.contains("--show") { showLibrary() }
         if !testHover { TranslationWarmup.start() }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if testHover { return false }
+        if let panel, panel.isVisible {
+            panel.makeKeyAndOrderFront(nil)
+            return true
+        }
         showLibrary()
         return true
     }
@@ -333,6 +343,7 @@ import Combine
         let size = host.fittingSize
         let window = LookupPanel(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
                              backing: .buffered, defer: false)
+        window.title = "取词结果"
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
         window.isOpaque = false

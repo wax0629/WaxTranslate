@@ -215,8 +215,7 @@ struct ReadingEditor: NSViewRepresentable {
             if let editor = notification.object as? NSTextView { parent.text = editor.string }
         }
         func lookup(_ range: NSRange) {
-            let line = TextLine(text: parent.text, frame: CGRect(x: 0, y: 0, width: 1, height: 1), hit: range)
-            if let passage = try? SentenceContext.passage(in: [line], language: parent.language.isEmpty ? nil : parent.language) {
+            if let passage = try? SentenceContext.passage(in: parent.text, selection: range, language: parent.language.isEmpty ? nil : parent.language) {
                 parent.lookup(passage)
             }
         }

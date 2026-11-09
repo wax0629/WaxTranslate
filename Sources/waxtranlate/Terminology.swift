@@ -36,7 +36,7 @@ enum LocalTerminology {
 
     static func lookup(_ passage: Passage) -> TermMeaning? {
         if let selected = passage.selection, let range = Range(selected, in: passage.context), passage.context[range] == passage.text {
-            let context = TranslationOutput.normalize(passage.context)
+            let context = passage.context
             if passage.text == "README" || passage.text == "README.md" {
                 return TermMeaning(label: "惯用名称参考", meaning: "项目说明文件，通常介绍项目、安装和使用方法。", kind: "文件名称")
             }
@@ -45,6 +45,23 @@ enum LocalTerminology {
             }
             if passage.text == "Redis", context.range(of: "缓存|数据库|内存|部署|cache|database|deploy", options: [.regularExpression, .caseInsensitive]) != nil {
                 return TermMeaning(label: "名称参考", meaning: "一种内存数据存储系统，常用于缓存。", kind: "技术名称")
+            }
+            if passage.text.lowercased() == "transformer" {
+                if context.range(of: "变电|电压|电力|电路|power|voltage", options: [.regularExpression, .caseInsensitive]) != nil {
+                    return TermMeaning(label: "语境术语参考", meaning: "变压器，用于改变交流电压。", kind: "技术词")
+                }
+                if context.range(of: "模型|神经网络|注意力|OCR|attention|neural", options: [.regularExpression, .caseInsensitive]) != nil {
+                    return TermMeaning(label: "语境术语参考", meaning: "基于注意力机制的神经网络架构。", kind: "模型架构")
+                }
+            }
+            if passage.text.lowercased() == "token", let hit = passage.selection, let selected = Range(hit, in: context) {
+                let before = String(context[..<selected.lowerBound].suffix(18))
+                if before.range(of: "(?:数据库|验证|认证|身份|访问|access|auth)[^与，。；]*$", options: [.regularExpression, .caseInsensitive]) != nil {
+                    return TermMeaning(label: "语境术语参考", meaning: "令牌，用于表示身份、权限或访问凭据。", kind: "技术词")
+                }
+                if before.range(of: "(?:模型|输入|分词|文本|language model)[^与，。；]*$", options: [.regularExpression, .caseInsensitive]) != nil {
+                    return TermMeaning(label: "语境术语参考", meaning: "词元，模型处理文本时使用的基本单位。", kind: "技术词")
+                }
             }
             if passage.text.lowercased() == "attention mask" {
                 return TermMeaning(label: "术语参考", meaning: "注意力掩码，用来控制模型可以关注哪些位置。", kind: "英语术语")
@@ -238,7 +255,7 @@ struct LookupPolicy {
         if passage.context.isEmpty { object = .region }
         else if term != nil { object = .term }
         else if passage.text == "VoiceOver" { object = .uncertainName }
-        else if passage.text.range(of: #"[a-z][A-Z]|[_/#]|\.\w+$"#, options: .regularExpression) != nil { object = .code }
+        else if passage.structure == .path || passage.text.range(of: #"[a-z][A-Z]|[_/#]|\.\w+$"#, options: .regularExpression) != nil { object = .code }
         else { object = .word }
     }
     var isChineseContext: Bool { passage.sourceLanguage.hasPrefix("zh") }
@@ -249,17 +266,19 @@ struct LookupPolicy {
         let regex = try! NSRegularExpression(pattern: "[A-Za-z][A-Za-z0-9+#]*")
         return regex.numberOfMatches(in: passage.context, range: NSRange(passage.context.startIndex..., in: passage.context)) > 1
     }
-    var automaticallyTranslatesContext: Bool { object == .region || (object == .word && !isChineseContext) }
+    var automaticallyTranslatesContext: Bool { object == .region || (object == .word && !isChineseContext && passage.structure != .fragment && passage.structure != .path && (passage.structure != .title || passage.text == passage.context)) }
     var headwordLanguage: String {
         passage.text.range(of: #"^[A-Za-z][A-Za-z .+#_-]*$"#, options: .regularExpression) != nil && (isChineseContext || object != .word) ? "en" : passage.sourceLanguage
     }
     var caption: String {
         if object == .region { return "选区翻译" }
+        if passage.structure == .fragment { return "词义参考 · 识别片段" }
+        if passage.structure == .title { return "标题翻译" }
         if object == .uncertainName { return "名称待确认" + (isChineseContext ? " · 中文语境" : "") }
         if object == .code { return "代码名称" + (isChineseContext ? " · 中文语境" : "") }
         return (term?.kind ?? (headwordLanguage == "en" ? "英语" : "词语")) + (isChineseContext ? " · 中文语境" : "")
     }
     var unresolvedMessage: String {
-        object == .uncertainName ? "可能指 Apple 的屏幕朗读功能，当前片段不足以确认。" : object == .code ? "暂未确认这个代码名称的含义。" : "本机资料中没有找到可靠解释。"
+        passage.structure == .fragment ? "原文片段不完整，暂不能确认句中含义。" : object == .uncertainName ? "可能指 Apple 的屏幕朗读功能，当前片段不足以确认。" : object == .code ? "暂未确认这个代码名称的含义。" : "本机资料中没有找到可靠解释。"
     }
 }

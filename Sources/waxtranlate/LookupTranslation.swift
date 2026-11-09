@@ -139,7 +139,7 @@ private extension String {
 
 enum LookupTranslation {
     static func makeResult(for passage: Passage, meaning: String, origin: LookupResult.Origin, sentence: String? = nil) -> LookupResult {
-        let target = passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans"
+        let target = LookupPolicy(passage).headwordLanguage.hasPrefix("zh") ? "en" : "zh-Hans"
         let trim = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
         let gloss = meaning.trimmingCharacters(in: trim)
         let word = passage.text.precomposedStringWithCompatibilityMapping
