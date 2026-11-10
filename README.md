@@ -59,4 +59,6 @@ open "$HOME/Applications/waxtranlate.app" --args --show
 
 Windows 的离屏回归、独立桌面回归、多语 OCR 专项，以及 macOS 的 Vision 和 Apple 翻译检查，均有对应命令和运行条件。[复现验证](docs/development.md#复现验证)
 
+[Windows 回归测试集](docs/verification/windows-regression/README.md)集中提供58条用户用例、固定输入、预期结果、CSV表和按组执行入口，并区分自动检查与待人工验收。
+
 当前句译触发规则见 [翻译逻辑](docs/translation-logic.md)。

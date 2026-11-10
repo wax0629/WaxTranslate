@@ -1,0 +1,231 @@
+﻿编号,模块,优先级,执行层,用例,输入数据,命中词,命中范围（Python字符索引）,前置条件,操作步骤,预期结果,自动检查,参考检查
+WT-WIN-001,启动与窗口,P0,offscreen,旧配置中的任务栏选项默认开启,,,,使用隔离测试配置；准备对应语言的离线资源。,"准备不含任务栏键、但含原有偏好的测试配置。
+打开设置 → 启动与窗口。","未包含showInTaskbar键的旧配置勾选「在任务栏中显示」。
+原有取词键、语种和关闭偏好保留。",windows/test_settings.py::SettingsTests.test_navigation_and_old_preferences,
+WT-WIN-002,启动与窗口,P0,offscreen,任务栏开关即时生效并保留阅读状态,Keep this reading passage.,reading,"[10, 17)",使用隔离测试配置；准备对应语言的离线资源。,"在对照翻译输入样文并保留译文。
+进入设置，在正常和最大化状态下分别用空格切换开关。
+重启测试窗口并再次核对。","键盘空格可切换开关，普通窗口和工具窗口立即切换。
+原文、译文和当前页面不丢失。
+正常/最大化及实际还原尺寸保持，重建窗口后偏好一致。",windows/test_settings.py::SettingsTests.test_taskbar_visibility_is_live_and_persistent,
+WT-WIN-003,启动与窗口,P0,offscreen,最小化与无托盘回退,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","默认开启时最小化保留任务栏入口。
+关闭时最小化收起到托盘。
+系统托盘不可用时仍保留可恢复的任务栏窗口。",windows/test_launch_mode.py::LaunchModeTests.test_tray_minimize_and_shell_fallback,
+WT-WIN-004,启动与窗口,P1,offscreen,关闭窗口按偏好收起或退出,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","收起到托盘时应用继续运行。
+退出应用时正常退出。
+无托盘时关闭会退出。",windows/test_settings.py::SettingsTests.test_close_to_tray_or_quit,
+WT-WIN-005,启动与窗口,P1,offscreen,冷启动保持后台待命并支持无托盘桌面,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","有托盘时首次/登录启动在后台待命。
+无托盘时打开可恢复的普通窗口。",windows/test_launch_mode.py::LaunchModeTests.test_cold_start_visibility,
+WT-WIN-006,启动与窗口,P1,offscreen,手动激活与后台重复启动分开处理,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","重复后台激活不唤起窗口。
+手动激活通知同一已有实例。",windows/test_launch_mode.py::LaunchModeTests.test_real_event_distinguishes_manual_and_quiet_activation,
+WT-WIN-007,启动与窗口,P1,offscreen,登录启动修复与系统禁用反馈,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","路径移动时可改用当前版本。
+系统禁用、权限错误与外部修改都有明确状态。
+失败时保留旧启动项。","windows/test_settings.py::SettingsTests.test_login_error_repair_and_external_change
+windows/test_startup.py::LoginStartupTests.test_registration_roundtrip_and_relocation",
+WT-WIN-008,启动与窗口,P1,offscreen,窄窗导航和页面布局可用,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","首次显示与缩放后导航、窗口控件和正文均在可用范围内。
+窄窗不会被最小尺寸强行撑大。",windows/check.py::Checks.test_shell_reflows_on_first_show_and_resize,
+WT-OCR-001,截图与OCR,P0,offscreen,真实OCR与本地翻译,They sat on the river bank and watched the water.,bank,"[22, 26)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","合成图像中的bank被正确命中。
+原文与本地中文译文可读，河岸与银行按语境区分。",windows/check.py::Checks.test_real_ocr_and_local_translation,
+WT-OCR-002,截图与OCR,P0,offscreen,斜杠左右与紧排词分别命中,cache/input,input,"[6, 11)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","光标在斜杠左右时命中各自的词。
+近邻边界不误查到其他词。","windows/check.py::Checks.test_words_on_each_side_of_slash
+windows/test_hit_terms.py::HitTests.test_near_word_boxes",
+WT-OCR-003,截图与OCR,P1,offscreen,重复词保留第二次出现的偏移,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","相同词的各次出现保持独立偏移。
+换行列中命中位置与实际词一致。","windows/test_hit_terms.py::HitTests.test_collapsed_glyphs_keep_the_second_occurrence
+windows/check.py::Checks.test_exact_hit_in_wrapped_column",
+WT-OCR-004,截图与OCR,P0,offscreen,逻辑坐标与图像像素缩放一致,docs(logistics): cache[root]:cache/input,logistics,"[5, 14)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","两种倍率下图像命中与逻辑位置一致。
+标点、数字、大小写和紧排标签不会跨词。","windows/check.py::Checks.test_scaled_capture
+windows/test_hit_terms.py::HitTests.test_real_pack_packed_labels_at_display_scales",
+WT-OCR-005,截图与OCR,P0,offscreen,旁列与远处小字不能把正文变成标题,while the sensor remained connected to the,sensor,"[10, 16)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","普通正文仍为sentence和missingBoth，sensor偏移不变。
+真正大标题在旁列/远处大字干扰下仍是title。
+正文允许执行有界补采。",windows/test_hit_terms.py::HitTests.test_title_prominence_ignores_other_columns,
+WT-OCR-006,截图与OCR,P0,desktop,真实桌面仅补采一次并恢复完整原文,The inspection team opened the machine and reviewed every connection around the main panel before checking the pressure and the temperature while the sensor remained connected to the controller and the backup power supply so the recorded measurements could be compared with the previous results after the inspection ended.,sensor,"[150, 156)",仅在独立Windows runner或已获同意的空闲桌面；测试会显示窗口和读取合成样例。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","首次只识别到缺首尾片段。
+总计两次截图后得到精确完整七行原文。
+取消或过期任务不会再次捕获。",windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_desktop_bounded_context_expansion,
+WT-OCR-007,截图与OCR,P0,desktop,原生桌面完整取词与框选操作,,,,独立桌面；会显示窗口、移动鼠标并发送按键，退出其他同类取词监听器。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","真实按键和拖动完成取词/框选。
+长按或组合键不误触，取消与关闭不会显示旧结果。
+返回首页后统计与最近记录正确。",windows/check.py::Checks.test_desktop_flow,
+WT-OCR-008,截图与OCR,P1,desktop,真实窗口边缘与贴靠缩放,,,,独立桌面；测试会显示和操作窗口。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","正常/最大化/还原/最小化后不出现额外实色原生边框。
+控件和内容位于有效工作区。",windows/check.py::Checks.test_desktop_visible_window_edges,
+WT-BOUND-001,原文范围与断句,P0,offscreen,续行归并,The engineer checked the sensor before starting the experiment.,sensor,"[25, 31)",使用隔离测试配置；准备对应语言的离线资源。,"从共享语料引用中选择指定位置的样例。
+执行共享契约和Windows入口适配检查。
+核对词、范围、结构、完整性和自动对照策略。","仅归并同一逻辑句的视觉换行，命中词和原文对应。
+基础样例及缩放、负坐标、乱序、重折行变体均通过。","windows/test_sentence_boundaries.py::SentenceBoundaryContractTests.test_shared_contract
+windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_editor_and_ocr_adapters",
+WT-BOUND-002,原文范围与断句,P0,offscreen,防止错误拼行,The sensor remains connected.,sensor,"[4, 10)",使用隔离测试配置；准备对应语言的离线资源。,"从共享语料引用中选择指定位置的样例。
+执行共享契约和Windows入口适配检查。
+核对词、范围、结构、完整性和自动对照策略。","段落、列和不同字号区块不串成一句。
+基础样例及缩放、负坐标、乱序、重折行变体均通过。","windows/test_sentence_boundaries.py::SentenceBoundaryContractTests.test_shared_contract
+windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_editor_and_ocr_adapters",
+WT-BOUND-003,原文范围与断句,P1,offscreen,缩写与小数断句,The sensor remains connected.,sensor,"[4, 10)",使用隔离测试配置；准备对应语言的离线资源。,"从共享语料引用中选择指定位置的样例。
+执行共享契约和Windows入口适配检查。
+核对词、范围、结构、完整性和自动对照策略。","缩写、小数、版本和URL不误断；真实句末正确结束。
+基础样例及缩放、负坐标、乱序、重折行变体均通过。","windows/test_sentence_boundaries.py::SentenceBoundaryContractTests.test_shared_contract
+windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_editor_and_ocr_adapters",
+WT-BOUND-004,原文范围与断句,P1,offscreen,引号和成对标点,“Is the sensor connected?” she asked.,sensor,"[8, 14)",使用隔离测试配置；准备对应语言的离线资源。,"从共享语料引用中选择指定位置的样例。
+执行共享契约和Windows入口适配检查。
+核对词、范围、结构、完整性和自动对照策略。","引号内问句及后接归属语保留正确边界。
+基础样例及缩放、负坐标、乱序、重折行变体均通过。","windows/test_sentence_boundaries.py::SentenceBoundaryContractTests.test_shared_contract
+windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_editor_and_ocr_adapters",
+WT-BOUND-005,原文范围与断句,P1,offscreen,列表与续行,- Inspect the sensor and record its temperature.,sensor,"[14, 20)",使用隔离测试配置；准备对应语言的离线资源。,"从共享语料引用中选择指定位置的样例。
+执行共享契约和Windows入口适配检查。
+核对词、范围、结构、完整性和自动对照策略。","同一项的续行保留，不拼入上一项或下一项。
+基础样例及缩放、负坐标、乱序、重折行变体均通过。","windows/test_sentence_boundaries.py::SentenceBoundaryContractTests.test_shared_contract
+windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_editor_and_ocr_adapters",
+WT-BOUND-006,原文范围与断句,P1,offscreen,注释与代码边界,The engineer checked the sensor before starting the experiment.,sensor,"[25, 31)",使用隔离测试配置；准备对应语言的离线资源。,"从共享语料引用中选择指定位置的样例。
+执行共享契约和Windows入口适配检查。
+核对词、范围、结构、完整性和自动对照策略。","去掉行首注释标记，不把相邻代码混入自然语言。
+基础样例及缩放、负坐标、乱序、重折行变体均通过。","windows/test_sentence_boundaries.py::SentenceBoundaryContractTests.test_shared_contract
+windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_editor_and_ocr_adapters",
+WT-BOUND-007,原文范围与断句,P1,offscreen,代码结构,const sensor = 1;,sensor,"[6, 12)",使用隔离测试配置；准备对应语言的离线资源。,"从共享语料引用中选择指定位置的样例。
+执行共享契约和Windows入口适配检查。
+核对词、范围、结构、完整性和自动对照策略。","代码保留结构和偏移，不冒充完整自然句自动翻译。
+基础样例及缩放、负坐标、乱序、重折行变体均通过。","windows/test_sentence_boundaries.py::SentenceBoundaryContractTests.test_shared_contract
+windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_editor_and_ocr_adapters",
+WT-BOUND-008,原文范围与断句,P1,offscreen,标题范围,# Sensor documentation,Sensor,"[2, 8)",使用隔离测试配置；准备对应语言的离线资源。,"从共享语料引用中选择指定位置的样例。
+执行共享契约和Windows入口适配检查。
+核对词、范围、结构、完整性和自动对照策略。","突出标题保持结构，操作只作用于可见标题范围。
+基础样例及缩放、负坐标、乱序、重折行变体均通过。","windows/test_sentence_boundaries.py::SentenceBoundaryContractTests.test_shared_contract
+windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_editor_and_ocr_adapters",
+WT-BOUND-009,原文范围与断句,P0,offscreen,缺首、缺尾及未知完整性,…checked the sensor before the test.,sensor,"[13, 19)",使用隔离测试配置；准备对应语言的离线资源。,"从共享语料引用中选择指定位置的样例。
+执行共享契约和Windows入口适配检查。
+核对词、范围、结构、完整性和自动对照策略。","明确标注片段，只翻译用户显式选择的可见范围。
+基础样例及缩放、负坐标、乱序、重折行变体均通过。","windows/test_sentence_boundaries.py::SentenceBoundaryContractTests.test_shared_contract
+windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_editor_and_ocr_adapters",
+WT-BOUND-010,原文范围与断句,P1,offscreen,软硬连字符,The interface remains stable.,interface,"[4, 13)",使用隔离测试配置；准备对应语言的离线资源。,"从共享语料引用中选择指定位置的样例。
+执行共享契约和Windows入口适配检查。
+核对词、范围、结构、完整性和自动对照策略。","跨行连字符正确处理，命中词仍能定位到原始来源。
+基础样例及缩放、负坐标、乱序、重折行变体均通过。","windows/test_sentence_boundaries.py::SentenceBoundaryContractTests.test_shared_contract
+windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_editor_and_ocr_adapters",
+WT-BOUND-011,原文范围与断句,P1,offscreen,多语言续行与断句,工程师检查了sensor，确认它没有断开。,sensor,"[6, 12)",使用隔离测试配置；准备对应语言的离线资源。,"从共享语料引用中选择指定位置的样例。
+执行共享契约和Windows入口适配检查。
+核对词、范围、结构、完整性和自动对照策略。","中英日韩及拉丁语种按同一契约判断范围。
+基础样例及缩放、负坐标、乱序、重折行变体均通过。","windows/test_sentence_boundaries.py::SentenceBoundaryContractTests.test_shared_contract
+windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_editor_and_ocr_adapters",
+WT-BOUND-012,原文范围与断句,P0,offscreen,重复词与Unicode偏移,The second sensor remains connected.,sensor,"[11, 17)",使用隔离测试配置；准备对应语言的离线资源。,"从共享语料引用中选择指定位置的样例。
+执行共享契约和Windows入口适配检查。
+核对词、范围、结构、完整性和自动对照策略。","重复词、emoji、组合重音和源位置映射不漂移。
+基础样例及缩放、负坐标、乱序、重折行变体均通过。","windows/test_sentence_boundaries.py::SentenceBoundaryContractTests.test_shared_contract
+windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_editor_and_ocr_adapters",
+WT-BOUND-013,原文范围与断句,P1,offscreen,独立词条,sensor,sensor,"[0, 6)",使用隔离测试配置；准备对应语言的离线资源。,"从共享语料引用中选择指定位置的样例。
+执行共享契约和Windows入口适配检查。
+核对词、范围、结构、完整性和自动对照策略。","独立查词不重复展示或自动翻译一份伪原句。
+基础样例及缩放、负坐标、乱序、重折行变体均通过。","windows/test_sentence_boundaries.py::SentenceBoundaryContractTests.test_shared_contract
+windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_editor_and_ocr_adapters",
+WT-LOOK-001,词义与卡片,P0,offscreen,bank在河岸语境下解释,They sat on the river bank and watched the water.,bank,"[22, 26)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","河边场景的bank解释包含「岸」，不混入存款义。
+释义保留当前词的原句范围。","windows/check.py::Checks.test_lookup_context
+windows/check.py::Checks.test_word_details_in_context",
+WT-LOOK-002,词义与卡片,P0,offscreen,长句节选与完整译文范围一致,"After a long meeting with her colleagues, she deposited her paycheck at the bank before she drove home to make dinner.",bank,"[76, 80)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","存款语境的bank释义包含「银行」，节选指向同一命中词。
+展开和收起分别显示对应范围的原文及译文。
+收藏保留完整原句和匹配的整句译文。","windows/check.py::Checks.test_lookup_context
+windows/test_card_rules.py::CardRuleTests.test_automatic_term_context_keeps_excerpt_and_saved_full_translation_matched",
+WT-LOOK-003,词义与卡片,P0,offscreen,外语自然句里的术语自动双语,The API returns a response.,API,"[4, 7)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","API等已确认术语立即有词义。
+完整外语句自动显示同范围原文和中文句译。",windows/test_card_rules.py::CardRuleTests.test_known_foreign_terms_automatically_show_source_and_translation,
+WT-LOOK-004,词义与卡片,P0,offscreen,中文语境里的英文词按需句译,这个API接口返回数据。,API,"[2, 5)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","中文原文保留。
+句译由点击发起，独立术语不重复整句译文。",windows/test_card_rules.py::CardRuleTests.test_chinese_terms_stay_manual_and_standalone_terms_do_not_translate,
+WT-LOOK-005,词义与卡片,P0,offscreen,中文原文中的重复token按位置区分,模型输入的token与访问token含义不同。,token,"[13, 18)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","模型输入处解释为词元。
+访问处解释为令牌，第二次出现的偏移保持。","windows/check.py::Checks.test_card_rules_and_context_requests
+windows/test_card_rules.py::CardRuleTests.test_inline_term_click_keeps_the_occurrence_in_the_evidence",
+WT-LOOK-006,词义与卡片,P1,offscreen,术语全称与多义缩写依当前段落,"The startup shipped its MVP, whereas the season MVP scored 40 points.",MVP,"[48, 51)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","MVP等缩写按当前语境消歧。
+文中定义不跨段落泄漏；不确定时保留多义参考。","windows/test_terminology.py::TermChecks.test_domain_cues_and_repeated_terms
+windows/test_terminology.py::TermChecks.test_explicit_definitions_and_wrapped_lines
+windows/test_card_rules.py::CardRuleTests.test_definitions_do_not_leak_from_another_paragraph",
+WT-LOOK-007,词义与卡片,P1,offscreen,标题操作翻译完整可见标题,Keep this door closed,door,"[10, 14)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","标题整译操作不退化成单词释义。
+取消、重复点击和旧结果均按请求编号处理。",windows/test_card_rules.py::CardRuleTests.test_title_action_uses_full_translation_instead_of_word_lookup,
+WT-LOOK-008,词义与卡片,P0,offscreen,未知名称与错误可恢复,用UnknownSDK开发。,UnknownSDK,"[1, 11)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","未知标识不伪装成成功释义，不允许错误收藏。
+句译失败时仍保留可靠词义，并可重试。","windows/test_card_rules.py::CardRuleTests.test_real_semantic_acceptance_matrix
+windows/test_card_rules.py::CardRuleTests.test_failed_automatic_context_retains_term_explanation_and_retries",
+WT-READ-001,对照阅读,P1,offscreen,对照页定位、选词和编辑,They sat on the river bank and watched the water.,bank,"[22, 26)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","读取编辑器原文而非背景屏幕。
+拖选、双击和光标附近查词保留正确范围。",windows/check.py::Checks.test_read_from_editor,
+WT-READ-002,对照阅读,P0,offscreen,全文翻译时仍可查一个词,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","全文翻译与查词可并行。
+查词不覆盖或取消无关的全文任务。",windows/check.py::Checks.test_lookup_during_paragraph_translation,
+WT-READ-003,对照阅读,P1,offscreen,键盘翻译和复制,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","Ctrl+Enter翻译全文。
+复制快捷键取得当前译文。",windows/check.py::Checks.test_inline_keyboard_translation,
+WT-READ-004,对照阅读,P0,offscreen,新编辑和取消丢弃过期结果,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","修改输入、发起新任务或关闭卡片后旧译文不回写。
+手动句译的保存范围与当前请求一致。","windows/check.py::Checks.test_superseded_inline_result
+windows/test_card_rules.py::CardRuleTests.test_manual_translation_keeps_saved_scope_and_discards_closed_results",
+WT-READ-005,对照阅读,P1,offscreen,浮窗拖动、展开与长内容布局,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","结果返回或展开后保留用户拖动位置。
+长原文/译文可滚动，收藏/复制/关闭可达。","windows/check.py::Checks.test_dragged_position_survives_result_and_expand
+windows/check.py::Checks.test_reading_card_layout",
+WT-BOOK-001,词本与统计,P0,offscreen,收藏、复制、到期复习与重新打开,She deposited her paycheck at the bank.,bank,"[34, 38)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","保存的词、原句、释义和句译一致。
+复制与复习读取同一记录，重开后仍在。",windows/check.py::Checks.test_save_copy_review_and_reopen,
+WT-BOOK-002,词本与统计,P0,offscreen,旧词本与片段记录保持兼容,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","旧字段和复习进度保留。
+片段记录不会升级成完整句，复习标签正确。","windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_saved_fragment_migration_and_review
+windows/test_home_stats.py::HomeStatsTests.test_old_notebook_and_review_schedule",
+WT-BOOK-003,词本与统计,P1,offscreen,看板与最近查询使用实际数据,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","次数、保存、待复习与已掌握按实际数据计算。
+最近记录去重置顶并限制数量，空状态不造数据。","windows/check.py::Checks.test_home_lookup_and_dashboard
+windows/test_home_stats.py::HomeStatsTests.test_recent_updates_and_evicts_distinct_words",
+WT-BOOK-004,词本与统计,P1,offscreen,并发和写入失败不破坏统计,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","并发完成的查询计数不丢失。
+写入失败回滚，跨日和重启保持正确。","windows/test_home_stats.py::HomeStatsTests.test_concurrent_completed_queries
+windows/test_home_stats.py::HomeStatsTests.test_failed_history_write_rolls_back_count_too
+windows/test_home_stats.py::HomeStatsTests.test_lookup_counter_persists_and_rolls_at_local_midnight",
+WT-LANG-001,语言包与听读,P1,offscreen,九种原文语言离线中译,Le chat dort dans la maison de ma sœur.,chat,"[3, 7)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","各语言输出中文并保持选词对齐。
+中转语种不把中间英文当最终译文。",windows/test_languages.py::LanguageTests.test_automatic_paragraphs_and_word_alignment,
+WT-LANG-002,语言包与听读,P1,offscreen,日韩无空格词形与位置,図書館で本を読む。,図書館,"[0, 3)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","日语和韩语名词部分可单查。
+字符位置与原文保持一致。",windows/test_languages.py::LanguageTests.test_east_asian_editor_and_ocr_word_offsets,
+WT-LANG-003,语言包与听读,P1,offscreen,短词语种与原生/离线OCR回退,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","短词可指定语种，保存语种读回。
+缺系统包时可用本地OCR，噪声不强行建立语种。","windows/test_languages.py::LanguageTests.test_short_words_and_saved_languages
+windows/test_languages.py::LanguageTests.test_screen_word_and_region_on_small_japanese_titles_without_system_pack
+windows/test_languages.py::LanguageTests.test_korean_fragments_among_misread_digits_do_not_establish_language",
+WT-LANG-004,语言包与听读,P1,offscreen,语言包下载、取消、失败及重试,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","安装先校验再发布资源。
+失败、重试和取消状态正确，已安装后可直接使用。",windows/test_language_packs.py::LanguagePackTests.test_settings_installs_retries_and_publishes_verified_resources,
+WT-LANG-005,语言包与听读,P1,offscreen,词头和原文使用各自的朗读语种,用Redis作为应用缓存。,Redis,"[1, 6)",使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","中文语境中的英文词头按英文朗读。
+原句按原文语种，慢速/停止/复习听读保持一致。","windows/test_card_rules.py::CardRuleTests.test_word_and_context_use_their_own_speech_languages
+windows/check.py::Checks.test_speech_controls_and_review",
+WT-LANG-006,语言包与听读,P1,offscreen,原生声音缺失有可恢复反馈,,,,使用隔离测试配置；准备对应语言的离线资源。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","有可用声音时可合成有效音频。
+缺少声音时明确提示，后续重试能恢复。",windows/check.py::Checks.test_local_english_voice,
+WT-LANG-007,语言包与听读,P1,desktop,实际播放端点与停止,,,,独立桌面；此检查可能播放声音。,"使用给定输入，定位指定命中词或执行对应操作。
+运行列出的自动检查，并按预期逐项核对。","真实播放或无输出端点的恢复提示有效。
+停止不会继续残留播放。",windows/check.py::Checks.test_desktop_playback,
+WT-MAN-001,人工验收,P1,manual,任意第三方网页、PDF和应用中的实际取词,在浏览器、PDF阅读器和日常第三方应用内读外文，分别轻按取词和拖动框选。,,,人工操作；使用已备份的测试数据，记录Windows版本、应用版本、倍率和结果。,"按此用例准备真实使用场景。
+执行操作并逐项观察，记录通过/失败/未验证及截图或日志。","取词不抢走原应用焦点。
+光标下的词、原文和范围正确；取消后无旧结果。",,windows/check.py::Checks.test_desktop_flow
+WT-MAN-002,人工验收,P1,manual,真实历史词本升级,保留旧版真实词本的备份，在副本上升级并复查熟词、到期计划和历史统计。,,,人工操作；使用已备份的测试数据，记录Windows版本、应用版本、倍率和结果。,"按此用例准备真实使用场景。
+执行操作并逐项观察，记录通过/失败/未验证及截图或日志。","真实历史数据完整，不能用空库或合成库替代本项。
+原有词条、语境与复习计划保持。",,windows/test_sentence_boundaries.py::WindowsBoundaryTests.test_saved_fragment_migration_and_review
+WT-MAN-003,人工验收,P1,manual,人工听感与语音可懂度,用英语、中文及已安装语种分别试听词头和原文，试听正常速度和慢速。,,,人工操作；使用已备份的测试数据，记录Windows版本、应用版本、倍率和结果。,"按此用例准备真实使用场景。
+执行操作并逐项观察，记录通过/失败/未验证及截图或日志。","发音语种正确、可懂，慢速不会错词或截断。
+不能仅凭生成了音频就宣称人工听感通过。",,"windows/check.py::Checks.test_local_english_voice
+windows/test_card_rules.py::CardRuleTests.test_word_and_context_use_their_own_speech_languages"
+WT-MAN-004,人工验收,P1,manual,屏幕阅读器与完整键盘操作,使用实际NVDA或系统读屏，从首页进入设置、切换任务栏选项并关闭/恢复窗口。,,,人工操作；使用已备份的测试数据，记录Windows版本、应用版本、倍率和结果。,"按此用例准备真实使用场景。
+执行操作并逐项观察，记录通过/失败/未验证及截图或日志。","名称、状态和焦点顺序可理解。
+开关可用键盘操作，窗口可找回；人工读屏结果单独记录。",,windows/test_settings.py::SettingsTests.test_taskbar_visibility_is_live_and_persistent
+WT-MAN-005,人工验收,P1,manual,真实便携包迁移和登录启动,先从托盘退出旧版，将新便携包完整解压到另一个目录；使用设置修复启动项后实际注销再登录。,,,人工操作；使用已备份的测试数据，记录Windows版本、应用版本、倍率和结果。,"按此用例准备真实使用场景。
+执行操作并逐项观察，记录通过/失败/未验证及截图或日志。","实际EXE可启动，重复打开唤回同一实例。
+登录启动路径指向新包，词本和设置延续。",,"windows/test_launch_mode.py::LaunchModeTests.test_real_event_distinguishes_manual_and_quiet_activation
+windows/test_startup.py::LoginStartupTests.test_registration_roundtrip_and_relocation"
