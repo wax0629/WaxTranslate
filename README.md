@@ -7,23 +7,21 @@
 | Windows 11 x64 | 轻按并松开左 Ctrl | 按住取词键，用鼠标左键拖选 |
 | macOS 15.2 及以上 | 轻按并松开 Option | 按 ⌥⇧R 后拖选 |
 
-## 试用状态（2026-11-09）
+## 试用状态（2026-11-10）
 
-当前为开发版有限试用，尚未完成全面验收。Mac build11 新反馈暴露中文语境中的英文词未释义、代码名称缺少组成词参考；本轮补回归与修正，详情见[试用准入复查](docs/verification/macos-sync/trial-readiness.md)。通用语境准确率、真实历史词本升级、读屏和完整物理交互仍有待验收项，不应据 CI 全绿宣称产品验收全部完成。
+当前提供开发版有限试用。Windows 已完成视觉同步 #82 与语境卡片 #87，实际便携包的两档桌面回归和多语 OCR 记录见 [交付记录 #86](https://github.com/wax0629/WaxTranslate/issues/86)。Mac **0.3.0 build12** 补齐阅读学习、窗口和设置，固定样本的真实 Vision、Apple 翻译、安装与签名已验证。[Mac 同步验收](docs/verification/macos-sync/README.md)
 
-Windows 视觉同步 PR #82（`31e0c8d`）的独立桌面 100%/150% 各97项通过，可用于有限试用；尚未合并，不能把主分支旧包当成该版本。[已验证试用构建](https://github.com/wax0629/WaxTranslate/actions/runs/42579217313) · [待合并 PR #82](https://github.com/wax0629/WaxTranslate/pull/82)。Mac PR #80 同样保持待评审。
+查询对象、原文边界及卡片规则的后续实现由 [Mac #85](https://github.com/wax0629/WaxTranslate/pull/85) 和 [Windows #89](https://github.com/wax0629/WaxTranslate/pull/89) 记录。试用请核对所用提交与对应构建；通用语境准确率、真实历史词本升级、人工听读/读屏和完整物理交互仍由 [路线图 #3](https://github.com/wax0629/WaxTranslate/issues/3) 跟踪。
 
 ## 当前开发进度
 
-Windows 主分支已交付多语种离线翻译、对照阅读、生词复习和查词看板。macOS 本轮同步分支为 **0.3.0**：补齐首页四格统计、最近取词、对照阅读、紧凑取词卡与设置，接通已验收的英语短语修复，并改进孤立英文词语种判断。Mac 继续使用 Vision 和 Apple 本机翻译，系统语言包与 Windows 模型分别管理。[Mac 同步 #78](https://github.com/wax0629/WaxTranslate/issues/78) · [开发进度与验收记录](docs/development.md) · [双端路线图](https://github.com/wax0629/WaxTranslate/issues/3)
-
-![Windows 首页上的取词统计和最近查过的词](Assets/Previews/windows-home.png)
+双端均有可运行的开发版。Windows 支持九种原文语言离线中译、对照阅读、生词复习和查词看板，界面按 Mac 的纸色与阅读层级统一。macOS 本轮补齐首页四格统计、最近取词、对照阅读、紧凑卡片与常用设置，接通连续英语短语修复。Mac 继续使用 Vision 和 Apple 本机翻译，系统语言包与 Windows 模型分别管理。[开发进度与验收记录](docs/development.md) · [Windows 卡片验收](docs/verification/windows-card-rules/README.md)
 
 ## WaxTranslate Windows 桌面版
 
-**使用便携包。** 登录 GitHub，打开一次成功的 Windows 桌面构建，在运行页底部的 Artifacts 下载 `WaxTranslate-Windows-x64`。解开下载文件，再完整解开其中的便携 ZIP，双击 `WaxTranslate.exe`。程序默认在系统托盘待命；点击托盘图标或再次双击启动器可打开首页。[已验证的构建](https://github.com/wax0629/WaxTranslate/actions/runs/42459577744) · [Windows 构建列表](https://github.com/wax0629/WaxTranslate/actions/workflows/windows-desktop.yml)
+**使用便携包。** 登录 GitHub，从 Windows 交付记录打开最终通过的桌面构建，在运行页底部的 Artifacts 下载 `WaxTranslate-Windows-x64`。解开下载文件，再完整解开其中的便携 ZIP，双击 `WaxTranslate.exe`。程序默认在系统托盘待命；点击托盘图标或再次双击启动器可打开首页。[验收及下载记录](https://github.com/wax0629/WaxTranslate/issues/86) · [Windows 构建列表](https://github.com/wax0629/WaxTranslate/actions/workflows/windows-desktop.yml)
 
-- **查词与框选**　轻按左 Ctrl 查一个词，或在首页点「框选翻译」。游戏占用左 Ctrl 时，可以在「设置 → 屏幕取词键」改用右 Ctrl，或选「仅应用内查词」。
+- **查词与框选**　轻按左 Ctrl 查一个词，或从顶部应用菜单、托盘菜单进入「框选翻译」。游戏占用左 Ctrl 时，可以在「设置 → 屏幕取词键」改用右 Ctrl，或选「仅应用内查词」。
 - **语言包**　英语、日语、韩语随包提供。法语、德语、西班牙语、意大利语、葡萄牙语和俄语可在「设置 → 语言包」下载，安装后即可离线使用。
 - **阅读与复习**　在「对照翻译」粘贴文章，点词看释义，按 Ctrl+Enter 看整段译文。在取词卡上点「加入我的生词本」，以后可以按原句复习。[Windows 使用指南](docs/windows.md)
 

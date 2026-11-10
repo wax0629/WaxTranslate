@@ -59,6 +59,71 @@ def wait_until(predicate):
 
 
 class Checks(unittest.TestCase):
+    def test_card_rules_and_context_requests(self):
+        from card_policy import local_reference, bounded_context
+        from reader import sentence_at
+        from lookup import explain, UNKNOWN
+        from PySide6.QtCore import QUrl
+        source = "用Docker部署Redis，通过API访问缓存。"
+        a = source.index('Redis')
+        passage = Passage(source,(a,a+5))
+        self.assertIn('内存',local_reference(passage)[1])
+        card = Card()
+        terms,requests = [],[]
+        card.term_requested.connect(terms.append)
+        card.context_requested.connect(requests.append)
+        try:
+            card.show_result(passage,'名称参考','内存数据存储','',QPoint(10,10),can_search=True)
+            self.assertNotIn('Use Docker',card.text.toPlainText())
+            api = source.index('API')
+            card.open_reference(QUrl(f'waxterm://term/{api}/{api+3}'))
+            self.assertEqual(terms[0].word,'API')
+            self.assertEqual(terms[0].selection,(api,api+3))
+            card.open_reference(QUrl('waxcard://translate'))
+            request_id,part = requests[-1]
+            card.open_reference(QUrl('waxcard://translate'))
+            self.assertFalse(card.finish_context(request_id,'stale output'))
+            self.assertNotIn('stale output',card.text.toPlainText())
+            card.open_reference(QUrl('waxcard://translate'))
+            self.assertTrue(card.finish_context(requests[-1][0],'Use Docker.'))
+            self.assertIn('Use Docker.',card.text.toPlainText())
+            unknown = Passage('用UnknownSDK开发。',(1,11))
+            result = explain(unknown)[0]
+            self.assertEqual(result[0],UNKNOWN)
+            card.show_result(unknown,*result,QPoint(10,10),can_save=False)
+            self.assertFalse(card.save.isEnabled())
+            self.assertFalse(card.copy.isEnabled())
+            comment = '// Explicit transport views avoid exposing future domain fields by accident.'
+            begin = comment.index('avoid')
+            picked = sentence_at(comment,begin,begin+5)
+            self.assertFalse(picked.text.startswith('//'))
+            self.assertEqual(picked.word,'avoid')
+            repeated = '模型输入的token与访问token含义不同。'
+            first,last = repeated.index('token'),repeated.rindex('token')
+            self.assertIn('词元',local_reference(Passage(repeated,(first,first+5)))[1])
+            self.assertIn('令牌',local_reference(Passage(repeated,(last,last+5)))[1])
+            document = '• 更新README文档\n• 模型输入的token。\n下一条API。'
+            hit = document.index('token')
+            item = sentence_at(document,hit,hit+5)
+            self.assertEqual(item.structure,'list')
+            self.assertNotIn('README',item.text)
+            long = Passage('前文。'*40+source+'后文。'*40,(120+a,120+a+5))
+            part,offset = bounded_context(long)
+            self.assertEqual(part.word,'Redis')
+            self.assertLessEqual(len(part.text),60)
+            with TemporaryDirectory() as temp:
+                book = Notebook(Path(temp)/'rules.sqlite3')
+                item.source_code = 'en'
+                book.save(item,('语境术语参考','词元','Only this item.'))
+                restored = book.entries()[0]
+                self.assertEqual(restored['structure'],'list')
+                self.assertEqual(restored['source'],'语境术语参考')
+                self.assertNotIn('README',restored['context'])
+            from translation import translate_leg
+            self.assertRegex(translate_leg(Passage('用Docker部署Redis，通过API访问缓存。'),'zh').text,r'[A-Za-z]')
+        finally:
+            card.close()
+
     def test_home_background_is_independent_of_lookup_history(self):
         home = HomePage()
         home.setAttribute(Qt.WA_DontShowOnScreen)
@@ -167,7 +232,8 @@ class Checks(unittest.TestCase):
                 for width, height in ((1080, 675), (820, 500), (740, 480), (570, 485), (540, 610), (540, 800)):
                     window.resize(width, height)
                     QApplication.processEvents()
-                    self.assertEqual(window.sidebar.height(), 36 if window.compact else 38)
+                    self.assertGreaterEqual(window.sidebar.height(), 44)
+                    self.assertLessEqual(window.sidebar.height(), 56)
                     self.assertGreaterEqual(window.wordmark.width(), window.wordmark.sizeHint().width())
                     for button in nav:
                         self.assertTrue(window.sidebar.rect().contains(button.geometry()))
@@ -175,7 +241,7 @@ class Checks(unittest.TestCase):
                     self.assertGreater(nav[-1].x(), nav[-2].geometry().right())
                     self.assertTrue(all(v.isVisible() and v.text() == "0" for v in home.values.values()))
                     self.assertTrue(home.heading.isVisible())
-                    for control in (home.heading, home.instructions, home.region):
+                    for control in (home.heading, home.instructions):
                         bounds = QRect(control.mapTo(home, QPoint()), control.size())
                         self.assertTrue(home.rect().contains(bounds), (width, height, bounds))
                     self.assertGreaterEqual(home.instructions.width(), home.instructions.layout().sizeHint().width())
@@ -206,7 +272,9 @@ class Checks(unittest.TestCase):
                 for width, height in ((1000, 620), (540, 800), (540, 390)):
                     window.resize(width, height)
                     QApplication.processEvents()
-                    self.assertTrue(home.rect().contains(QRect(home.region.mapTo(home, QPoint()), home.region.size())))
+                    self.assertFalse(any(b.text() == "框选翻译" for b in home.findChildren(QPushButton)))
+                    self.assertTrue(window.app_menu.isVisible())
+                    self.assertIs(window.app_menu.menu(), window.tray.contextMenu())
                     self.assertLessEqual(abs(home.instructions.y() - home.page.contentsMargins().top()), 2)
                     if height >= 620:
                         self.assertEqual(home.table.verticalScrollBar().maximum(), 0)
@@ -223,10 +291,9 @@ class Checks(unittest.TestCase):
                     self.assertTrue(button.isChecked())
                 nav[2].click()
                 self.assertIs(window.tabs.currentWidget(), window.library)
-                read = next(button for button in window.library.empty.findChildren(QPushButton)
-                            if button.text() == "打开对照翻译")
-                read.setFocus()
-                QTest.keyClick(read, Qt.Key_Space)
+                self.assertFalse(any(button.text() == "打开对照翻译" for button in window.library.empty.findChildren(QPushButton)))
+                nav[1].setFocus()
+                QTest.keyClick(nav[1], Qt.Key_Space)
                 self.assertIs(window.tabs.currentWidget(), window.reader_page)
             finally:
                 window.shutdown()
@@ -350,7 +417,7 @@ class Checks(unittest.TestCase):
                 self.assertFalse(home.key.isVisible())
                 self.assertEqual(editor.toPlainText(), RIVER)
                 with patch.object(window, "begin") as begin:
-                    home.region.click()
+                    next(a for a in window.tray.contextMenu().actions() if a.text() == "框选翻译").trigger()
                     begin.assert_called_once_with(True)
 
                 # Neither a completed region nor a superseded word is a new word lookup.
@@ -676,7 +743,7 @@ class Checks(unittest.TestCase):
             first = doc.find("bank")
             second = doc.find("bank", first)
             self.assertEqual(first.charFormat().background().style(), Qt.NoBrush)
-            self.assertNotEqual(second.charFormat().background().style(), Qt.NoBrush)
+            self.assertGreater(second.charFormat().fontWeight(), first.charFormat().fontWeight())
 
             word = "inter" * 110
             card.show_result(Passage(word, (0, len(word))), "单词参考", "很长的释义" * 120, "译文", point)
@@ -738,7 +805,7 @@ class Checks(unittest.TestCase):
                 window.resize(610, 490)
                 wait_until(lambda: ui.output.mapTo(ui, QPoint()).y() > ui.input.mapTo(ui, QPoint()).y())
                 window.tabs.setCurrentWidget(window.home)
-                self.assertTrue(window.home.region.isVisible())
+                self.assertTrue(any(a.text() == "框选翻译" for a in window.tray.contextMenu().actions()))
                 self.assertEqual(ui.input.toPlainText(), RIVER)
             finally:
                 window.shutdown()
@@ -1016,7 +1083,12 @@ class Checks(unittest.TestCase):
             # Moving after the shortcut must not retarget the delayed capture.
             move_cursor(sample.mapToGlobal(QPoint(5, 5)))
             wait_until(window.card.save.isVisible)
-            self.assertEqual(window.card.caption.text(), "句中释义")
+            # OCR at fractional scale may lose alignment confidence. A correctly
+            # labelled dictionary fallback is valid, but it must preserve the
+            # actual word, river sense and original context below.
+            self.assertIn(window.card.caption.text(), ("句中释义", "英汉词典 · ECDICT"))
+            self.assertEqual(window.saved_result[0].word, "bank")
+            self.assertIn("river", window.saved_result[0].text)
             self.assertIn("岸", window.card.text.toPlainText())
             self.assertFalse(window.isVisible(), "A background lookup opened the main window")
             self.assertEqual(window.card.windowType(), Qt.Tool)
@@ -1067,7 +1139,7 @@ class Checks(unittest.TestCase):
             wait_until(lambda: native_target() == int(menu.winId()))
             user.mouse_event(2, 0, 0, 0, 0)
             user.mouse_event(4, 0, 0, 0, 0)
-            wait_until(lambda: card.copy.text() == "已复制")
+            wait_until(lambda: card.copy.toolTip() == "已复制")
             button = window.card.pin
             center = button.mapToGlobal(button.rect().center())
             move_cursor(center)

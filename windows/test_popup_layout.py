@@ -19,9 +19,14 @@ class PopupLayoutTests(unittest.TestCase):
         self.assertTrue(card.phonetic.isVisible())
         self.assertTrue(card.listen.isVisible())
         self.assertTrue(card.pin.isVisible())
+        self.assertTrue(card.dismiss_button.isVisible())
+        self.assertTrue(card.copy.isVisible())
+        self.assertTrue(card.online.isVisible())
+        for control in (card.pin, card.dismiss_button, card.copy, card.online, card.save):
+            self.assertTrue(card.rect().contains(control.mapTo(card, control.rect().center())))
         self.assertTrue(card.save.isVisible())
-        self.assertEqual(card.text.toPlainText().splitlines(), ["名词 · 英语", "仓库"])
-        self.assertLess(card.height(), 190)
+        self.assertEqual(card.text.toPlainText().splitlines(), ["名词 · 英语 → 简体中文", "仓库"])
+        self.assertLess(card.height(), 230)
         card.prepare_menu()
         actions = {action.text(): action for action in card.more.menu().actions()}
         self.assertIn("英汉词典 · ECDICT", actions)
@@ -39,7 +44,7 @@ class PopupLayoutTests(unittest.TestCase):
         translated = "请保持门关闭。"
         card.show_result(Passage(source, source_code="en"), "选区译文", translated, "",
                          area.bottomRight(), language="英语")
-        self.assertEqual(card.shell.width(), min(380, area.width() - 16))
+        self.assertEqual(card.shell.width(), min(365, area.width() - 16))
         self.assertLessEqual(card.shell.height(), 400)
         self.assertTrue(area.contains(card.geometry()))
         for expanded in (False, True, False):
@@ -48,6 +53,9 @@ class PopupLayoutTests(unittest.TestCase):
                     card.expand.click()
                 self.assertEqual(source in card.text.toPlainText(), expanded)
                 self.assertIn(translated, card.text.toPlainText())
+                # Paragraph translation is reading text, not the bold word gloss.
+                translated_cursor = card.text.document().find(translated)
+                self.assertLessEqual(translated_cursor.charFormat().fontWeight(), 500)
                 card.copy.click()
                 self.assertEqual(QApplication.clipboard().text(), translated)
         card.show_message("需要处理", "请重试。", QPoint(10, 10))

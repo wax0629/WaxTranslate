@@ -16,7 +16,7 @@ from install_model import (DEFAULT_LANGUAGES, LEXICON, MODELS, POS_ARCHIVE, inst
 SRC = Path(__file__).resolve().parent
 PYTHON_ZIP = "python-3.12.10-embed-amd64.zip"
 PYTHON_SHA = "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
-APP_FILES = ("app.py", "gestures.py", "library.py", "notebook.py", "popup.py", "reader.py", "translation.py",
+APP_FILES = ("app.py", "card_policy.py", "gestures.py", "library.py", "notebook.py", "popup.py", "reader.py", "translation.py",
              "instance.py", "theme.py", "workspace.py", "word_details.py", "install_model.py", "speech.py",
              "speech_worker.py", "lexicon.py", "lookup.py", "online_terms.py", "terminology.py", "startup.py",
              "settings_page.py", "home.py", "languages.py", "window_frame.py", "ocr_worker.py", "waxtranslate.ico")
@@ -65,7 +65,7 @@ def build(output, archive=None):
         for code in DEFAULT_LANGUAGES:
             package = MODELS[code]
             model = translation_dir(code)
-            shutil.copy2(ocr_file(code), tessdata)
+            if code != "zh": shutil.copy2(ocr_file(code), tessdata)
             for name in package.files:
                 dest = root / "models" / package.name / name
                 dest.parent.mkdir(parents=True, exist_ok=True)

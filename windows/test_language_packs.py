@@ -19,7 +19,7 @@ class LanguagePackTests(unittest.TestCase):
         root = Path(self.enterContext(TemporaryDirectory()))
         self.enterContext(patch.object(packs, "MODEL_DIR", root / "profile"))
         self.enterContext(patch.object(packs, "BUNDLED_MODELS", root / "portable"))
-        self.assertEqual(packs.DEFAULT_LANGUAGES, ("en", "ja", "ko"))
+        self.assertEqual(packs.DEFAULT_LANGUAGES, ("en", "ja", "ko", "zh"))
         archive = BytesIO()
         with zipfile.ZipFile(archive, "w") as bundle:
             bundle.writestr("test-fr/model.bin", b"translation")

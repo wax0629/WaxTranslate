@@ -155,29 +155,87 @@ class Passage:
     source_code: str = field(default="", compare=False)
     phonetic: str = field(default="", compare=False)
     ocr_line: str = field(default="", compare=False, repr=False)
+    structure: str = field(default="sentence", compare=False)
+    context_bounds: tuple[int, int] | None = field(default=None, compare=False, repr=False)
 
     @property
     def word(self):
         return self.text[slice(*self.selection)] if self.selection else ""
 
+    @property
+    def local_context(self):
+        return self.context[slice(*self.context_bounds)] if self.context_bounds else self.context
+
+    @property
+    def local_context_offset(self):
+        if self.context_offset is None:
+            return None
+        return self.context_offset - (self.context_bounds[0] if self.context_bounds else 0)
+
 
 def sentence_at(text, start, end):
     """Keep the sentence and the exact selected occurrence across soft line wraps."""
-    left, right = 0, len(text)
-    for boundary in re.finditer(r"""[。！？]+[」』”）]*\s*|[.!?]["”')]*\s+|\n[ \t]*\n""", text):
+    block_left = text.rfind("\n", 0, start) + 1
+    block_end = text.find("\n", end)
+    block_right = len(text) if block_end < 0 else block_end
+    block = text[block_left:block_right]
+
+    def structure_of(line):
+        if re.fullmatch(r'(?:[A-Za-z]:)?[\w./\\-]+[/\\][\w.\-]+', line.strip()):
+            return 'path'
+        if re.match(r'\s*(?:[•●▪◦*+-]|[0-9]+[.)、])\s*', line):
+            return 'list'
+        if re.match(r'\s*#{1,6}\s+', line):
+            return 'title'
+        if line.strip().startswith(('…', '...')) or line.strip().endswith(('…', '...')):
+            return 'fragment'
+        return 'comment' if re.match(r'\s*//', line) else 'sentence'
+
+    structure = structure_of(block)
+    if structure in ('path', 'list', 'fragment', 'title'):
+        return Passage(block, (start-block_left,end-block_left), block, start-block_left, structure=structure)
+
+    # A soft line wrap can continue a sentence, but a new item, heading or
+    # transition between comments and code is a separate source block.
+    lower, upper = block_left, block_right
+    for line in reversed(text[:block_left].splitlines(keepends=True)):
+        if not line.strip() or structure_of(line) != structure:
+            break
+        lower -= len(line)
+    for line in text[block_right:].splitlines(keepends=True)[1:]:
+        if not line.strip() or structure_of(line) != structure:
+            break
+        upper += 1 + len(line.rstrip('\n'))
+    left, right = lower, upper
+    for boundary in re.finditer(r"""[。！？]+[」』”）]*\s*|[.!?]["”')]*\s+|\n[ \t]*\n""", text[lower:upper]):
+        boundary_start, boundary_end = lower + boundary.start(), lower + boundary.end()
         if boundary.group().startswith(".") and re.search(
-                r"\b(?:Fig|Eq|Dr|Prof|e\.g|i\.e)$", text[max(0, boundary.start() - 6):boundary.start()], re.I):
+                r"\b(?:Fig|Eq|Dr|Prof|e\.g|i\.e)$", text[max(0, boundary_start - 6):boundary_start], re.I):
             continue
-        if boundary.end() <= start:
-            left = boundary.end()
-        elif boundary.start() >= end:
-            right = boundary.end()
+        if boundary_end <= start:
+            left = boundary_end
+        elif boundary_start >= end:
+            right = boundary_end
             break
     source = text[left:right].rstrip()
+    a, b = start - left, end - left
+    if structure == 'comment':
+        for marker in reversed(list(re.finditer(r'(?m)^[ \t]*//[/!]?[ \t]*', source))):
+            if marker.end() <= a:
+                a -= len(marker.group())
+                b -= len(marker.group())
+            source = source[:marker.start()] + source[marker.end():]
     leading = len(source) - len(source.lstrip())
-    context_start = max(0, start - 4000)
-    return Passage(source[leading:].replace("\n", " "), (start - left - leading, end - left - leading),
-                   text[context_start:end + 4000], start - context_start)
+    source = source[leading:].replace("\n", " ")
+    selection = a - leading, b - leading
+    if structure == 'comment':
+        return Passage(source, selection, source, selection[0])
+    # Keep the original bounded capture for diagnostics while restricting
+    # semantic evidence to this paragraph or structural block.
+    context_start, context_end = max(0, start - 4000), min(len(text), end + 4000)
+    bounds = max(lower, context_start) - context_start, min(upper, context_end) - context_start
+    return Passage(source, selection, text[context_start:context_end], start - context_start,
+                   context_bounds=bounds)
 
 
 def context_excerpt(passage):
@@ -298,6 +356,10 @@ def passage_from_lines(lines, point, source_code=""):
     if not match:
         raise ValueError("请指向一个词。")
     rects = [line_rect(line) for line in lines]
+    heading = join_ocr_words(lines[anchor], source_code)[0]
+    prominent = any(rects[anchor].height() >= rect.height()*1.35 for i, rect in enumerate(rects) if i != anchor)
+    if prominent and len(heading) <= 48 and '・' in heading and re.fullmatch(r'[ァ-ヺー・ 　]+', heading):
+        return Passage(heading, (0,len(heading)), source_code='ja', structure='title')
     japanese_anchor = source_code == "ja" and any(KANA.search(w.text) for w in lines[anchor])
 
     def neighbors(direction):
@@ -306,6 +368,14 @@ def passage_from_lines(lines, point, source_code=""):
         while True:
             choices = []
             for i, rect in enumerate(rects):
+                if max(current.height(),rect.height()) > min(current.height(),rect.height())*1.3:
+                    continue
+                candidate = join_ocr_words(lines[i], source_code)[0]
+                current_text = join_ocr_words(lines[result[-1] if result else anchor], source_code)[0]
+                if bool(re.match(r'\s*//',current_text)) != bool(re.match(r'\s*//',candidate)):
+                    continue
+                if re.match(r'\s*(?:[•●▪◦*+-]|[0-9]+[.)、])\s*', current_text if direction < 0 else candidate):
+                    continue
                 # An adjacent Latin credit under a Japanese title is a separate
                 # label even when both start at the same x and use the same size.
                 if japanese_anchor and all(w.text.isascii() for w in lines[i]):
@@ -327,6 +397,13 @@ def passage_from_lines(lines, point, source_code=""):
     indices = neighbors(-1)[::-1] + [anchor] + neighbors(1)
     text, offset = join_ocr_words((word for i in indices for word in lines[i]), source_code, hit_word)
     start, end = offset + match.start(), offset + match.end()
+    if re.match(r'\s*//', heading):
+        cleaned = ''; new_start = start; new_end = end
+        for marker in list(re.finditer(r'(?<![\w:])//[/!]?(?:[ \t]+|$)',text))[::-1]:
+            if marker.end() <= start:
+                new_start -= len(marker.group()); new_end -= len(marker.group())
+            text = text[:marker.start()] + text[marker.end():]
+        start,end = new_start,new_end
     if source_code in ("ja", "ko") and re.fullmatch(rf"[{CJK}]+", match.group()):
         # Locate the pointed character in its OCR box, then recover the word
         # across box boundaries using the same segmentation as the editor.
@@ -343,6 +420,8 @@ def passage_from_lines(lines, point, source_code=""):
         else:
             raise ValueError("请指向一个词。")
     passage = sentence_at(text, start, end)
+    if prominent and len(heading) <= 100 and not re.search(r'[。！？.!?]',heading):
+        passage.structure = 'title'
     if len(indices) > 1:
         passage.ocr_line = join_ocr_words(lines[anchor], source_code)[0]
     return passage
