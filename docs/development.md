@@ -1,12 +1,14 @@
 # 开发进度与验收记录
 
-截至 **2026-11-10**，Windows 视觉 #82 与语境卡片 #87 已合入；Mac 依次由同步 #80、卡片规则 #85 交付，build16 已在本机安装。后续双端句译修订由 #88 跟踪，Windows 对应 #89。[双端路线图](https://github.com/wax0629/WaxTranslate/issues/3)
+截至 **2026-11-10**，Windows 视觉 #82 → 语境卡片 #87、Mac 同步 #80 → 查询规则 #85 已依次合入 main；Windows 最新外语术语自动对照由 #89 交付。Mac 本机为0.3.0 build16。旧短语 PR #6 已由 #80 接续并关闭，旧个人签名 #7 不属于当前应用集成。[双端路线图](https://github.com/wax0629/WaxTranslate/issues/3)
 
-## 当前准入结论（2026-11-10）
+## 当前准入结论
 
-已确认的卡片规则可以进入开发版试用。Windows 最终 d699d8b 的 100%／150% 各107项真实桌面与安装包检查，以及多语OCR均通过；[最终PR与下载](https://github.com/wax0629/WaxTranslate/pull/87)。Mac build16 的完整规则／真实服务回归、Release安装及八类原生离屏布局通过，四类早期实机交互证据保留。[Mac当前验收](verification/card-rules/README.md)。
+本轮确认的卡片范围可以进入开发版试用。Mac 整合 head `6ae4e8e` 的[CI 42752470034](https://github.com/wax0629/WaxTranslate/actions/runs/42752470034)包含规则回归、八类原生视图与Release，全部通过；本机真实 Vision/Apple 英中及日中、安装和签名另有通过证据。[Mac 验收](verification/card-rules/README.md)
 
-已修复中文混排方向、未知代码误解释、编辑区软换行/列表/标题/多行注释边界、跨段定义、词头朗读、标题整译、重复词位置及取消竞争；新增字段兼容旧词本。任意应用普适准确率、人工听音／读屏与真实历史词本升级不记作自动通过，见[试用边界](verification/macos-sync/trial-readiness.md)。
+Windows 新规则实现 `8572296` 的[实际包 CI 42749700703](https://github.com/wax0629/WaxTranslate/actions/runs/42749700703)在100%／150%各111/111通过；英API/VoiceOver/Redis、法API真实句译及原生卡片已复核。#89 整合 main 后的最终检查、便携包与截图入口见 [PR #89](https://github.com/wax0629/WaxTranslate/pull/89)。本次未修改 OCR/语言资源，#87 的多语 OCR 2+16项属于独立历史证据，不计作新提交重跑。
+
+外语自然句的普通词与已确认名称/术语自动双语，中文混排按需句译；注释/列表/标题/代码边界、重复词位置、取消与收藏对应范围分别回归。真实历史词本升级、人工听感/读屏和全部第三方应用的物理交互仍保留待验收。[当前规则图](translation-logic.md) · [试用边界](verification/macos-sync/trial-readiness.md)
 
 ## macOS 0.3.0 同步交付（2026-11-09）
 
@@ -22,12 +24,12 @@
 | --- | --- | --- |
 | Windows · 取词与学习 | 从托盘轻按取词、拖动框选。在对照页粘贴文章，听读、保存和复习。首页固定展示四项学习统计及最多六条最近取词，取词卡可固定、展开和复制。 | [便携版与生词本 #18](https://github.com/wax0629/WaxTranslate/pull/18) · [阅读与听读 #30](https://github.com/wax0629/WaxTranslate/pull/30) · [看板和取词卡 #71](https://github.com/wax0629/WaxTranslate/pull/71) |
 | Windows · 语言与识字 | 默认英、日、韩，法、德、西、意、葡、俄按需安装，九种均可离线译为简体中文。悬停按命中行判断，框选可译整行歌名。支持切换取词键、仅应用内查词，以及单独长按 Ctrl 后松开而不触发。 | [语言包 #59](https://github.com/wax0629/WaxTranslate/pull/59) · [长按手势 #70](https://github.com/wax0629/WaxTranslate/issues/70) · [多语种 OCR #73](https://github.com/wax0629/WaxTranslate/pull/73) |
-| Windows · 界面与语境卡片 | 首页、阅读、词本、设置和取词卡采用统一纸色与字体层级。名称、普通词和未知标识分别展示；中文混排保留短原文，点词和句译均保留具体位置与边界。未知结果禁收藏，百科由用户主动发起。词头和原文分别选择朗读语种，旧词本与复习计划兼容。 | [视觉同步 #82](https://github.com/wax0629/WaxTranslate/pull/82) · [卡片规则 #87](https://github.com/wax0629/WaxTranslate/pull/87) · [验收样例](verification/windows-card-rules/README.md) |
+| Windows · 界面与语境卡片 | 首页、阅读、词本、设置和取词卡采用统一纸色与字体层级。名称、普通词和未知标识分别展示；外语自然句自动附原文及句译，中文混排保留短原文并按需句译，点词保留具体位置与边界。未知结果禁收藏，百科由用户主动发起。词头和原文分别选择朗读语种，旧词本与复习计划兼容。 | [视觉同步 #82](https://github.com/wax0629/WaxTranslate/pull/82) · [卡片规则 #87](https://github.com/wax0629/WaxTranslate/pull/87) · [验收样例](verification/windows-card-rules/README.md) |
 | macOS · 取词、阅读与复习 | 0.3.0 build16：默认 Option 取词、框选、对照阅读、生词与到期复习；首页两排统计与最近查询。四页整合顶栏，设置控制 Dock、快捷键及系统语言包。Vision 与 Apple 翻译路线保留。 | [同步 #80](https://github.com/wax0629/WaxTranslate/pull/80) · [Mac 验收](verification/macos-sync/README.md) · [升级验证 #1](https://github.com/wax0629/WaxTranslate/issues/1) |
 
 ## 最近一次 Windows 验收
 
-本轮在独立 Windows runner 中对实际便携包检查启动、重复激活、默认与可选语言包、100%／150% 桌面交互及原生截图；另有英、日、韩、俄原生 OCR 专项。完整检查现覆盖 107 项，包含新增九项语境规则验收。每次运行的终态和提交对应关系记在 [#87](https://github.com/wax0629/WaxTranslate/pull/87)，截图含实际尺寸、倍率及卡片文字与收藏状态，避免把旧帧当成新结果。
+本轮在独立 Windows runner 中对实际便携包检查启动、重复激活、默认与可选语言包、100%／150% 桌面交互及原生截图；英、日、韩、俄原生 OCR 专项由 #87 单独记录。完整检查现覆盖 111 项，其中 #87 的107项为历史基线，#89 新增四项自动对照验证。每次运行的终态和提交对应关系记在 [#89](https://github.com/wax0629/WaxTranslate/pull/89)，截图含实际尺寸、倍率及卡片文字与收藏状态，避免把旧帧当成新结果。
 
 本机 Windows 11 的离屏回归覆盖真实模型与 OCR，桌面操作在独立 runner 执行。新增语义样例实际区分 bank 的河岸／银行、VoiceOver 与 voice-over、README、INTEGER、重复 token 和未知代码；同时检查标题整译、注释与列表边界、按需句译取消以及收藏读回。人工听感、屏幕阅读器操作和任意第三方应用的物理手势仍不是这些自动检查的结论。[本轮验证与范围](verification/windows-card-rules/README.md)
 
@@ -78,4 +80,4 @@ macOS 15.2 为最低运行版本。macOS 26.4 及以上可尝试从整句译文�
 2026-11-10：Mac build15 补齐 #83 的边界、朗读和任务状态回归；七类原生离屏布局、原先四类实机证据见 [卡片规则验收](verification/card-rules/README.md)。Windows #86 / #87 已独立验收合入 main。
 
 
-2026-11-10 #88：Mac build16将外语术语/名称接入自动原文对照，中文英文混排继续按需句译。本机回归、真实翻译和八类原生视图通过；Windows从main独立分支接入同一规则。当前语义以[翻译逻辑](translation-logic.md)为准，build15和#87均为该修订之前的历史证据。
+2026-11-10 #88：Mac build16将外语术语/名称接入自动原文对照，中文英文混排继续按需句译。本机回归、真实翻译和八类原生视图通过；Windows #89 接入同一规则并独立验收。当前语义以[翻译逻辑](translation-logic.md)为准，build15和#87均为该修订之前的历史证据。

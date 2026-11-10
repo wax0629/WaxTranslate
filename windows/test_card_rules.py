@@ -12,7 +12,7 @@ from PySide6.QtCore import QPoint, QProcess, QUrl
 from PySide6.QtWidgets import QApplication
 
 from app import Window, analyze
-from card_policy import chinese_context
+from card_policy import automatic_context, bounded_context, chinese_context
 from notebook import Notebook
 from lookup import DICTIONARY, UNKNOWN, explain
 from popup import Card
@@ -29,6 +29,108 @@ def wait_for(predicate):
 
 
 class CardRuleTests(unittest.TestCase):
+    def test_known_foreign_terms_automatically_show_source_and_translation(self):
+        for word, source, code, expected in (
+            ('API', 'The API returns a response.', 'en', '应用程序编程接口'),
+            ('VoiceOver', 'Enable VoiceOver in macOS accessibility settings.', 'en', '屏幕朗读'),
+            ('Redis', 'Deploy Redis as the application cache.', 'en', '内存'),
+            ('API', "Cette API permet aux applications de communiquer entre elles.", 'fr', '应用程序编程接口'),
+        ):
+            with self.subTest(word=word, source=source):
+                start = source.index(word)
+                passage = Passage(source, (start, start+len(word)), source_code=code)
+                result, excerpt, language, pos = explain(passage)
+                self.assertIn(expected, result[1])
+                self.assertRegex(result[2], r'[\u3400-\u9fff]')
+                card = Card()
+                try:
+                    card.show_result(passage, *result, QPoint(10,10), excerpt=excerpt, language=language, pos=pos)
+                    text = card.text.toPlainText()
+                    self.assertIn(source, text)
+                    self.assertIn(result[2], text)
+                    self.assertNotIn('查看相关原文', text)
+                    self.assertNotIn('翻译这段原文', text)
+                finally:
+                    card.close()
+
+    def test_chinese_terms_stay_manual_and_standalone_terms_do_not_translate(self):
+        for word, source in (
+            ('API', '这个API接口返回数据。'),
+            ('VoiceOver', '在macOS辅助功能中启用VoiceOver。'),
+            ('Redis', '用Redis作为应用缓存。'),
+        ):
+            start = source.index(word)
+            passage = Passage(source, (start,start+len(word)))
+            with patch('lookup.translate', side_effect=AssertionError('Chinese context must stay manual')):
+                result = explain(passage)[0]
+            self.assertEqual(result[2], '')
+            self.assertFalse(automatic_context(passage, confirmed=True))
+        standalone = Passage('API', (0,3), source_code='en')
+        with patch('lookup.translate', side_effect=AssertionError('Standalone known term has no sentence')):
+            self.assertEqual(explain(standalone)[0][2], '')
+        for structure in ('title','path','fragment'):
+            passage = Passage('The API returns data.', (4,7), source_code='en', structure=structure)
+            self.assertFalse(automatic_context(passage, confirmed=True))
+        item = Passage('• The API returns data.', (6,9), source_code='en', structure='list')
+        self.assertTrue(automatic_context(item, confirmed=True))
+
+    def test_automatic_term_context_keeps_excerpt_and_saved_full_translation_matched(self):
+        source = 'Before sending a request, ' + 'the client checks each field and ' * 12 + 'the API returns a response.'
+        start = source.index('API')
+        passage = Passage(source,(start,start+3),source_code='en')
+        def translated(part):
+            return '选区译文', '译文：'+part.text, ''
+        with patch('lookup.translate', side_effect=translated):
+            result, excerpt, language, pos = explain(passage)
+        compact, offset = bounded_context(passage)
+        self.assertGreater(offset,0)
+        self.assertEqual(excerpt[0].text, compact.text)
+        self.assertEqual(excerpt[1], '译文：'+compact.text)
+        self.assertEqual(result[2], '译文：'+source)
+        card = Card()
+        try:
+            card.show_result(passage,*result,QPoint(10,10),excerpt=excerpt,language=language,pos=pos)
+            self.assertEqual(card.rule_translation,excerpt[1])
+            self.assertNotIn(result[2],card.text.toPlainText())
+            card.open_reference(QUrl('waxcard://expand'))
+            self.assertEqual(card.rule_translation,result[2])
+            self.assertIn(source,card.text.toPlainText())
+            card.open_reference(QUrl('waxcard://expand'))
+            self.assertEqual(card.rule_translation,excerpt[1])
+            with TemporaryDirectory() as temp:
+                book=Notebook(Path(temp)/'notebook.sqlite3')
+                book.save(passage,result)
+                saved,=book.entries()
+                self.assertEqual(saved['context'],source)
+                self.assertEqual(saved['translation'],'译文：'+source)
+        finally:
+            card.close()
+
+    def test_failed_automatic_context_retains_term_explanation_and_retries(self):
+        source='Deploy Redis as the application cache.'
+        start=source.index('Redis')
+        passage=Passage(source,(start,start+5),source_code='en')
+        with patch('lookup.translate',side_effect=ValueError('Missing model')):
+            result,excerpt,language,pos=explain(passage)
+        self.assertIn('内存',result[1])
+        self.assertEqual(result[2],'')
+        card=Card()
+        requests=[]
+        card.context_requested.connect(requests.append)
+        try:
+            card.show_result(passage,*result,QPoint(10,10),excerpt=excerpt,language=language,pos=pos)
+            self.assertIn(source,card.text.toPlainText())
+            self.assertIn('重试句译',card.text.toPlainText())
+            self.assertTrue(card.save.isEnabled())
+            card.open_reference(QUrl('waxcard://translate'))
+            request,part=requests[-1]
+            self.assertEqual(part.text,source)
+            self.assertTrue(card.finish_context(request,'部署Redis作为应用缓存。'))
+            self.assertIn('内存',card.text.toPlainText())
+            self.assertIn('部署Redis作为应用缓存。',card.text.toPlainText())
+        finally:
+            card.close()
+
     def test_real_semantic_acceptance_matrix(self):
         samples = (
             ("They sat on the river bank and watched the water.", "bank", "句中释义", "岸", False),

@@ -45,3 +45,8 @@ build15 阶段的源码检查、Release及同身份安装通过；后续 build16
 用户修订后，英文 API、VoiceOver、Redis 及外语自然语言列表项都默认显示原文对照，中文同词不自动句译。独立已知术语没有额外句子时不启动句译；标题/路径/片段和未确认代码边界保留。术语解释仍立即可用，不因句译缺包/失败被清空。
 
 新增反例先复现旧策略失败；完整本机回归通过，包含真实API句译、VoiceOver/Redis句译、中文手动、独立术语及结构边界。check-card-layouts.sh 的八类原生布局通过，新图见 [英文术语对照](layouts-build16/mac-foreign-term.png) 和 [manifest](layouts-build16/manifest.json)。布局使用声明的固定译文，真实翻译由独立服务回归证明。Release与build16同身份安装、严格签名校验另记录于#88及PR#85。
+
+
+## 2026-11-10 集成验收
+
+#80 → #85 已依序合入 main，#85 合并提交 `4b4cafa267ac5f0ae96410e7940e5315d8241e93`。整合 head `6ae4e8e` 的[CI42752470034](https://github.com/wax0629/WaxTranslate/actions/runs/42752470034)规则、八类原生布局和Release通过，本机完整真实服务与Release重跑通过。整合未修改已验收build16的Mac源代码/测试；Windows新规则的111项桌面验收及最终集成检查见[#89](https://github.com/wax0629/WaxTranslate/pull/89)。

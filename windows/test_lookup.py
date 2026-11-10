@@ -64,7 +64,10 @@ class LookupTests(unittest.TestCase):
                            ("这台CPU是新的。", "CPU")):
             result, _, language, _ = explain(selected(text, word))
             self.assertTrue(language.endswith("语境"))
-            self.assertEqual(result[2], "")
+            if language.startswith("日语"):
+                self.assertRegex(result[2], r"[\u3400-\u9fff]")
+            else:
+                self.assertEqual(result[2], "")
         for word in ("mutex", "idempotent"):
             item = selected(f"Use {word} for this call.", word)
             with patch("lookup.translate", side_effect=ValueError("model missing")):

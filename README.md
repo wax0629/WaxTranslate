@@ -9,19 +9,21 @@
 
 ## 试用状态（2026-11-10）
 
-Windows 语境卡片与视觉同步已进入主分支：最终便携包在 100%／150% 下各 107 项桌面检查通过，多语种 OCR 通过。[Windows 试用包与验收](https://github.com/wax0629/WaxTranslate/pull/87)。
+本轮确认的查询规则、原文边界和卡片流程已完成双端验收，可以进入开发版试用。Mac **0.3.0 build16** 已同身份覆盖安装，真实 Vision、Apple 英中/日中、数据兼容、八类原生布局和 Release 通过；实现按 [#80](https://github.com/wax0629/WaxTranslate/pull/80) → [#85](https://github.com/wax0629/WaxTranslate/pull/85) 合入主分支。[Mac 验收](docs/verification/card-rules/README.md)
 
-Mac 0.3.0 build16 已完成本机规则、真实英中／日中、数据兼容与八类原生卡片布局检查，并同身份覆盖安装。卡片区分普通词、名称、中文多术语混排及未知代码；外语术语自动附原文对照、中文语境按需句译、原文术语可点击、注释不接相邻代码。[Mac 规则与界面验收](docs/verification/card-rules/README.md)。实现依次由 [同步 #80](https://github.com/wax0629/WaxTranslate/pull/80) 和 [卡片规则 #85](https://github.com/wax0629/WaxTranslate/pull/85) 交付。
+Windows 视觉与卡片 #82 → #87 已合入；[最新句译规则 #89](https://github.com/wax0629/WaxTranslate/pull/89) 的实际便携包在 100%／150% 下各 **111/111** 项桌面检查通过，含真实离线句译、启动/再唤回、语言包和原生截图。当前试用包与最终集成检查统一由 #89 记录；旧 #87 的 107 项结果仅作历史基线。[Windows 验收](docs/verification/windows-card-rules/README.md)
 
-可以进入开发版试用；自动验收覆盖记录中的样本与流程。任意第三方应用的取词准确率、人工听感、屏幕阅读器和真实历史词本升级继续由[路线图 #3](https://github.com/wax0629/WaxTranslate/issues/3)跟踪。[当前试用边界](docs/verification/macos-sync/trial-readiness.md)。
+任意第三方应用的全部物理手势、人工听感/读屏和真实历史词本升级继续由 [路线图 #3](https://github.com/wax0629/WaxTranslate/issues/3) 跟踪。[当前试用边界](docs/verification/macos-sync/trial-readiness.md)
 
 ## 当前开发进度
 
-双端均有可运行的开发版。Windows 支持九种原文语言离线中译、对照阅读、生词复习和查词看板，界面按 Mac 的纸色与阅读层级统一。macOS 本轮补齐首页四格统计、最近取词、对照阅读、紧凑卡片与常用设置，接通连续英语短语修复。Mac 继续使用 Vision 和 Apple 本机翻译，系统语言包与 Windows 模型分别管理。[开发进度与验收记录](docs/development.md) · [Windows 卡片验收](docs/verification/windows-card-rules/README.md)
+双端支持对照阅读、生词复习、真实统计与最近查询，采用统一纸色、字体层级与简洁卡片。**外语自然句中的普通词和已确认术语/名称自动显示适长原文与对应译文；中文语境中的英文词由用户点击才句译。** 原文内其他术语按确切位置点击，注释去掉行首 // 且不接相邻代码，标题提供整译，路径/片段与未知名称保留边界。[翻译逻辑图](docs/translation-logic.md) · [开发与验收记录](docs/development.md)
+
+Mac 使用 Vision 和 Apple 本机翻译，Windows 使用本地 OCR 和离线模型，语言包分别管理；两端不要求译文逐字一致。
 
 ## WaxTranslate Windows 桌面版
 
-**使用便携包。** 登录 GitHub，从 Windows 交付记录打开最终通过的桌面构建，在运行页底部的 Artifacts 下载 `WaxTranslate-Windows-x64`。解开下载文件，再完整解开其中的便携 ZIP，双击 `WaxTranslate.exe`。程序默认在系统托盘待命；点击托盘图标或再次双击启动器可打开首页。[验收及下载记录](https://github.com/wax0629/WaxTranslate/issues/86) · [Windows 构建列表](https://github.com/wax0629/WaxTranslate/actions/workflows/windows-desktop.yml)
+**使用便携包。** 登录 GitHub，从最新句译规则的交付记录打开最终通过的桌面构建，在运行页底部的 Artifacts 下载 `WaxTranslate-Windows-x64`。解开下载文件，再完整解开其中的便携 ZIP，双击 `WaxTranslate.exe`。程序默认在系统托盘待命；点击托盘图标或再次双击启动器可打开首页。[最新验收及下载记录](https://github.com/wax0629/WaxTranslate/pull/89) · [Windows 构建列表](https://github.com/wax0629/WaxTranslate/actions/workflows/windows-desktop.yml)
 
 - **查词与框选**　轻按左 Ctrl 查一个词，或从顶部应用菜单、托盘菜单进入「框选翻译」。游戏占用左 Ctrl 时，可以在「设置 → 屏幕取词键」改用右 Ctrl，或选「仅应用内查词」。
 - **语言包**　英语、日语、韩语随包提供。法语、德语、西班牙语、意大利语、葡萄牙语和俄语可在「设置 → 语言包」下载，安装后即可离线使用。

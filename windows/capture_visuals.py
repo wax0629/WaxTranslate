@@ -122,6 +122,12 @@ def main():
             word = Passage("warehouse", (0, 9), source_code="en")
             show_card(word, "英汉词典 · ECDICT", "仓库", "", point, language="英语", pos="名词", can_search=True)
             capture(card, "lookup-word")
+            api_source = 'The API returns a response.'
+            api_start = api_source.index('API')
+            card.show_result(Passage(api_source, (api_start,api_start+3), source_code='en'),
+                             '术语参考','应用程序编程接口，供一个程序调用另一个程序提供的功能。',
+                             '该接口返回一个响应。',point,language='英语',pos='缩写',can_search=True)
+            capture(card,'rules-foreign-term')
             card.show_message("需要处理", "这里没有识别到文字。请移动到词语中央，或从托盘菜单使用框选翻译。", point)
             capture(card, "lookup-error")
             show_card(Passage("Example. " * 90), "选区译文", "很长的示例译文。" * 90, "", point, language="英语")
