@@ -20,7 +20,7 @@
 
 ## 日常使用
 
-从仓库根目录运行。Windows开发环境按README使用 `windows\setup.cmd` 准备；检查、列举、导出只需要Python标准库，可在其他平台校验目录。
+从仓库根目录运行。Windows开发环境按README使用 `windows\setup.cmd` 准备；完整应用回归包含九种语言，需要先安装可选语言包。目录的检查、列举、导出只需要Python标准库，可在其他平台运行。
 
 ```powershell
 # 校验用例编号、命中词、自动入口、语料编号和CSV一致性
@@ -37,6 +37,7 @@
 .\.venv\Scripts\python.exe scripts\windows_regression.py run --case WT-LOOK-001
 
 # 完整离屏回归；桌面专用检查会跳过，人工项保持未验证
+.\.venv\Scripts\python.exe windows\install_model.py --all-languages
 .\.venv\Scripts\python.exe scripts\windows_regression.py run --full
 
 # 修改JSON后重新生成Excel用例表
