@@ -6,7 +6,7 @@ import re
 import subprocess
 import sys
 from bisect import bisect_right
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from math import hypot
 from threading import local
 
@@ -17,6 +17,7 @@ from winrt.windows.graphics.imaging import BitmapAlphaMode, BitmapPixelFormat, S
 from winrt.windows.media.ocr import OcrEngine
 from winrt.windows.storage.streams import DataWriter
 
+from context_boundary import Line as ContextLine, analyze as analyze_context, editor_lines
 from install_model import ocr_file
 from languages import (HANGUL, KANA, LATIN, NAMES, OCR_TAGS, SHORT_CYRILLIC, SOURCE_SCRIPTS, UnsupportedLanguage,
                        detect_source, script_ocr_score)
@@ -157,6 +158,28 @@ class Passage:
     ocr_line: str = field(default="", compare=False, repr=False)
     structure: str = field(default="sentence", compare=False)
     context_bounds: tuple[int, int] | None = field(default=None, compare=False, repr=False)
+    extent: str = field(default="complete", compare=False)
+    anchor: tuple[int, int] | None = field(default=None, compare=False, repr=False)
+    evidence_text: str = field(default="", compare=False, repr=False)
+    evidence_offset: int | None = field(default=None, compare=False, repr=False)
+
+    @property
+    def has_complete_context(self):
+        return self.extent == 'complete' and self.structure != 'fragment'
+
+    @property
+    def needs_context_expansion(self):
+        return bool(self.selection and not self.has_complete_context and
+                    (self.word != self.text or self.extent != 'uncertain') and self.structure in ('sentence','list','fragment'))
+
+    def selecting(self, start, end):
+        offset = self.context_offset
+        if offset is not None:
+            base = offset - self.selection[0]
+            offset = base + start if base >= 0 and self.context[base:base+len(self.text)] == self.text else None
+        evidence = self.evidence_offset
+        if evidence is not None: evidence += start - self.selection[0]
+        return replace(self, selection=(start,end), anchor=(start,end), context_offset=offset, evidence_offset=evidence)
 
     @property
     def word(self):
@@ -164,78 +187,22 @@ class Passage:
 
     @property
     def local_context(self):
-        return self.context[slice(*self.context_bounds)] if self.context_bounds else self.context
+        return self.evidence_text or (self.context[slice(*self.context_bounds)] if self.context_bounds else self.context)
 
     @property
     def local_context_offset(self):
-        if self.context_offset is None:
-            return None
+        if self.evidence_offset is not None: return self.evidence_offset
+        if self.context_offset is None: return None
         return self.context_offset - (self.context_bounds[0] if self.context_bounds else 0)
 
 
-def sentence_at(text, start, end):
-    """Keep the sentence and the exact selected occurrence across soft line wraps."""
-    block_left = text.rfind("\n", 0, start) + 1
-    block_end = text.find("\n", end)
-    block_right = len(text) if block_end < 0 else block_end
-    block = text[block_left:block_right]
-
-    def structure_of(line):
-        if re.fullmatch(r'(?:[A-Za-z]:)?[\w./\\-]+[/\\][\w.\-]+', line.strip()):
-            return 'path'
-        if re.match(r'\s*(?:[•●▪◦*+-]|[0-9]+[.)、])\s*', line):
-            return 'list'
-        if re.match(r'\s*#{1,6}\s+', line):
-            return 'title'
-        if line.strip().startswith(('…', '...')) or line.strip().endswith(('…', '...')):
-            return 'fragment'
-        return 'comment' if re.match(r'\s*//', line) else 'sentence'
-
-    structure = structure_of(block)
-    if structure in ('path', 'list', 'fragment', 'title'):
-        return Passage(block, (start-block_left,end-block_left), block, start-block_left, structure=structure)
-
-    # A soft line wrap can continue a sentence, but a new item, heading or
-    # transition between comments and code is a separate source block.
-    lower, upper = block_left, block_right
-    for line in reversed(text[:block_left].splitlines(keepends=True)):
-        if not line.strip() or structure_of(line) != structure:
-            break
-        lower -= len(line)
-    for line in text[block_right:].splitlines(keepends=True)[1:]:
-        if not line.strip() or structure_of(line) != structure:
-            break
-        upper += 1 + len(line.rstrip('\n'))
-    left, right = lower, upper
-    for boundary in re.finditer(r"""[。！？]+[」』”）]*\s*|[.!?]["”')]*\s+|\n[ \t]*\n""", text[lower:upper]):
-        boundary_start, boundary_end = lower + boundary.start(), lower + boundary.end()
-        if boundary.group().startswith(".") and re.search(
-                r"\b(?:Fig|Eq|Dr|Prof|e\.g|i\.e)$", text[max(0, boundary_start - 6):boundary_start], re.I):
-            continue
-        if boundary_end <= start:
-            left = boundary_end
-        elif boundary_start >= end:
-            right = boundary_end
-            break
-    source = text[left:right].rstrip()
-    a, b = start - left, end - left
-    if structure == 'comment':
-        for marker in reversed(list(re.finditer(r'(?m)^[ \t]*//[/!]?[ \t]*', source))):
-            if marker.end() <= a:
-                a -= len(marker.group())
-                b -= len(marker.group())
-            source = source[:marker.start()] + source[marker.end():]
-    leading = len(source) - len(source.lstrip())
-    source = source[leading:].replace("\n", " ")
-    selection = a - leading, b - leading
-    if structure == 'comment':
-        return Passage(source, selection, source, selection[0])
-    # Keep the original bounded capture for diagnostics while restricting
-    # semantic evidence to this paragraph or structural block.
-    context_start, context_end = max(0, start - 4000), min(len(text), end + 4000)
-    bounds = max(lower, context_start) - context_start, min(upper, context_end) - context_start
-    return Passage(source, selection, text[context_start:context_end], start - context_start,
-                   context_bounds=bounds)
+def sentence_at(text, start, end, source_code=""):
+    """Select a logical block before normalization and sentence segmentation."""
+    result = analyze_context(editor_lines(text,start,end),source='editor',code=source_code)
+    context_start, context_end = max(0,start-4000), min(len(text),end+4000)
+    return Passage(result.text,result.selection,text[context_start:context_end],start-context_start,
+                   source_code=source_code,structure=result.structure,extent=result.extent,anchor=result.anchor,
+                   evidence_text=result.block,evidence_offset=result.block_hit[0])
 
 
 def context_excerpt(passage):
@@ -341,90 +308,60 @@ def join_ocr_words(words, code, anchor=None):
     return "".join(parts), anchor_start
 
 
-def passage_from_lines(lines, point, source_code=""):
+def passage_from_lines(lines, point, source_code="", *, is_crop=False, capture_bounds=None):
     if not lines:
         raise ValueError("未识别到文字。请重新框选清晰、可见的原文。")
     if point is None:
-        return Passage("\n".join(join_ocr_words(line, source_code)[0] for line in lines))
-
-    hit = nearest_box(point, (((i, j), word.rect) for i, line in enumerate(lines) for j, word in enumerate(line)))
+        return Passage("\n".join(join_ocr_words(line,source_code)[0] for line in lines))
+    hit=nearest_box(point,(((i,j),word.rect) for i,line in enumerate(lines) for j,word in enumerate(line)))
     if hit is None:
-        raise ValueError("光标附近没有可确定的词。请移近想查的词，或点主窗口的「框选翻译」。")
-    anchor, column = hit
-    hit_word = lines[anchor][column]
-    match = word_at_point(hit_word, point)
-    if not match:
-        raise ValueError("请指向一个词。")
-    rects = [line_rect(line) for line in lines]
-    heading = join_ocr_words(lines[anchor], source_code)[0]
-    prominent = any(rects[anchor].height() >= rect.height()*1.35 for i, rect in enumerate(rects) if i != anchor)
-    if prominent and len(heading) <= 48 and '・' in heading and re.fullmatch(r'[ァ-ヺー・ 　]+', heading):
-        return Passage(heading, (0,len(heading)), source_code='ja', structure='title')
-    japanese_anchor = source_code == "ja" and any(KANA.search(w.text) for w in lines[anchor])
-
-    def neighbors(direction):
-        result = []
-        current = rects[anchor]
-        while True:
-            choices = []
-            for i, rect in enumerate(rects):
-                if max(current.height(),rect.height()) > min(current.height(),rect.height())*1.3:
-                    continue
-                candidate = join_ocr_words(lines[i], source_code)[0]
-                current_text = join_ocr_words(lines[result[-1] if result else anchor], source_code)[0]
-                if bool(re.match(r'\s*//',current_text)) != bool(re.match(r'\s*//',candidate)):
-                    continue
-                if re.match(r'\s*(?:[•●▪◦*+-]|[0-9]+[.)、])\s*', current_text if direction < 0 else candidate):
-                    continue
-                # An adjacent Latin credit under a Japanese title is a separate
-                # label even when both start at the same x and use the same size.
-                if japanese_anchor and all(w.text.isascii() for w in lines[i]):
-                    continue
-                height = max(current.height(), rect.height())
-                step = direction * (rect.center().y() - current.center().y())
-                overlap = min(current.right(), rect.right()) - max(current.left(), rect.left())
-                if (0.6 * height <= step <= 2.1 * height
-                        and min(rect.height(), current.height()) >= 0.63 * height
-                        and overlap >= 0.4 * min(current.width(), rect.width())
-                        and abs(rect.left() - current.left()) <= 2.5 * height):
-                    choices.append((step + 0.15 * abs(rect.left() - current.left()), i))
-            if not choices:
-                return result
-            _, index = min(choices)
-            result.append(index)
-            current = rects[index]
-
-    indices = neighbors(-1)[::-1] + [anchor] + neighbors(1)
-    text, offset = join_ocr_words((word for i in indices for word in lines[i]), source_code, hit_word)
-    start, end = offset + match.start(), offset + match.end()
-    if re.match(r'\s*//', heading):
-        cleaned = ''; new_start = start; new_end = end
-        for marker in list(re.finditer(r'(?<![\w:])//[/!]?(?:[ \t]+|$)',text))[::-1]:
-            if marker.end() <= start:
-                new_start -= len(marker.group()); new_end -= len(marker.group())
-            text = text[:marker.start()] + text[marker.end():]
-        start,end = new_start,new_end
-    if source_code in ("ja", "ko") and re.fullmatch(rf"[{CJK}]+", match.group()):
-        # Locate the pointed character in its OCR box, then recover the word
-        # across box boundaries using the same segmentation as the editor.
-        metrics = QFontMetricsF(QFont("Yu Gothic UI" if source_code == "ja" else "Malgun Gothic", 24))
-        advance = metrics.horizontalAdvance(hit_word.text)
-        x = (point.x() - hit_word.rect.left()) * advance / max(1, hit_word.rect.width())
-        char = next((n for n in range(len(hit_word.text))
-                     if metrics.horizontalAdvance(hit_word.text[:n + 1]) > x), len(hit_word.text) - 1)
-        position = offset + char
-        for a, b in word_spans(text, source_code):
-            if a <= position < b:
-                start, end = a, b
-                break
-        else:
-            raise ValueError("请指向一个词。")
-    passage = sentence_at(text, start, end)
-    if prominent and len(heading) <= 100 and not re.search(r'[。！？.!?]',heading):
-        passage.structure = 'title'
-    if len(indices) > 1:
-        passage.ocr_line = join_ocr_words(lines[anchor], source_code)[0]
-    return passage
+        # OCR can report a suffix twice in overlapping observations. Accept
+        # the pointer only if every directly covered token agrees, on one row.
+        # Different words or a near-box tie remain an ambiguous target.
+        covered=[((i,j),word,word_at_point(word,point)) for i,line in enumerate(lines)
+                 for j,word in enumerate(line) if word.rect.contains(point)]
+        if len(covered)>1 and all(match is not None for _,_,match in covered):
+            words={match.group().casefold() for _,_,match in covered}
+            height=max(word.rect.height() for _,word,_ in covered)
+            centers=[word.rect.center().y() for _,word,_ in covered]
+            if len(words)==1 and max(centers)-min(centers)<=height*.4:
+                hit=covered[0][0]
+    if hit is None:
+        raise ValueError("光标附近没有可确定的词。请移近想查的词，或从菜单使用框选翻译。")
+    anchor,column=hit
+    hit_word=lines[anchor][column]; match=word_at_point(hit_word,point)
+    if not match: raise ValueError("请指向一个词。")
+    script_hit=source_code in ('ja','ko') and re.fullmatch(rf"[{CJK}]+",match.group())
+    observed=[]
+    for i,line in enumerate(lines):
+        text,offset=join_ocr_words(line,source_code,hit_word if i==anchor else None)
+        selection=None
+        if i==anchor:
+            if script_hit:
+                char=hit_word.character_at(point.x()); selection=(offset+char,offset+char+1)
+            else: selection=(offset+match.start(),offset+match.end())
+        rect=line_rect(line)
+        observed.append(ContextLine(text,(rect.x(),rect.y(),rect.width(),rect.height()),selection))
+    from context_boundary import coalesce
+    prepared=coalesce(observed,source_code)
+    pointed=next(line for line in prepared if line.hit is not None)
+    heights=sorted(line.height for line in prepared if line is not pointed)
+    prominent=bool(heights and pointed.height>=heights[len(heights)//2]*1.6)
+    heading=pointed.text.strip()
+    if prominent and len(heading)<=48 and '・' in heading and re.fullmatch(r'[ァ-ヺー・ 　]+',heading):
+        return Passage(heading,(0,len(heading)),source_code='ja',structure='title')
+    result=analyze_context(prepared,source='ocr',code=source_code,capture=capture_bounds if is_crop else None)
+    selection=result.selection
+    if script_hit:
+        position=result.anchor[0]
+        selection=next(((a,b) for a,b in word_spans(result.text,source_code) if a<=position<b),selection)
+    structure=result.structure
+    if prominent and structure not in ('title','list','path','code') and len(heading)<=100 and not re.search(r'[。！？.!?]',heading):
+        start=pointed.hit[0]-(len(pointed.text)-len(pointed.text.lstrip()))
+        return Passage(heading,(start,start+pointed.hit[1]-pointed.hit[0]),source_code=source_code,structure='title')
+    return Passage(result.text,selection,result.block,result.block_hit[0],source_code=source_code,
+                   ocr_line=pointed.text if len(prepared)>1 else '',structure=structure,extent=result.extent,anchor=result.anchor,
+                   evidence_text=result.block,evidence_offset=result.block_hit[0]+selection[0]-result.selection[0])
 
 
 async def ocr_lines(engine, image):
@@ -455,7 +392,7 @@ async def ocr_lines(engine, image):
     return lines
 
 
-def read_from_pack(image, point, code):
+def read_from_pack(image, point, code, *, is_crop=False):
     """Use confidence at the hit for hover, or across the selected lines for a region."""
     if image.isNull():
         raise ValueError("未识别到文字。请重新框选清晰、可见的原文。")
@@ -465,7 +402,7 @@ def read_from_pack(image, point, code):
     frame = image
     single_line = False
     ink_height = 0
-    if point is not None:
+    if point is not None and not is_crop:
         width, height = min(image.width(), 1200), min(image.height(), 96)
         left = max(0, min(image.width() - width, int(point.x()) - width // 2))
         top = max(0, min(image.height() - height, int(point.y()) - height // 2))
@@ -490,7 +427,7 @@ def read_from_pack(image, point, code):
         single_line = len(bands) == 1 and frame.height() <= 64
         if single_line:
             ink_height = bands[0][1] - bands[0][0] + 1
-        if point is not None and not single_line:
+        if point is not None and not single_line and not is_crop:
             # Neighbouring titles can use different scripts. Use a clean strip
             # only when the pointer is actually inside a separated line of ink.
             for index, (top, bottom) in enumerate(bands):
@@ -575,8 +512,8 @@ def read_from_pack(image, point, code):
         tokens = recognized[hit][1]
         token = nearest_box(point, enumerate(token_boxes[hit]))
         confidence = [tokens[token][2] if token is not None else min(data[2] for data in tokens)]
-        lines = [lines[hit]]
-    passage = passage_from_lines(lines, point, code)
+        if not is_crop: lines = [lines[hit]]
+    passage = passage_from_lines(lines, point, code, **({"is_crop":True,"capture_bounds":(0,0,pixels.width(),pixels.height())} if is_crop else {}))
     passage.source_code = code
     return passage, sum(confidence) / len(confidence)
 
@@ -609,7 +546,8 @@ def script_reading(passage, code, hover):
     return detected == code or (code == "ru" and not detected and SHORT_CYRILLIC.fullmatch(text.strip()))
 
 
-async def recognize(image, point=None, source_code=""):
+async def recognize(image, point=None, source_code="", *, is_crop=False):
+    capture_options = {"is_crop":True} if is_crop else {}
     installed = {lang.language_tag.split("-")[0].lower(): lang for lang in OcrEngine.available_recognizer_languages}
 
     async def read_native(code):
@@ -617,12 +555,12 @@ async def recognize(image, point=None, source_code=""):
         engine = OcrEngine.try_create_from_language(language)
         if engine is None:
             raise ValueError("没有可用的系统识字引擎。")
-        reading = await read_passage(engine, image, point)
+        reading = await read_passage(engine, image, point, **capture_options)
         # Windows can split the top stroke of the first kana into an extra
         # prolongation mark. Never trim printed marks just from the string.
         if code == "ja" and reading.text.startswith("ー") and ocr_file(code):
             try:
-                check, confidence = read_from_pack(image, point, code)
+                check, confidence = read_from_pack(image, point, code, **capture_options)
             except ValueError:
                 return reading
             without_prefix = reading.text.lstrip("ー")
@@ -637,7 +575,7 @@ async def recognize(image, point=None, source_code=""):
         try:
             passage = await read_native(source_code)
         except (ValueError, OSError):
-            passage = read_from_pack(image, point, source_code)[0]
+            passage = read_from_pack(image, point, source_code, **capture_options)[0]
         passage.source_code = source_code
         return passage
 
@@ -683,7 +621,7 @@ async def recognize(image, point=None, source_code=""):
     punctuation = False
     if first == "en" and ocr_file("en"):
         try:
-            packed, confidence = read_from_pack(image, point, "en")
+            packed, confidence = read_from_pack(image, point, "en", **capture_options)
         except ValueError:
             pass
         else:
@@ -721,7 +659,7 @@ async def recognize(image, point=None, source_code=""):
                 if not ocr_file(code):
                     continue
                 try:
-                    candidate, confidence = read_from_pack(image, point, code)
+                    candidate, confidence = read_from_pack(image, point, code, **capture_options)
                 except ValueError:
                     continue
                 if confidence < 55:
@@ -754,7 +692,7 @@ async def recognize(image, point=None, source_code=""):
     raise ValueError("未识别到可靠的原文。请框选清晰的文字或在设置中指定原文语言。")
 
 
-async def read_passage(engine, image, point):
+async def read_passage(engine, image, point, *, is_crop=False):
     code = engine.recognizer_language.language_tag.split("-")[0].lower()
     limit = OcrEngine.max_image_dimension
     frame, hit = image, point
@@ -764,7 +702,7 @@ async def read_passage(engine, image, point):
             hit = QPointF(point.x() * frame.width() / image.width(), point.y() * frame.height() / image.height())
     lines = await ocr_lines(engine, frame)
     try:
-        return passage_from_lines(lines, hit, code)
+        return passage_from_lines(lines, hit, code, **({"is_crop":True,"capture_bounds":(0,0,frame.width(),frame.height())} if is_crop else {}))
     except ValueError:
         if point is None:
             raise
@@ -783,4 +721,4 @@ async def read_passage(engine, image, point):
     top = max(0, min(image.height() - height, int(point.y()) - height // 2))
     crop = image.copy(left, top, width, height)
     crop = crop.scaled(2 * width, 2 * height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-    return passage_from_lines(await ocr_lines(engine, crop), (point - QPointF(left, top)) * 2, code)
+    return passage_from_lines(await ocr_lines(engine, crop), (point - QPointF(left, top)) * 2, code, **({"is_crop":True,"capture_bounds":(0,0,crop.width(),crop.height())} if is_crop else {}))

@@ -126,12 +126,14 @@ class ListenButton(QToolButton):
         self.update_state()
         self.hide()
 
-    def set_content(self, word="", sentence="", language="en", *, sentence_language=None):
+    def set_content(self, word="", sentence="", language="en", *, sentence_language=None, fragment=False):
         sentence_language = sentence_language or language
         if (word, sentence, language, sentence_language) != (self.word, self.sentence, self.language, self.sentence_language):
             self.stop()
         self.word, self.sentence, self.language = word, sentence, language
         self.sentence_language = sentence_language
+        self.read.setText("朗读可见片段" if fragment else "朗读原句")
+        self.slow_sentence.setText("慢速读可见片段" if fragment else "慢速读原句")
         self.slow.setVisible(bool(word))
         self.read.setVisible(bool(word and sentence))
         self.slow_sentence.setVisible(bool(sentence))

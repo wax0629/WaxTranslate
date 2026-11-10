@@ -14,13 +14,14 @@ def chinese_context(passage):
 
 
 def needs_confirmation(passage):
-    return passage.structure == 'path' or passage.word == 'VoiceOver' or bool(re.search(r'[a-z][A-Z]|[_/#]|\.\w+$', passage.word))
+    return passage.structure in ('path','code') or passage.word == 'VoiceOver' or bool(re.search(r'[a-z][A-Z]|[_/#]|\.\w+$', passage.word))
 
 
 def automatic_context(passage, *, confirmed=False):
     """A known term follows the source language, just like an ordinary word."""
     return bool(passage.selection and passage.word != passage.text.strip()
                 and passage.structure in ('sentence', 'list')
+                and passage.has_complete_context
                 and not chinese_context(passage)
                 and (confirmed or not needs_confirmation(passage)))
 

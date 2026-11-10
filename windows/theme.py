@@ -271,7 +271,7 @@ def result_html(passage, gloss, sentence, details, prefix="", suffix=""):
     if passage.selection:
         word = plain(passage.word)
         heading = f"<p class='word'>{word}</p>"
-    source_label = "原句" if passage.selection else "原文"
+    source_label = "原文片段" if not passage.has_complete_context else "代码片段" if passage.structure == "code" else "原句" if passage.selection else "原文"
     content = (heading + f"<p class='details'>{plain(details)}</p><p class='gloss'>{plain(gloss)}</p>"
                + f"<hr style='background-color:#d5d4ce'><p class='contextTitle'>{source_label}</p>"
                + f"<p class='source'>{prefix}{source}{suffix}</p>")

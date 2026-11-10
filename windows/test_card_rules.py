@@ -255,7 +255,7 @@ class CardRuleTests(unittest.TestCase):
                 self.assertEqual(passage.text, expected)
                 self.assertEqual(passage.word, word)
                 self.assertEqual(passage.selection[0], expected.rindex(word))
-                self.assertNotIn("type Account", passage.context)
+                self.assertNotIn("type Account", passage.local_context)
         wrapped = "They sat on the river\nbank and watched the water."
         start = wrapped.index("bank")
         self.assertEqual(sentence_at(wrapped, start, start + 4).text,

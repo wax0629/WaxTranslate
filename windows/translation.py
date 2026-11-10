@@ -172,6 +172,10 @@ def translate(passage):
             code = "en"
         else:
             raise ValueError(f"无法确定原文语言。请在设置中指定{SUPPORTED}之一。")
+    if passage.selection and not passage.has_complete_context:
+        isolated = isolated_translation(passage.word, code) if code != 'en' else Passage(passage.word)
+        gloss = translate_leg(isolated, 'en').text.rstrip('。.!！')
+        return '单词参考', gloss or passage.word, ''
     intermediate = passage
     bare = passage.text.rstrip(".。!")
     short_expression = code in QUOTED_WORD and len(bare) <= 16 and bare.isalpha()
@@ -197,7 +201,7 @@ def translate(passage):
 
 def translate_lookup(passage):
     result = translate(passage)
-    excerpt = context_excerpt(passage)
+    excerpt = context_excerpt(passage) if passage.has_complete_context else None
     if excerpt is not None:
         try:
             origin, gloss, sentence = translate(excerpt)

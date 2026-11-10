@@ -154,7 +154,11 @@ class LanguageTests(unittest.TestCase):
             self.assertIn("伤", result[1])
             phrase = japanese_fragment(passage)
             self.assertEqual((phrase.text, phrase.selection), ("誰かが傷を負うその瞬間", passage.selection))
-            self.assertRegex(result[2], r"[\u3400-\u9fff]")
+            # This lyric ends in を and has no sentence ending: keep its
+            # reliable word meaning, but do not automatically translate it
+            # as a complete sentence. An explicit region remains translatable.
+            self.assertFalse(passage.has_complete_context)
+            self.assertEqual(result[2], "")
             passage, result, _, language, _ = analyze(image.copy(12, 57, 70, 24), None, None)
             self.assertEqual((language, passage.text), ("日语", "祝おう"))
             self.assertIn("庆祝", result[1])
