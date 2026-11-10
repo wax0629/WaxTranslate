@@ -6,6 +6,7 @@
 - 在 issue 中更新开始、重要进展、阻塞、验证结果和 PR。从目标分支建立工作分支，PR 正文写明对应验收情况；完整解决用 `Closes #编号`，分阶段交付用 `Refs #编号`。
 - 先读 README 的产品目标、对应平台的入口和测试脚本，再看 `git status -sb`。处理已有 issue 或 PR 时核对其目标分支，尤其是基于另一条 PR 的开发。
 - 开工前说清本轮覆盖的用户操作和验收方式。只修改本任务需要的文件，保留其他工作中的改动和未跟踪资源。
+- 需要临时 Git 工作树时，先检查并复用合适的已有工作树；新工作树统一放在主仓库的 `.worktrees/<issue>-<topic>/` 内。不要在主仓库的父目录并排创建 `WaxTranslate-*` 文件夹。
 
 ## 平台与数据
 
@@ -17,6 +18,7 @@
 ## 验收与交付
 
 - 所负责的 PR 检查通过且评审意见已处理后，由开发代理自行合并。串联 PR 按依赖关系合并，最后核对改动已进入默认分支，并更新关联 issue。
+- PR 合并且验收完成后及时清理对应工作树。清理前核对未提交和未跟踪文件、提交合并状态及运行占用；需要留存的忽略文件（安装包、验收记录等）先迁入主仓库 `dist/worktree-archives/`，再用 `git worktree remove` 移除。保留主仓库和仍在开发的工作树，不强制删除未保存的工作。
 
 - Windows 安装开发环境用 `windows\setup.cmd`。日常运行 `.venv\Scripts\python.exe windows\check.py -v`，在后台检查真实 OCR、翻译和缩放坐标。
 - Windows 桌面回归优先用 PR 的独立 Windows runner。`--desktop` 会显示窗口、全屏遮罩、移动鼠标并发送快捷键。在用户桌面运行前先在聊天说明影响并获得同意，再退出已运行的开发版，执行 `.venv\Scripts\python.exe windows\check.py --desktop -v`。
