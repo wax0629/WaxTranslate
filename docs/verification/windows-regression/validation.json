@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-11",
+  "platform": "Windows",
+  "python": "3.12.8",
+  "application_commit": "23e8eae840504b36f7058deba2a0b0464558c584",
+  "catalog_cases": 58,
+  "tool_tests": {
+    "command": ".venv/Scripts/python.exe -m unittest discover -s scripts/tests -p test_windows_regression.py -v",
+    "tests": 13,
+    "passed": 13
+  },
+  "window_group": {
+    "command": ".venv/Scripts/python.exe scripts/windows_regression.py run --group window",
+    "tests": 9,
+    "passed": 9,
+    "exit_code": 0,
+    "seconds": 1.484
+  },
+  "full_offscreen": {
+    "status": "partial",
+    "automation_status": "passed",
+    "tests": 120,
+    "skipped": 4,
+    "seconds": 67.594,
+    "exit_code": 0,
+    "pending_manual_or_desktop": [
+      "WT-OCR-006",
+      "WT-OCR-007",
+      "WT-OCR-008",
+      "WT-LANG-007",
+      "WT-MAN-001",
+      "WT-MAN-002",
+      "WT-MAN-003",
+      "WT-MAN-004",
+      "WT-MAN-005"
+    ]
+  },
+  "full_command": ".venv/Scripts/python.exe scripts/windows_regression.py run --full",
+  "reports": [
+    "dist/regression/window-group.json",
+    "dist/regression/full-offscreen-final.json"
+  ],
+  "initial_attempt": {
+    "exit_code": "0xC0000409",
+    "status": "failed",
+    "tests": 120,
+    "skipped": 4,
+    "log": "dist/regression/full-offscreen.log"
+  },
+  "manual_cases": "Not executed; the catalog records five manual cases separately."
+}

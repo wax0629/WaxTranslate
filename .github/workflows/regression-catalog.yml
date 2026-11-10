@@ -1,0 +1,31 @@
+name: Regression catalog
+
+on:
+  pull_request:
+    paths:
+      - 'Tests/Fixtures/windows-regression.json'
+      - 'Tests/Fixtures/sentence-boundaries.json'
+      - 'docs/verification/windows-regression/**'
+      - 'scripts/windows_regression.py'
+      - 'scripts/tests/test_windows_regression.py'
+      - 'windows/check.py'
+      - 'windows/test_*.py'
+      - '.github/workflows/regression-catalog.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test the catalog tools
+        run: python -m unittest discover -s scripts/tests -p test_windows_regression.py -v
+      - name: Verify cases, fixture references and CSV
+        run: python scripts/windows_regression.py check
