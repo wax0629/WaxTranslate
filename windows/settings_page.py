@@ -168,6 +168,11 @@ class SettingsPage(QScrollArea):
         actions.addStretch()
         system.addWidget(self.startup_actions)
         system.addWidget(QFrame(objectName="hairline"))
+        self.show_in_taskbar = Switch()
+        self.show_in_taskbar.setChecked(True)
+        setting_row(system, "在任务栏中显示", self.show_in_taskbar,
+                    "开启后最小化留在任务栏；关闭后收起到托盘。无系统托盘时保留任务栏入口。")
+        system.addWidget(QFrame(objectName="hairline"))
         self.close_behavior = Choice()
         self.close_behavior.addItem("收起到托盘", "tray")
         self.close_behavior.addItem("退出应用", "quit")

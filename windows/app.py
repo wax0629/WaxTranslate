@@ -269,6 +269,8 @@ class Window(QWidget):
             control.setCurrentIndex(max(0, control.findData(self.settings.value(key, default))))
         self.auto_online.setChecked(self.settings.value("onlineTerms", True, type=bool))
         self.auto_online.toggled.connect(lambda checked: self.save_preference("onlineTerms", checked))
+        self.preferences.show_in_taskbar.setChecked(self.settings.value("showInTaskbar", True, type=bool))
+        self.preferences.show_in_taskbar.toggled.connect(self.change_taskbar_visibility)
         self.preferences.close_behavior.currentIndexChanged.connect(
             lambda: self.save_preference("closeBehavior", self.preferences.close_behavior.currentData()))
         self.preferences.startup.toggled.connect(self.set_startup)
@@ -363,15 +365,32 @@ class Window(QWidget):
             self.reading_layout.setContentsMargins(28, 28, 28, 28)
 
     def sync_tray_window(self):
-        """Keep a normal, reachable window on desktops without a notification area."""
+        """Apply the taskbar preference, retaining a reachable window without a tray."""
         available = self.tray.isSystemTrayAvailable()
         if available and not self.tray.isVisible():
             self.tray.show()
-        kind = Qt.Tool if available else Qt.Window
+        kind = Qt.Tool if available and not self.preferences.show_in_taskbar.isChecked() else Qt.Window
         if self.windowType() != kind or not self.windowFlags() & Qt.FramelessWindowHint:
+            visible, active = self.isVisible(), self.isActiveWindow()
+            geometry, state = self.saveGeometry(), self.windowState()
+            focus = self.focusWidget()
+            # Changing the native window type hides it. Restore both its normal
+            # geometry and state so a live setting does not reset the reader.
             self.setWindowFlags(kind | Qt.FramelessWindowHint)
+            self.restoreGeometry(geometry)
+            self.setWindowState(state)
+            if visible:
+                self.show()
+                if active:
+                    self.activateWindow()
+                    if focus is not None:
+                        focus.setFocus()
         configure_frame(self)
         return available
+
+    def change_taskbar_visibility(self, checked):
+        self.save_preference("showInTaskbar", checked)
+        self.sync_tray_window()
 
     def nativeEvent(self, event_type, message):
         if event_type == b"windows_generic_MSG" and hasattr(self, "sidebar"):
@@ -460,7 +479,7 @@ class Window(QWidget):
     def finish_minimize(self):
         if self.stopping or not self.isMinimized():
             return
-        if self.sync_tray_window():
+        if self.sync_tray_window() and not self.preferences.show_in_taskbar.isChecked():
             self.hide()
         elif not self.isVisible():
             # The tray disappeared while the tool window was open. Changing
