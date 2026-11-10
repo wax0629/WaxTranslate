@@ -100,6 +100,8 @@ def main():
                     if index == 1:
                         window.workspace.input.setPlainText(source + "\n\nShe deposited her paycheck at the bank.")
                         window.workspace.output.setPlainText("他们坐在河岸边，看着水。\n\n她把工资支票存入银行。")
+                    if index == 3:
+                        window.preferences.ensureWidgetVisible(window.preferences.system)
                     capture(window, page + "-" + name)
                 if name == "narrow":
                     assert window.width() <= width + 2, ("narrow window expanded", window.width())

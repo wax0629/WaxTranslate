@@ -4,8 +4,9 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import Mock, patch
 
-from PySide6.QtCore import QProcess, QSettings
+from PySide6.QtCore import QProcess, QSettings, Qt
 from PySide6.QtGui import QCloseEvent
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton, QSystemTrayIcon
 
 from app import Window
@@ -44,6 +45,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(page.trigger.currentData(), "right")
         self.assertTrue(page.auto_online.isChecked())
         self.assertEqual(page.close_behavior.currentData(), "tray")
+        self.assertTrue(page.show_in_taskbar.isChecked())
         self.assertEqual(window.workspace.source_code, "")
         self.login.set_enabled.assert_not_called()
 
@@ -68,6 +70,49 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(reopened.trigger.currentData(), "off")
         self.assertFalse(reopened.auto_online.isChecked())
         self.login.set_enabled.assert_not_called()
+
+    def test_taskbar_visibility_is_live_and_persistent(self):
+        with patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True):
+            window = self.window()
+            window.resize(760, 640)
+            window.workspace.input.setPlainText("Keep this reading passage.")
+            window.workspace.output.setPlainText("保留当前译文。")
+            window.open_settings()
+            QApplication.processEvents()
+            toggle = window.preferences.show_in_taskbar
+            self.assertEqual(toggle.accessibleName(), "在任务栏中显示")
+            self.assertTrue(toggle.isChecked())
+            self.assertEqual(window.windowType(), Qt.Window)
+            for maximized in (False, True):
+                if maximized:
+                    window.showMaximized()
+                QApplication.processEvents()
+                normal = window.normalGeometry()
+                for enabled in (False, True):
+                    toggle.setFocus()
+                    QTest.keyClick(toggle, Qt.Key_Space)
+                    QApplication.processEvents()
+                    self.assertEqual(toggle.isChecked(), enabled)
+                    self.assertEqual(window.windowType(), Qt.Window if enabled else Qt.Tool)
+                    self.assertTrue(window.isVisible())
+                    self.assertEqual(window.isMaximized(), maximized)
+                    self.assertEqual(window.normalGeometry(), normal)
+                    self.assertIs(window.tabs.currentWidget(), window.preferences)
+                    self.assertEqual(window.workspace.input.toPlainText(), "Keep this reading passage.")
+                    self.assertEqual(window.workspace.output.toPlainText(), "保留当前译文。")
+                if maximized:
+                    window.showNormal()
+                    QApplication.processEvents()
+                    self.assertEqual(window.geometry(), normal)
+
+            window.hide()
+            toggle.click()
+            self.assertFalse(window.isVisible(), "Changing a hidden window must not open it")
+            reopened = self.window()
+            self.assertFalse(reopened.preferences.show_in_taskbar.isChecked())
+            self.assertEqual(reopened.windowType(), Qt.Tool)
+            reopened.preferences.show_in_taskbar.click()
+            self.assertTrue(self.window().preferences.show_in_taskbar.isChecked())
 
     def test_login_error_repair_and_external_change(self):
         window = self.window()

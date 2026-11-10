@@ -15,6 +15,45 @@ from workspace import TextWorkspace
 
 
 class HitTests(unittest.TestCase):
+    def test_title_prominence_ignores_other_columns(self):
+        def line(text, bounds):
+            x, y, width, height = bounds
+            edges = tuple(x + width * i / len(text) for i in range(len(text) + 1))
+            return [Word(text, QRectF(*bounds), edges)]
+
+        # Native 150% evidence: unrelated console text is smaller than the
+        # body. Its extra rows must not turn the hit line into a heading.
+        body = [
+            ("reviewed every connection around the main panel", (86, 30, 722, 33)),
+            ("before checking the pressure and the temperature", (86, 75, 728, 33)),
+            ("while the sensor remained connected to the", (84, 120, 638, 25)),
+            ("controller and the backup power supply so", (85, 165, 619, 33)),
+            ("the recorded measurements could be compared with", (84, 210, 769, 33)),
+        ]
+        noise = [("status", (980, 15 + i * 25, 44, 14)) for i in range(9)]
+        text, bounds = body[2]
+        point = QPointF(bounds[0] + bounds[2] * (text.index("sensor") + 3) / len(text), 132)
+        distant = [("status", (86, 400 + i * 25, 44, 14)) for i in range(9)]
+        for name, extra in (("none", []), ("other-column", noise), ("distant-block", distant)):
+            with self.subTest(kind="body", background=name):
+                result = passage_from_lines([line(t, r) for t, r in body + extra], point, "en",
+                                            is_crop=True, capture_bounds=(0, 0, 1025, 720))
+                self.assertEqual((result.word, result.structure, result.extent), ("sensor", "sentence", "missingBoth"))
+                self.assertEqual(result.text, " ".join(t for t, _ in body))
+                self.assertTrue(result.needs_context_expansion)
+
+        heading = "Words change meaning in context"
+        lines = [(heading, (40, 30, 450, 40)),
+                 ("The same word has different meanings.", (40, 100, 720, 20)),
+                 ("Read the sentence before choosing a gloss.", (40, 130, 720, 20))]
+        noise = [("Background", (980, 5 + i * 70, 200, 60)) for i in range(5)]
+        point = QPointF(40 + 450 * (heading.index("meaning") + 3) / len(heading), 50)
+        distant = [("Background", (40, 500 + i * 70, 200, 60)) for i in range(5)]
+        for name, extra in (("none", []), ("other-column", noise), ("distant-block", distant)):
+            with self.subTest(kind="heading", background=name):
+                result = passage_from_lines([line(t, r) for t, r in lines + extra], point, "en")
+                self.assertEqual((result.word, result.text, result.structure), ("meaning", heading, "title"))
+
     def test_underlined_word_box_spanning_adjacent_title(self):
         # One trailing symbol owns the underline under the rest of a mixed-script
         # title. These are physical coordinates in the pack's 2x OCR buffer.

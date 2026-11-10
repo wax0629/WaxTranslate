@@ -11,7 +11,7 @@
 
 本轮换行、断句与半句处理已完成双端验收：Mac **0.3.0 build17** 已同身份安装并验签，160项共享契约、22项真实Vision、12类原生卡片布局、真实Apple服务与Release通过；Mac当前提交CI成功后才开始Windows同步。
 
-Windows同一共享契约160/160，实际便携包在100%／150%下各 **118/118** 项桌面检查通过，多语种原生OCR **2+16** 项通过；四种片段卡片和缩放截图已复核。[当前试用包](https://github.com/wax0629/WaxTranslate/actions/runs/42780828105/artifacts/13746860612) · [验收报告与直接截图](docs/verification/sentence-boundaries/README.md) · [本轮交付与合并状态 #90](https://github.com/wax0629/WaxTranslate/issues/90)
+Windows同一共享契约160/160，实际便携包在100%／150%下各 **118/118** 项桌面检查通过，多语种原生OCR **2+16** 项通过；四种片段卡片和缩放截图已复核。[断句验收包](https://github.com/wax0629/WaxTranslate/actions/runs/42780828105/artifacts/13746860612) · [验收报告与直接截图](docs/verification/sentence-boundaries/README.md) · [本轮交付与合并状态 #90](https://github.com/wax0629/WaxTranslate/issues/90)
 
 完整外语句中的普通词和专业术语自动显示同范围原文与译文，中文语境点击才句译。跨行先区分段落、列表、标题、代码和注释，疑似裁切最多补采一次；仍不完整时明确显示片段，不补造原文。任意第三方应用的全部物理手势、人工听感/读屏和真实历史词本升级继续独立跟踪。[当前翻译逻辑](docs/translation-logic.md)
 
@@ -23,11 +23,12 @@ Mac 使用 Vision 和 Apple 本机翻译，Windows 使用本地 OCR 和离线模
 
 ## WaxTranslate Windows 桌面版
 
-**使用便携包。** 登录 GitHub，从最新句译规则的交付记录打开最终通过的桌面构建，在运行页底部的 Artifacts 下载 `WaxTranslate-Windows-x64`。解开下载文件，再完整解开其中的便携 ZIP，双击 `WaxTranslate.exe`。程序默认在系统托盘待命；点击托盘图标或再次双击启动器可打开首页。[最新验收及下载记录](https://github.com/wax0629/WaxTranslate/pull/89) · [Windows 构建列表](https://github.com/wax0629/WaxTranslate/actions/workflows/windows-desktop.yml)
+**使用便携包。** 登录 GitHub，从 Windows 交付记录打开最终通过的桌面构建，在运行页底部的 Artifacts 下载 `WaxTranslate-Windows-x64`。解开下载文件，再完整解开其中的便携 ZIP，双击 `WaxTranslate.exe`。程序默认在系统托盘待命；点击托盘图标或再次双击启动器可打开首页。[最新验收及下载记录](https://github.com/wax0629/WaxTranslate/issues/96) · [Windows 构建列表](https://github.com/wax0629/WaxTranslate/actions/workflows/windows-desktop.yml)
 
 - **查词与框选**　轻按左 Ctrl 查一个词，或从顶部应用菜单、托盘菜单进入「框选翻译」。游戏占用左 Ctrl 时，可以在「设置 → 屏幕取词键」改用右 Ctrl，或选「仅应用内查词」。
 - **语言包**　英语、日语、韩语随包提供。法语、德语、西班牙语、意大利语、葡萄牙语和俄语可在「设置 → 语言包」下载，安装后即可离线使用。
 - **阅读与复习**　在「对照翻译」粘贴文章，点词看释义，按 Ctrl+Enter 看整段译文。在取词卡上点「加入我的生词本」，以后可以按原句复习。[Windows 使用指南](docs/windows.md)
+- **任务栏显示**　在「设置 → 启动与窗口」切换「在任务栏中显示」，默认开启。开启时最小化留在任务栏，关闭时收起到托盘；切换立即生效并保留到下次启动。
 
 ### 从源码运行
 

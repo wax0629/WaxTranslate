@@ -176,14 +176,18 @@ def check(root):
 
     command = registered_command()
     assert command == f'"{exe.resolve()}" --background', f"Expected the portable launcher, got {command!r}"
-    for login in (False, True):
-        if login:
-            # A fresh login uses the real registered command and the alternate
-            # explicit close setting, in this test's own temporary profile.
-            prefs = QSettings(str(Path(os.environ["LOCALAPPDATA"]) / "WaxTranslate/preferences.ini"), QSettings.IniFormat)
-            prefs.setValue("closeBehavior", "quit")
-            prefs.sync()
-            assert prefs.status() == QSettings.NoError
+    for login, show_taskbar in ((False, None), (False, False), (True, True), (True, False)):
+        # Cover the missing-key default and both persisted values, using the
+        # actual launcher and an isolated profile for manual/login startup.
+        prefs = QSettings(str(Path(os.environ["LOCALAPPDATA"]) / "WaxTranslate/preferences.ini"), QSettings.IniFormat)
+        prefs.setValue("closeBehavior", "quit" if login else "tray")
+        if show_taskbar is None:
+            prefs.remove("showInTaskbar")
+        else:
+            prefs.setValue("showInTaskbar", show_taskbar)
+        prefs.sync()
+        assert prefs.status() == QSettings.NoError
+        taskbar_visible = show_taskbar is not False or not has_tray
         launcher_pid = launch(command if login else [exe])
         pid, = wait_for(lambda: python_children(launcher_pid), "the launcher's child")
         process = kernel.OpenProcess(0x00100001, False, pid)  # SYNCHRONIZE | PROCESS_TERMINATE
@@ -205,8 +209,8 @@ def check(root):
             assert active_pid.value == pid, "A second main instance opened"
             style = user.GetWindowLongW(window, -16)
             ex_style = user.GetWindowLongW(window, -20)
-            assert bool(ex_style & 0x80) == has_tray, f"Unexpected WS_EX_TOOLWINDOW: {ex_style:#x}"
-            if has_tray:
+            assert bool(ex_style & 0x80) != taskbar_visible, f"Unexpected WS_EX_TOOLWINDOW: {ex_style:#x}"
+            if not taskbar_visible:
                 assert not ex_style & 0x40000, f"Unexpected WS_EX_APPWINDOW: {ex_style:#x}"
             assert style & 0xb0000 == 0xb0000, f"Missing system/minimize/maximize commands: {style:#x}"
             assert not (style & 0x00c40000), f"Unwanted native caption or sizing frame: {style:#x}"
@@ -215,7 +219,7 @@ def check(root):
                 verify_frame(window)
 
                 def stowed():
-                    return not user.IsWindowVisible(window) if has_tray else user.IsIconic(window)
+                    return user.IsIconic(window) if taskbar_visible else not user.IsWindowVisible(window)
 
                 assert user.PostMessageW(window, 0x0112, 0xF020, 0)  # WM_SYSCOMMAND / SC_MINIMIZE
                 wait_for(stowed, "minimize into the tray or ordinary taskbar")
