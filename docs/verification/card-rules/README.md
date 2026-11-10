@@ -1,0 +1,47 @@
+# Mac 语境与卡片规则验收 · build16
+
+设计 #83、Mac #84、PR #85（依赖 #80）；Windows #86 / #87 已独立验收合入 main。
+
+## 最终行为
+
+查询对象、原文结构、参考来源分别判断。外语自然句中的普通词及已确认术语/名称默认适长双语；中文混排默认保留中文，点击才翻译当前展示范围；名称先说明身份，外语原文自动显示；仅中文语境中的名称原文按需折叠；未知代码不把拆词当解释，不允许收藏。中文语境中的无词典普通英文词用独立英中请求，避免中文整句方向影响词义。正文中的其他英文词可点击，使用确切原文偏移重新查询。
+
+阅读输入允许同一自然段的软换行与连续注释接续，保留空行、列表、Markdown标题和代码边界；OCR不拼接下一列表项、不同栏或明显字号变化。结构包含句子、列表、标题、路径和识别片段。中文节选最多60字符，其他160字符，保留命中词并用省略号标记裁切；展开仅当前块。明确短片假名标题整体查询；Markdown或其他突出短标题提供“翻译整个标题”，正文不自动扩成标题。路径不机译；明确带省略号的不完整片段不自动句译。代码行首注释标记 //、///、//! 不参与原文显示和翻译，注释块不与相邻声明/字段拼接，去除标记同步校正命中偏移；URL 内的斜杠保留。OCR无法可靠检测所有缺字，不能将几何规则描述为通用完整性模型。
+
+词头与原文朗读分别确定语种；词本/复习沿用同一词头语种。voice-over保留完整的“画外音/旁白”普通词参考，区别于身份待确认的VoiceOver；INTEGER在编程语境给出稳定的本机整数类型参考，跨段定义不用于当前词。
+
+句译请求拥有独立ID，收起/切换范围/新查询取消旧请求；失败给重试。简体输出统一规范化。收藏保存完整原文及其对应完整句译，节选译文不会误附给完整原文；新增可选来源/结构字段兼容旧记录。百科仅手动查询。
+
+## 验证
+
+| 验证项 | 预期 | 实际结果 | 结论 |
+| --- | --- | --- | --- |
+| scripts/check.sh | 新旧业务回归与真实服务通过 | 最终本机完整检查通过，包括列表隔离、重复token两种义项、Transformer领域、标题正文反例、路径、片段、来源结构持久化、简体转换及旧记录 | 通过 |
+| Release/安装 | build15可运行、同身份升级 | scripts/install.sh编译Release并安装，保留bundle ID与签名 | 通过 |
+| build14 普通词真实UI | bank释义和双语原句 | 岸边；They sat…与“他们坐在河岸边…” | 通过，mac-word.png |
+| build14 名称真实UI | VoiceOver说明、原文折叠 | Apple屏幕朗读辅助功能；点击可展开，未自动英译 | 通过，mac-name.png |
+| build14 混排真实UI | 原文术语点击、手动句译、收藏 | Redis原文点击API成功切换；点击“翻译这句”才出现英译；收藏显示已加入 | 通过，mac-mixed.png、mac-context-translation.png |
+| build14 未知真实UI | 未确认且不能收藏 | UnknownSDK显示未确认、组成词仅次级参考、收藏和复制禁用 | 通过，mac-unknown.png |
+| 用户歌名截图 | 整标题、不接专辑元数据 | Vision真实返回ア・サマア・バケイション，context同标题，ja | OCR通过，不等于歌名译义评测 |
+| 用户代码截图 | 仅注释句子且去标记 | 真实Vision返回avoid / Explicit transport views avoid exposing future domain fields by accident. / en，无type/struct/字段 | 通过 |
+| build15 规则/状态 | 边界、语种、位置、失败与取消可靠 | 先复现软换行失败；新断言覆盖多行注释/标题、跨段定义、重复token+emoji、标题整译、失效/重试/重复完成、收藏读回及缓存结构隔离 | 通过 |
+| build15 原生视图 | 原有四类+标题/整标题/注释内容不溢出 | check-card-layouts.sh 渲染实际ResultCard，七类均为365点宽、202–290点高，PNG及manifest位于layouts-build15/；不创建屏幕控制会话 | 布局通过；固定释义夹具不计为语义证据 |
+| 取消竞争与失败 | 不应用旧请求，能单独重试 | 卡片实际采用CardContextTranslation状态；取消/替换后成功与失败均拒绝，失败后新请求接受，重复完成拒绝 | 注入状态回归通过；系统超时物理注入未执行 |
+
+build14实机截图位于screenshots/，来自当时的本机原生运行，使用WaxTranslate.Test.cards84complete隔离配置，不含用户内容。Cua唤回应用曾覆盖浮窗，修复为优先唤回可见结果窗。
+
+复现：`python3 scripts/prepare-ui-profile.py --profile WaxTranslate.Test.cards84complete --scenario cards`，安装版以`--test-profile WaxTranslate.Test.cards84complete --test-card Redis`启动可直达卡片；换成bank、VoiceOver、UnknownSDK可验证对应类型。重置配置后重新启动，避免最近六条将例子挤出。完成后退出测试进程并仅删除此专用域，恢复正常启动。
+
+名称证据仍为可解释的本地规则与资料，不是训练模型；Apple翻译长句可能有独立词义与句译不一致。当前直接证据不包含物理Option在全部第三方应用的普适成功率，也未把语音听感和VoiceOver朗读当作通过。Windows最终d699d8b的[桌面CI](https://github.com/wax0629/WaxTranslate/actions/runs/42624022310)两档107/107及[多语OCR](https://github.com/wax0629/WaxTranslate/actions/runs/42624022312)均通过，#87已合入main。
+
+## 不控制桌面的复现
+
+`./scripts/check.sh` 运行规则、真实Vision、隔离数据和可用的Apple服务；`./scripts/check-card-layouts.sh /tmp/wax-card-layouts` 渲染实际ResultCard。后者明确使用固定释义/本机术语作为布局夹具，不播放声音、不移动鼠标、不读取用户词本。当前本机为macOS26.6.2 Intel，英中/日中真实服务已通过；远程若缺语言资源会明确跳过真实服务。
+
+build15 阶段的源码检查、Release及同身份安装通过；后续 build16 结果见下节。主界面旧设置与词本键保留，本轮不做历史词本批量改写。Mac 按 #80 → #85 依次交付。
+
+## build16 · 语境语种决定句译（#88）
+
+用户修订后，英文 API、VoiceOver、Redis 及外语自然语言列表项都默认显示原文对照，中文同词不自动句译。独立已知术语没有额外句子时不启动句译；标题/路径/片段和未确认代码边界保留。术语解释仍立即可用，不因句译缺包/失败被清空。
+
+新增反例先复现旧策略失败；完整本机回归通过，包含真实API句译、VoiceOver/Redis句译、中文手动、独立术语及结构边界。check-card-layouts.sh 的八类原生布局通过，新图见 [英文术语对照](layouts-build16/mac-foreign-term.png) 和 [manifest](layouts-build16/manifest.json)。布局使用声明的固定译文，真实翻译由独立服务回归证明。Release与build16同身份安装、严格签名校验另记录于#88及PR#85。

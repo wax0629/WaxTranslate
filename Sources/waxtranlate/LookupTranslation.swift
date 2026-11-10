@@ -25,10 +25,11 @@ struct LookupResult {
     static let shared = LookupCache()
     private struct Key: Hashable {
         let text: String, context: String, language: String
+        let structure: Passage.Structure
         let selection: NSRange?, anchor: NSRange?
         init(_ passage: Passage) {
             text = passage.text; context = passage.context; language = passage.sourceLanguage
-            selection = passage.selection; anchor = passage.anchor
+            selection = passage.selection; anchor = passage.anchor; structure = passage.structure
         }
     }
     private var entries: [Key: (LookupResult, Date)] = [:]
@@ -71,6 +72,10 @@ enum CompactGloss {
         // Dictionary Services can return an entry for just one word of a phrase.
         guard language == "en", !passage.isPhrase, let selection = passage.selection,
               let range = Range(selection, in: passage.context) else { return [] }
+        // The hyphenated common noun is distinct from Apple's VoiceOver name.
+        // Keep a complete local reference if the system dictionary exposes an
+        // adjectival fragment before its ordinary noun sense.
+        if passage.text.lowercased() == "voice-over" { return ["画外音", "旁白"] }
         let source = passage.context as CFString
         let selected = CFRange(location: selection.location, length: selection.length)
         guard let entry = DCSCopyTextDefinition(nil, source, selected)?.takeRetainedValue() else { return [] }
@@ -139,7 +144,7 @@ private extension String {
 
 enum LookupTranslation {
     static func makeResult(for passage: Passage, meaning: String, origin: LookupResult.Origin, sentence: String? = nil) -> LookupResult {
-        let target = passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans"
+        let target = LookupPolicy(passage).headwordLanguage.hasPrefix("zh") ? "en" : "zh-Hans"
         let trim = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
         let gloss = meaning.trimmingCharacters(in: trim)
         let word = passage.text.precomposedStringWithCompatibilityMapping

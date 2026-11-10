@@ -34,6 +34,9 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testPhraseAtExactOccurrence()
         try testConciseGloss()
         try testContextExcerpt()
+        try testCardPolicy()
+        try testFinalCardRules()
+        try testAutomaticForeignTermContext()
         try testSavingAndReview(ruledOut)
         try testLanguageRouting()
         try testActivityAndCorruptData(ruledOut)
@@ -48,6 +51,169 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testLookupCache()
         try await testInstalledTranslation(ruledOut: ruledOut, ranOut: ranOut)
         print("Passed: capture geometry, cursor-free Retina configuration, small mixed text, OCR, packed typography, phrase selection, exact occurrences, vocabulary migration, review, language routing, dashboard persistence, corrupt-data preservation, reading cancellation, mixed-language terminology, unchanged-result boundaries, verified gloss boundaries, bounded bilingual context, reference boundaries, Option tap guards and Dock preferences.")
+    }
+
+    static func testAutomaticForeignTermContext() throws {
+        for (word, english, chinese) in [
+            ("API", "The API returns a response.", "这个API接口返回数据。"),
+            ("VoiceOver", "Enable VoiceOver in macOS accessibility settings.", "在macOS辅助功能中启用VoiceOver。"),
+            ("Redis", "Deploy Redis as the application cache.", "用Redis作为应用缓存。")
+        ] {
+            let foreign = Passage(text: word, context: english, language: "en")
+            let mixed = Passage(text: word, context: chinese, language: "zh-Hans")
+            let term = LookupPolicy(foreign).term
+            try expect(term != nil)
+            let immediate = LookupResult.initial(term: term, cached: nil, dictionary: [])
+            try expect(immediate?.isUsable == true && immediate?.origin == .term && immediate?.sentenceTranslation == nil)
+            try expect(LookupPolicy(foreign).automaticallyTranslatesContext && LookupPolicy(foreign).defaultsToContext)
+            try expect(!LookupPolicy(mixed).automaticallyTranslatesContext)
+        }
+        let standalone = Passage(text: "API", context: "API", language: "en")
+        try expect(!LookupPolicy(standalone).automaticallyTranslatesContext && !LookupPolicy(standalone).defaultsToContext)
+        let list = Passage(text: "API", context: "• The API returns a response.", language: "en", structure: .list)
+        try expect(LookupPolicy(list).automaticallyTranslatesContext && LookupPolicy(list).defaultsToContext)
+        for structure in [Passage.Structure.title, .path, .fragment] {
+            let scoped = Passage(text: "API", context: "The API returns a response.", language: "en", structure: structure)
+            try expect(!LookupPolicy(scoped).automaticallyTranslatesContext)
+        }
+        let unknown = Passage(text: "UnknownSDK", context: "The application uses UnknownSDK.", language: "en")
+        try expect(LookupPolicy(unknown).needsConfirmation && !LookupPolicy(unknown).automaticallyTranslatesContext)
+        print("Foreign context policy: known terms auto-display bilingual source; Chinese remains manual; standalone/safety boundaries passed.")
+    }
+
+    static func testFinalCardRules() throws {
+        for (source, word, expected, structure) in [
+            ("They sat on the river\nbank and watched the water.", "bank", "They sat on the river bank and watched the water.", Passage.Structure.sentence),
+            ("// 🐾 avoid duplicates\n// then avoid leaking data\ntype Account struct {", "avoid", "🐾 avoid duplicates then avoid leaking data", .sentence),
+            ("# README\nUse the API below", "README", "# README", .title),
+            ("Read this README\n• Next item API", "README", "Read this README", .sentence)
+        ] {
+            let hit = NSRange(source.range(of: word, options: .backwards)!, in: source)
+            let passage = try SentenceContext.passage(in: source, selection: hit, language: "en")
+            try expect(passage.context == expected && passage.structure == structure)
+            try expect(passage.selection == NSRange(expected.range(of: word, options: .backwards)!, in: expected))
+        }
+        let ordinaryVoice = Passage(text: "voice-over", context: "The film uses a voice-over to narrate the story.", language: "en")
+        try expect(!LookupPolicy(ordinaryVoice).needsConfirmation && LookupPolicy(ordinaryVoice).automaticallyTranslatesContext)
+        try expect(CompactGloss.candidates(for: ordinaryVoice, language: "en").first == "画外音")
+        let mixed = Passage(text: "cache", context: "文档介绍cache的实现。", language: "zh-Hans")
+        try expect(mixed.headwordLanguage == "en" && !LookupPolicy(mixed).automaticallyTranslatesContext)
+        let french = Passage(text: "pain", context: "Du pain frais", language: "fr", structure: .title)
+        try expect(french.headwordLanguage == "fr" && !LookupPolicy(french).automaticallyTranslatesContext)
+        let integer = LocalTerminology.lookup(Passage(text: "INTEGER", context: "字段用INTEGER存储整数。", language: "zh-Hans"))
+        try expect(integer?.meaning.contains("整数") == true)
+        let source = "The authors introduce a query routing layer (QRL).\n\nThe QRL routes traffic."
+        let hit = NSRange(source.range(of: "QRL", options: .backwards)!, in: source)
+        let isolated = Passage(text: "QRL", context: "The QRL routes traffic.", language: "en", nearbyContext: source, nearbySelection: hit)
+        try expect(LocalTerminology.lookup(isolated) == nil)
+        let whole = french.wholeTitle
+        try expect(whole.text == "Du pain frais" && whole.context.isEmpty && whole.structure == .title && LookupPolicy(whole).automaticallyTranslatesContext)
+        let repeated = "🐾 模型输入的token与访问token含义不同。"
+        let last = NSRange(repeated.range(of: "token", options: .backwards)!, in: repeated)
+        let original = Passage(text: "token", context: repeated, selection: last, language: "zh-Hans", nearbyContext: repeated, nearbySelection: last)
+        let content = CardContextContent(original: original, expanded: false)
+        let link = try require(content.text.runs.compactMap(\.link).first)
+        let changed = try require(content.selection(for: link))
+        try expect(changed.selection == NSRange(repeated.range(of: "token")!, in: repeated))
+        try expect(changed.nearbySelection == changed.selection && LocalTerminology.lookup(changed)?.meaning.contains("词元") == true)
+        try expect(content.selection(for: URL(string: "waxterm://term/999/5")!) == nil)
+        var manual = CardContextTranslation()
+        manual.begin(original)
+        let cancelled = try require(manual.request)
+        manual.cancel()
+        try expect(manual.complete(cancelled, outcome: .success("过期")) == nil && !manual.visible)
+        manual.begin(original)
+        let current = try require(manual.request)
+        try expect(manual.complete(cancelled, outcome: .failure(CheckFailure(reason: "old"))) == nil && manual.error.isEmpty)
+        try expect(manual.complete(current, outcome: .failure(CheckFailure(reason: "missing pack"))) == nil && !manual.error.isEmpty && manual.request == nil)
+        manual.begin(original)
+        let retry = try require(manual.request)
+        try expect(manual.complete(retry, outcome: .success("Input token and access token differ.")) == "Input token and access token differ.")
+        try expect(manual.complete(retry, outcome: .success("duplicate")) == nil)
+        let suite = "WaxTranslate.Test.finish." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let book = Notebook(defaults: defaults)
+        _ = book.save(original, translation: "令牌", sentenceTranslation: "Input token and access token differ.", origin: "term")
+        let saved = try require(Notebook(defaults: defaults).entries.first)
+        try expect(saved.passage.selection == last && saved.context == repeated && saved.origin == "term" && saved.passage.headwordLanguage == "en")
+        let cache = LookupCache()
+        let plain = Passage(text: "pain", context: "Du pain frais", language: "fr")
+        cache.insert(LookupResult(meaning: "面包", origin: .sentence, sentenceTranslation: "新鲜面包"), for: plain)
+        try expect(cache.result(for: french) == nil)
+        print("Card acceptance: editor structure, comments, title scope, local evidence, INTEGER, speech routes, exact links, cancelled/retried context, saving and cache scope passed.")
+    }
+
+    static func testCardPolicy() throws {
+        let comment = "// Explicit transport views avoid exposing future domain fields by accident."
+        let commentHit = NSRange(comment.range(of: "avoid")!, in: comment)
+        let commentLines = [TextLine(text: comment, frame: CGRect(x: 0, y: 100, width: 900, height: 18), hit: commentHit),
+                            TextLine(text: "type productView struct {", frame: CGRect(x: 0, y: 75, width: 400, height: 18), hit: nil),
+                            TextLine(text: "ID Name", frame: CGRect(x: 0, y: 50, width: 200, height: 18), hit: nil)]
+        let commentPassage = try SentenceContext.passage(in: commentLines, language: "en")
+        try expect(commentPassage.context == String(comment.dropFirst(3)))
+        try expect(commentPassage.text == "avoid" && commentPassage.selection?.location == commentHit.location - 3)
+        let multiline = [TextLine(text: "// Explicit transport views avoid exposing", frame: CGRect(x: 0, y: 100, width: 400, height: 18), hit: commentHit),
+                         TextLine(text: "// future domain fields by accident.", frame: CGRect(x: 0, y: 75, width: 400, height: 18), hit: nil),commentLines[1]]
+        let wrappedComment = try SentenceContext.passage(in: multiline, language: "en")
+        try expect(wrappedComment.context == "Explicit transport views avoid exposing future domain fields by accident.")
+        let urlSentence = "Visit https://example.com to avoid errors."
+        let urlPassage = try SentenceContext.passage(in: urlSentence, selection: NSRange(urlSentence.range(of: "avoid")!, in: urlSentence), language: "en")
+        try expect(urlPassage.context.contains("https://example.com"))
+        let document = "• 更新README文档\n• 模型输入的token与访问token含义不同。\n\n下一段API。"
+        let range = NSRange(document.range(of: "token")!, in: document)
+        let scoped = try SentenceContext.passage(in: document, selection: range, language: "zh-Hans")
+        try expect(!scoped.context.contains("README") && !scoped.context.contains("下一段"))
+        try expect(scoped.structure == .list && LocalTerminology.lookup(scoped)?.meaning.contains("词元") == true)
+        let repeated = "模型输入的token与访问token含义不同。"
+        let last = NSRange(repeated.range(of: "token", options: .backwards)!, in: repeated)
+        try expect(LocalTerminology.lookup(Passage(text: "token", context: repeated, selection: last, language: "zh-Hans"))?.meaning.contains("令牌") == true)
+        for (context, expected) in [("用Transformer实现OCR。", "神经网络"), ("变电站的transformer。", "变压器")] {
+            let word = context.contains("Transformer") ? "Transformer" : "transformer"
+            try expect(LocalTerminology.lookup(Passage(text: word, context: context, language: "zh-Hans"))?.meaning.contains(expected) == true)
+        }
+        let fragment = Passage(text: "token", context: "…输入token与…", language: "en", structure: .fragment)
+        try expect(!LookupPolicy(fragment).automaticallyTranslatesContext)
+        let path = try SentenceContext.passage(in: "Sources/waxtranlate/LookupTranslation.swift", selection: NSRange(location: 19, length: 17), language: "en")
+        try expect(path.structure == .path && LookupPolicy(path).needsConfirmation)
+        let suite = "WaxTranslate.Test.rules." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let book = Notebook(defaults: defaults)
+        _ = book.save(scoped, translation: "词元", sentenceTranslation: "Only this item.", origin: "term")
+        let restored = Notebook(defaults: defaults).entries[0]
+        try expect(restored.passage.structure == .list && restored.origin == "term" && !restored.context.contains("README"))
+        let voice = Passage(text: "VoiceOver", context: "人工听音与VoiceOver。", language: "zh-Hans")
+        try expect(LookupPolicy(voice).needsConfirmation)
+        let confirmed = LookupPolicy(Passage(text: "VoiceOver", context: "macOS辅助功能中的VoiceOver。", language: "zh-Hans"))
+        try expect(confirmed.term?.meaning.contains("屏幕朗读") == true && !confirmed.defaultsToContext)
+        let readme = LookupPolicy(Passage(text: "README", context: "更新README和开发文档。", language: "zh-Hans"))
+        try expect(readme.term != nil && !readme.automaticallyTranslatesContext)
+        let context = "用Docker部署Redis，通过API访问缓存。"
+        for word in ["Docker", "Redis", "API"] {
+            let policy = LookupPolicy(Passage(text: word, context: context, language: "zh-Hans"))
+            try expect(policy.term != nil && policy.defaultsToContext && !policy.automaticallyTranslatesContext)
+            try expect(policy.headwordLanguage == "en")
+        }
+        try expect(LookupPolicy(Passage(text: "UnknownSDK", context: "用Docker部署UnknownSDK。", language: "zh-Hans")).needsConfirmation)
+        try expect(!LookupPolicy(Passage(text: "INTEGER", context: "INTEGER代表整数。", language: "zh-Hans")).needsConfirmation)
+        try expect(LookupPolicy(Passage(text: "bank", context: "They sat on the river bank.", language: "en")).automaticallyTranslatesContext)
+        let lines = [TextLine(text: "• 更新README文档", frame: CGRect(x: 0, y: 60, width: 180, height: 16), hit: NSRange(location: 4, length: 6)),
+                     TextLine(text: "• 下一条API说明", frame: CGRect(x: 0, y: 36, width: 180, height: 16), hit: nil)]
+        let selected = try SentenceContext.passage(in: lines, language: "zh-Hans")
+        try expect(!selected.context.contains("下一条"))
+        let title = "ア・サマア・バケイション"
+        let titleLines = [TextLine(text: title, frame: CGRect(x: 0, y: 70, width: 400, height: 32), hit: NSRange(location: 2, length: 2)),
+                          TextLine(text: "专辑：ランプ幻想", frame: CGRect(x: 0, y: 40, width: 220, height: 17), hit: nil)]
+        let titleHit = try SentenceContext.passage(in: titleLines)
+        try expect(titleHit.text == title && titleHit.context == title && titleHit.sourceLanguage == "ja")
+        let englishTitle = try SentenceContext.passage(in: [TextLine(text: "A Summer Vacation", frame: CGRect(x: 0, y: 70, width: 400, height: 32), hit: NSRange(location: 2, length: 6)), titleLines[1]], language: "en")
+        try expect(englishTitle.structure == .title && englishTitle.text == "Summer" && !LookupPolicy(englishTitle).automaticallyTranslatesContext)
+        let mixedResult = LookupTranslation.makeResult(for: Passage(text: "integer", context: "顯示integer。", language: "zh-Hans"), meaning: "整數", origin: .standalone)
+        try expect(mixedResult.meaning == "整数")
+        let prose = [TextLine(text: "サマー・キャンプに参加した。", frame: CGRect(x: 0, y: 40, width: 300, height: 18), hit: NSRange(location: 0, length: 3))]
+        let proseHit = try SentenceContext.passage(in: prose)
+        try expect(proseHit.text == "サマー")
     }
 
     static func testLookupCache() throws {
@@ -372,6 +538,14 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         print("Long context →", longResult.meaning, "origin:", longResult.origin, "/", longResult.excerptTranslation ?? "")
         let api = try await LookupTranslation.translate(Passage(text: "API", context: "The API returns a response.", language: "en"), session: session, dictionary: [])
         try expect(api.origin == .term && api.meaning.contains("应用程序编程接口") && api.sentenceTranslation != nil)
+        for (word, context, meaning) in [("VoiceOver", "Enable VoiceOver in macOS accessibility settings.", "屏幕朗读"),
+                                         ("Redis", "Deploy Redis as the application cache.", "内存") ] {
+            let passage = Passage(text: word, context: context, language: "en")
+            let translated = try await LookupTranslation.translate(passage, session: session, dictionary: [])
+            try expect(LookupPolicy(passage).automaticallyTranslatesContext && translated.origin == .term && translated.meaning.contains(meaning))
+            try expect(translated.sentenceTranslation?.range(of: #"\p{Han}"#, options: .regularExpression) != nil)
+            print("Automatic foreign term →", word, translated.meaning, "/", translated.sentenceTranslation ?? "")
+        }
         for context in ["tulip", "A red tulip blooms in the garden."] {
             let passage = Passage(text: "tulip", context: context)
             try expect(passage.sourceLanguage == "en")

@@ -35,6 +35,44 @@ enum LocalTerminology {
     }
 
     static func lookup(_ passage: Passage) -> TermMeaning? {
+        if let selected = passage.selection, let range = Range(selected, in: passage.context), passage.context[range] == passage.text {
+            let context = passage.context
+            if passage.text == "INTEGER", context.range(of: #"字段|数据类型|整数|编程|数据库|\b(?:column|type|SQL)\b"#, options: [.regularExpression, .caseInsensitive]) != nil {
+                return TermMeaning(label: "术语参考", meaning: "整数类型，用于存储没有小数部分的数值。", kind: "数据类型")
+            }
+            if passage.text == "README" || passage.text == "README.md" {
+                return TermMeaning(label: "惯用名称参考", meaning: "项目说明文件，通常介绍项目、安装和使用方法。", kind: "文件名称")
+            }
+            if passage.text == "VoiceOver", context.range(of: "Apple|苹果|macOS|iOS|辅助功能|读屏|屏幕朗读", options: [.regularExpression, .caseInsensitive]) != nil {
+                return TermMeaning(label: "名称参考", meaning: "Apple 的屏幕朗读辅助功能。", kind: "功能名称")
+            }
+            if passage.text == "Redis", context.range(of: "缓存|数据库|内存|部署|cache|database|deploy", options: [.regularExpression, .caseInsensitive]) != nil {
+                return TermMeaning(label: "名称参考", meaning: "一种内存数据存储系统，常用于缓存。", kind: "技术名称")
+            }
+            if passage.text.lowercased() == "transformer" {
+                if context.range(of: "变电|电压|电力|电路|power|voltage", options: [.regularExpression, .caseInsensitive]) != nil {
+                    return TermMeaning(label: "语境术语参考", meaning: "变压器，用于改变交流电压。", kind: "技术词")
+                }
+                if context.range(of: "模型|神经网络|注意力|OCR|attention|neural", options: [.regularExpression, .caseInsensitive]) != nil {
+                    return TermMeaning(label: "语境术语参考", meaning: "基于注意力机制的神经网络架构。", kind: "模型架构")
+                }
+            }
+            if passage.text.lowercased() == "token", let hit = passage.selection, let selected = Range(hit, in: context) {
+                let before = String(context[..<selected.lowerBound].suffix(18))
+                if before.range(of: "(?:数据库|验证|认证|身份|访问|access|auth)[^与，。；]*$", options: [.regularExpression, .caseInsensitive]) != nil {
+                    return TermMeaning(label: "语境术语参考", meaning: "令牌，用于表示身份、权限或访问凭据。", kind: "技术词")
+                }
+                if before.range(of: "(?:模型|输入|分词|文本|language model)[^与，。；]*$", options: [.regularExpression, .caseInsensitive]) != nil {
+                    return TermMeaning(label: "语境术语参考", meaning: "词元，模型处理文本时使用的基本单位。", kind: "技术词")
+                }
+            }
+            if passage.text.lowercased() == "attention mask" {
+                return TermMeaning(label: "术语参考", meaning: "注意力掩码，用来控制模型可以关注哪些位置。", kind: "英语术语")
+            }
+            if passage.text.lowercased() == "padding token" {
+                return TermMeaning(label: "术语参考", meaning: "填充词元，用于将不同长度的输入补齐。", kind: "英语术语")
+            }
+        }
         guard !passage.isPhrase, let selection = passage.selection,
               let selected = Range(selection, in: passage.context), passage.context[selected] == passage.text,
               passage.text.count <= 100, let glossary else { return nil }
@@ -152,8 +190,9 @@ enum LocalTerminology {
     }
 
     private static func writtenDefinition(_ passage: Passage, word: String) -> (value: String, direct: Bool, acronym: Bool)? {
-        let text = passage.nearbyContext ?? passage.context
-        let selected = passage.nearbySelection ?? passage.selection
+        let evidence = passage.semanticEvidence
+        let text = evidence.text
+        let selected = evidence.selection
         let pattern = "(?<![A-Za-z0-9_])" + NSRegularExpression.escapedPattern(for: passage.text) + "(?![A-Za-z0-9_])"
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
         var definitions: [(String, Bool, Bool)] = []
@@ -204,5 +243,51 @@ private extension String {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return [self] }
         return regex.stringByReplacingMatches(in: self, range: NSRange(startIndex..., in: self), withTemplate: "\u{1f}")
             .components(separatedBy: "\u{1f}")
+    }
+}
+
+// Query identity and card presentation are independent of the sentence's language.
+struct LookupPolicy {
+    enum Object { case word, term, uncertainName, code, region }
+    let object: Object
+    let term: TermMeaning?
+    let passage: Passage
+
+    init(_ passage: Passage) {
+        self.passage = passage
+        term = LocalTerminology.lookup(passage)
+        if passage.context.isEmpty { object = .region }
+        else if term != nil { object = .term }
+        else if passage.text == "VoiceOver" { object = .uncertainName }
+        else if passage.structure == .path || passage.text.range(of: #"[a-z][A-Z]|[_/#]|\.\w+$"#, options: .regularExpression) != nil { object = .code }
+        else { object = .word }
+    }
+    var isChineseContext: Bool { passage.sourceLanguage.hasPrefix("zh") }
+    var needsConfirmation: Bool { object == .uncertainName || object == .code }
+    var defaultsToContext: Bool {
+        if automaticallyTranslatesContext && passage.context != passage.text { return true }
+        if object == .word || needsConfirmation { return true }
+        guard object == .term, isChineseContext, !["README", "VoiceOver"].contains(passage.text) else { return false }
+        let regex = try! NSRegularExpression(pattern: "[A-Za-z][A-Za-z0-9+#]*")
+        return regex.numberOfMatches(in: passage.context, range: NSRange(passage.context.startIndex..., in: passage.context)) > 1
+    }
+    var automaticallyTranslatesContext: Bool {
+        if object == .region { return true }
+        guard !isChineseContext, passage.structure == .sentence || passage.structure == .list else { return false }
+        // The surrounding language controls bilingual context, not whether the
+        // selected object was found in the terminology or ordinary dictionary.
+        return object == .word || (object == .term && passage.context != passage.text)
+    }
+    var headwordLanguage: String { passage.headwordLanguage }
+    var caption: String {
+        if passage.structure == .title { return "标题翻译" }
+        if object == .region { return "选区翻译" }
+        if passage.structure == .fragment { return "词义参考 · 识别片段" }
+        if object == .uncertainName { return "名称待确认" + (isChineseContext ? " · 中文语境" : "") }
+        if object == .code { return "代码名称" + (isChineseContext ? " · 中文语境" : "") }
+        return (term?.kind ?? (headwordLanguage == "en" ? "英语" : "词语")) + (isChineseContext ? " · 中文语境" : "")
+    }
+    var unresolvedMessage: String {
+        passage.structure == .fragment ? "原文片段不完整，暂不能确认句中含义。" : object == .uncertainName ? "可能指 Apple 的屏幕朗读功能，当前片段不足以确认。" : object == .code ? "暂未确认这个代码名称的含义。" : "本机资料中没有找到可靠解释。"
     }
 }
