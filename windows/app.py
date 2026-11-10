@@ -372,12 +372,14 @@ class Window(QWidget):
         kind = Qt.Tool if available and not self.preferences.show_in_taskbar.isChecked() else Qt.Window
         if self.windowType() != kind or not self.windowFlags() & Qt.FramelessWindowHint:
             visible, active = self.isVisible(), self.isActiveWindow()
-            geometry, state = self.saveGeometry(), self.windowState()
+            geometry, state = self.normalGeometry(), self.windowState()
             focus = self.focusWidget()
-            # Changing the native window type hides it. Restore both its normal
-            # geometry and state so a live setting does not reset the reader.
+            # Leave maximized/minimized state while hidden, so Windows records
+            # the normal bounds before the new HWND is maximized again.
+            self.hide()
+            self.setWindowState(Qt.WindowNoState)
             self.setWindowFlags(kind | Qt.FramelessWindowHint)
-            self.restoreGeometry(geometry)
+            self.setGeometry(geometry)
             self.setWindowState(state)
             if visible:
                 self.show()

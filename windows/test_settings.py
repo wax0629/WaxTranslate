@@ -100,6 +100,10 @@ class SettingsTests(unittest.TestCase):
                     self.assertIs(window.tabs.currentWidget(), window.preferences)
                     self.assertEqual(window.workspace.input.toPlainText(), "Keep this reading passage.")
                     self.assertEqual(window.workspace.output.toPlainText(), "保留当前译文。")
+                if maximized:
+                    window.showNormal()
+                    QApplication.processEvents()
+                    self.assertEqual(window.geometry(), normal)
 
             window.hide()
             toggle.click()
