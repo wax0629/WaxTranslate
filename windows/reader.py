@@ -345,11 +345,12 @@ def passage_from_lines(lines, point, source_code="", *, is_crop=False, capture_b
     from context_boundary import coalesce
     prepared=coalesce(observed,source_code)
     pointed=next(line for line in prepared if line.hit is not None)
-    # Other columns may use a different font (for example a terminal beside
-    # the article). Compare prominence only with text overlapping this column.
+    # Other columns/blocks may use different fonts. Compare only with nearby
+    # text in this column, using the same neighborhood as context assembly.
     heights=sorted(line.height for line in prepared if line is not pointed
                    and min(line.right,pointed.right)-max(line.left,pointed.left)
-                       >= .25*min(line.width,pointed.width))
+                       >= .25*min(line.width,pointed.width)
+                   and abs(line.middle-pointed.middle)<=3.2*max(line.height,pointed.height))
     prominent=bool(heights and pointed.height>=heights[len(heights)//2]*1.6)
     heading=pointed.text.strip()
     if prominent and len(heading)<=48 and '・' in heading and re.fullmatch(r'[ァ-ヺー・ 　]+',heading):
