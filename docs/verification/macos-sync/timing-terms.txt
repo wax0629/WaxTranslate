@@ -1,0 +1,12 @@
+[lookup FD886B7D] lookup.language 0.0 ms; elapsed 0.1 ms
+[lookup FD886B7D] lookup.dictionary_and_terms 3.1 ms; elapsed 3.5 ms
+[lookup FD886B7D] lookup.first_reference 0.9 ms; elapsed 91.2 ms
+[lookup FD886B7D] lookup.local_term 1.0 ms; elapsed 91.3 ms
+[lookup EA762426] lookup.language 0.0 ms; elapsed 0.0 ms
+[lookup EA762426] lookup.dictionary_and_terms 182.0 ms; elapsed 182.1 ms
+[lookup EA762426] lookup.first_reference 0.8 ms; elapsed 269.5 ms
+[lookup EA762426] lookup.local_term 0.9 ms; elapsed 269.6 ms
+[lookup EA762426] translation.availability 26.1 ms; elapsed 1285.5 ms
+[lookup EA762426] translation.prepare 26.3 ms; elapsed 1322.3 ms
+[lookup EA762426] translation.aligned_sentence 150.0 ms; elapsed 1472.4 ms
+[lookup EA762426] lookup.complete 177.9 ms; elapsed 1473.9 ms

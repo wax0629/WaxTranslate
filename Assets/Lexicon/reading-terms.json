@@ -1,0 +1,254 @@
+{
+  "acronyms": {
+    "AI": [
+      "artificial intelligence",
+      "人工智能，指让机器完成语言理解、推理等任务的技术。"
+    ],
+    "API": [
+      "application programming interface",
+      "应用程序编程接口，供一个程序调用另一个程序提供的功能。"
+    ],
+    "BPE": [
+      "byte pair encoding",
+      "字节对编码，一种反复合并常见相邻单元的算法，在语言模型中常用于分词。"
+    ],
+    "CLI": [
+      "command-line interface",
+      "命令行界面，可以输入文本命令来操作程序。"
+    ],
+    "CPU": [
+      "central processing unit",
+      "中央处理器，负责执行计算机指令。"
+    ],
+    "CSS": [
+      "cascading style sheets",
+      "层叠样式表，用来指定网页的颜色、字体和布局。"
+    ],
+    "DNS": [
+      "domain name system",
+      "域名系统，可以根据域名查到服务器的网络地址。"
+    ],
+    "GPU": [
+      "graphics processing unit",
+      "图形处理器，擅长并行计算，常用于图形渲染和模型训练。"
+    ],
+    "GUI": [
+      "graphical user interface",
+      "图形用户界面，可以通过窗口、图标和按钮操作程序。"
+    ],
+    "HTML": [
+      "hypertext markup language",
+      "超文本标记语言，用来描述网页内容的结构。"
+    ],
+    "HTTP": [
+      "hypertext transfer protocol",
+      "超文本传输协议，规定客户端和服务器如何交换请求与响应。"
+    ],
+    "HTTPS": [
+      "hypertext transfer protocol secure",
+      "使用 TLS 加密连接的 HTTP，常见于安全网页连接。"
+    ],
+    "IDE": [
+      "integrated development environment",
+      "集成开发环境，把写代码、运行和调试等工具放在一起。"
+    ],
+    "JSON": [
+      "JavaScript object notation",
+      "一种文本数据格式，常用于程序之间交换键值、列表等数据。"
+    ],
+    "JWT": [
+      "JSON web token",
+      "一种用紧凑格式传递声明的令牌，常用于让服务器验证登录身份。"
+    ],
+    "LLM": [
+      "large language model",
+      "大语言模型，能根据输入的上下文生成文本。"
+    ],
+    "OCR": [
+      "optical character recognition",
+      "光学字符识别，把图片里的文字转成可处理的文本。"
+    ],
+    "OS": [
+      "operating system",
+      "操作系统，负责管理硬件资源并运行应用程序。"
+    ],
+    "RAG": [
+      "retrieval-augmented generation",
+      "检索增强生成，先查找相关资料，再用这些资料辅助模型回答。"
+    ],
+    "RAM": [
+      "random-access memory",
+      "随机存取存储器，常指程序运行时使用的内存。"
+    ],
+    "REST": [
+      "representational state transfer",
+      "表述性状态转移，一种按资源组织网络服务的架构风格。"
+    ],
+    "SDK": [
+      "software development kit",
+      "软件开发工具包，提供为某个平台开发应用所需的库和工具。"
+    ],
+    "SQL": [
+      "structured query language",
+      "结构化查询语言，用来查询和修改关系数据库里的数据。"
+    ],
+    "SSH": [
+      "secure shell",
+      "一种加密网络协议，常用于远程登录和执行命令。"
+    ],
+    "TLS": [
+      "transport layer security",
+      "传输层安全协议，为网络连接提供加密和身份验证。"
+    ],
+    "UI": [
+      "user interface",
+      "用户界面，人们操作产品时接触的控件和信息呈现。"
+    ],
+    "URL": [
+      "uniform resource locator",
+      "统一资源定位符，如浏览器地址栏中的网址。"
+    ],
+    "UX": [
+      "user experience",
+      "用户体验，指一个人使用产品时的实际感受。"
+    ]
+  },
+  "names": {
+    "chatgpt": [
+      "产品名",
+      "OpenAI 的对话式 AI 助手，可以用自然语言提问、写作或讨论代码。"
+    ],
+    "gpt-4o": [
+      "模型名",
+      "OpenAI 的多模态模型，能处理文字和图像等输入。"
+    ],
+    "openai": [
+      "机构名",
+      "开发 ChatGPT 和 Codex 等人工智能产品的机构。"
+    ],
+    "github": [
+      "平台名",
+      "托管 Git 代码仓库的平台，支持协作开发和代码审查。"
+    ],
+    "node.js": [
+      "运行环境",
+      "让 JavaScript 程序在浏览器外运行的环境，常用于服务器和命令行工具。"
+    ],
+    ".net": [
+      "开发平台",
+      "微软发起的跨平台开发平台，提供运行环境和程序库，支持 C# 等语言。"
+    ],
+    "c++": [
+      "编程语言",
+      "通用编程语言，常用于对性能或内存控制有要求的软件。"
+    ],
+    "c#": [
+      "编程语言",
+      "读作 C sharp，常用于在 .NET 平台上开发应用。"
+    ],
+    "f#": [
+      "编程语言",
+      "读作 F sharp，一门注重函数式编程的 .NET 语言。"
+    ],
+    "ciallo": [
+      "网络用语",
+      "一种俏皮的招呼，相当于「嗨！」，常见于柚子社游戏及其玩家社群。"
+    ]
+  },
+  "contextNames": {
+    "rust": [
+      "(?:(?:written|coded|implemented|programmed|rewritten) in |(?:code|applications?|services?) (?:in|to) )rust|rust (?:programming language|compiler|crate|code)|borrow checker|rustc",
+      "编程语言",
+      "一种重视内存安全和性能的编程语言，常用于编写系统软件和服务。"
+    ],
+    "go": [
+      "(?:(?:written|coded|implemented|programmed|rewritten) in |(?:code|applications?|services?) (?:in|to) )go|go (?:programming language|compiler|modules?|goroutines?)|golang",
+      "编程语言",
+      "一种支持并发的编程语言，也常叫 Golang，常用于编写服务器和命令行工具。"
+    ],
+    "react": [
+      "react (?:components?|hooks?|app|library)|(?:jsx|frontend|interface|ui) (?:with|in|using) react",
+      "界面库",
+      "用于构建用户界面的 JavaScript 库，可以把界面拆成可复用的组件。"
+    ],
+    "docker": [
+      "docker (?:containers?|images?|compose|engine|desktop|build|run)|(?:containers?|images?) (?:with|in|using) docker",
+      "开发工具",
+      "用容器打包和运行应用的平台，方便在不同环境中部署同一程序。"
+    ],
+    "signal": [
+      "(?:uses?|installed|via|on) signal (?:for |to )?(?:encrypted|private|messag\\w*)|signal (?:messenger|messaging app)",
+      "应用名",
+      "一款使用端到端加密的通信应用，可以发送消息和进行通话。"
+    ]
+  },
+  "senses": {
+    "mvp": [
+      [
+        "minimum viable product",
+        "最小可行产品，先用满足核心需求的版本验证用户是否需要它。",
+        "products?|prototypes?|customers?|users?|launch(?:ed)?|ship(?:ped)?|built|startup|features?|roadmap"
+      ],
+      [
+        "most valuable player",
+        "最有价值球员，指一场比赛或一个赛季里表现最突出的选手。",
+        "players?|goals?|scored?|finals?|season|league|basketball|nba|athletes?|tournament|match|(?:was|is|been) (?:named|voted|crowned) (?:the )?mvp|won (?:the )?mvp"
+      ],
+      [
+        "model-view-presenter",
+        "模型－视图－表示器，一种把数据、界面和交互逻辑分开的设计模式。",
+        "presenter|view|mvc|mvvm|design pattern"
+      ],
+      [
+        "most valuable professional",
+        "微软最有价值专家，指获得微软技术社区贡献奖项的人。",
+        "microsoft|technical community"
+      ],
+      [
+        "mitral valve prolapse",
+        "二尖瓣脱垂，指心脏二尖瓣的瓣叶向左心房突出。",
+        "mitral|valve|cardiac|cardiology|echocardiogram"
+      ]
+    ],
+    "prd": [
+      [
+        "product requirements document",
+        "产品需求文档，说明要解决的用户问题、功能及验收要求。",
+        "products?|requirements?|documents?|draft(?:ed)?|writ(?:e|ing)|features?|review(?:ed)?|specs?"
+      ],
+      [
+        "Pearl River Delta",
+        "珠江三角洲，是中国广东省珠江下游的区域。",
+        "pearl river|guangdong|guangzhou|delta|hong kong|shenzhen"
+      ]
+    ],
+    "codex": [
+      [
+        "OpenAI Codex",
+        "OpenAI 的编程助手，可以读懂代码库、修改代码和检查问题。",
+        "openai|chatgpt|cod(?:e|ing)|codebase|repository|repo|agent|cli|bugs?|tests?|pull request|function|developers?|software|patch"
+      ],
+      [
+        "codex",
+        "册页式手抄本，把书页装订成册的古代书籍。",
+        "manuscripts?|medieval|ancient|parchment|scribe|illuminated|library|leaves|folios?|book"
+      ],
+      [
+        "Codex Alimentarius",
+        "国际食品法典，汇集了食品安全和贸易方面的标准、指南及操作规范。",
+        "alimentarius|food standards?|food safety"
+      ]
+    ]
+  },
+  "multiple": {
+    "mvp": "产品开发中常指最小可行产品（minimum viable product），体育中常指最有价值球员（most valuable player）。",
+    "prd": "做产品时常指产品需求文档（product requirements document），地理文章里也可指珠江三角洲（Pearl River Delta）。",
+    "codex": "编程工具名常指 OpenAI 的编程助手，在历史文献里通常指装订成册的古代手抄本。"
+  },
+  "lowercaseCues": {
+    "ram": "\\b(?:gb|gib|mb|ddr[345]|memory)\\b",
+    "rag": "\\b(?:llm|retrieval|embeddings?|vector database)\\b|\\brag pipeline\\b",
+    "ide": "\\b(?:debugger|plugins?|editor|source code)\\b",
+    "rest": "\\brest (?:api|endpoints?|services?)\\b"
+  }
+}

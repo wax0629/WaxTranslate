@@ -41,7 +41,7 @@ $env:QT_SCALE_FACTOR = '1.5'
 .\.venv\Scripts\python.exe windows\check.py -v
 ```
 
-独立 Windows runner 使用实际打包后的 Python 3.12.10，在两档缩放分别执行 `runtime\python.exe windows\check.py --desktop -v`。完整门禁覆盖 107 项；本机离屏跳过其中三项真实桌面检查，由 runner 执行。新九项验收检查语义、标题、语音调用、结构边界、点击、取消及收藏读回。多语原生 OCR 另执行 2 项屏幕取词／框选和 16 项识别路由测试。
+独立 Windows runner 使用实际打包后的 Python 3.12.10，在两档缩放分别执行 `runtime\python.exe windows\check.py --desktop -v`。原 #87 门禁覆盖 107 项；#88/#89 新规则扩为 111 项；本机离屏跳过其中三项真实桌面检查，由 runner 执行。新九项验收检查语义、标题、语音调用、结构边界、点击、取消及收藏读回。多语原生 OCR 另执行 2 项屏幕取词／框选和 16 项识别路由测试。
 
 `WaxTranslate-Windows-Visuals` 包含宽窄四页、普通词、名称、混排、未知、错误与长译文卡片的 100%／150% 原生截图。manifest 同时记录实际尺寸、倍率、词头、可见文字与收藏状态。截图前重新展示卡片并等待桌面合成，解决旧 150% 未知词截图残留前一张 Redis 内容的问题。固定释义仅用于排版，真实语义由上表与完整检查分别验证。
 
@@ -55,4 +55,4 @@ Windows 与 Mac 复用行为规则，模型输出不要求逐字相同。名称�
 
 外语自然句/列表中的已确认术语与名称自动附原文及对应译文；中文语境仍手动句译。known-term早退分支与原文折叠策略同时修正。长块分别生成完整句译和短节选句译，默认展示及展开切换使用匹配的一组，收藏保留完整块译文；句译缺包/失败不清空已知解释，支持重试。
 
-新增验证覆盖英文API/VoiceOver/Redis、法语API的真实离线句译；中文同词不发起句译、独立术语/标题/路径/片段边界；长原文/节选/展开/收藏对应，以及翻译失败保留术语并重试。实际原生截图新增rules-foreign-term。旧d699d8b的107项结果仅为历史基线，新提交的完整Windows CI由#88和本PR独立记录。
+新增验证覆盖英文API/VoiceOver/Redis、法语API的真实离线句译；中文同词不发起句译、独立术语/标题/路径/片段边界；长原文/节选/展开/收藏对应，以及翻译失败保留术语并重试。实际原生截图新增rules-foreign-term。旧d699d8b的107项结果仅为历史基线。新规则8572296的[CI42749700703](https://github.com/wax0629/WaxTranslate/actions/runs/42749700703)实际包两档各111/111通过，规则卡片截图/manifest已复核；最终集成head、CI与下载入口统一记录在[#89](https://github.com/wax0629/WaxTranslate/pull/89)及[#88](https://github.com/wax0629/WaxTranslate/issues/88)。本次未重跑独立多语OCR专项。

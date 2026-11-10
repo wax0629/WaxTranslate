@@ -1,0 +1,73 @@
+name: macOS checks
+
+on:
+  pull_request:
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Assets/Lexicon/**'
+      - 'Assets/Editorial/**'
+      - 'Package.swift'
+      - 'Info.plist'
+      - 'scripts/**'
+      - 'windows/terminology.py'
+      - '.github/workflows/macos.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Assets/Lexicon/**'
+      - 'Package.swift'
+      - 'Info.plist'
+      - 'scripts/**'
+      - 'windows/terminology.py'
+      - '.github/workflows/macos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select an SDK that supports attributed translation
+        run: |
+          python3 - <<'PY'
+          import glob, os, subprocess
+          candidates = []
+          for app in glob.glob('/Applications/Xcode*.app'):
+              developer = app + '/Contents/Developer'
+              env = dict(os.environ, DEVELOPER_DIR=developer)
+              try:
+                  sdk = subprocess.check_output(['xcrun', '--show-sdk-version'], env=env, text=True).strip()
+                  version = tuple(int(part) for part in sdk.split('.'))
+                  if version >= (26, 4):
+                      candidates.append((version, developer))
+              except (subprocess.SubprocessError, ValueError):
+                  continue
+          if not candidates:
+              raise SystemExit('Requires a macOS 26.4 or newer SDK; see README.')
+          developer = max(candidates)[1]
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('DEVELOPER_DIR=' + developer + '\n')
+          PY
+      - name: Record toolchain
+        run: |
+          sw_vers
+          swift --version
+          xcrun --show-sdk-version
+      - name: OCR, persistence, reading and glossary regressions
+        run: ./scripts/check.sh
+      - name: Render native card layout fixtures without desktop input
+        run: ./scripts/check-card-layouts.sh card-layout-artifacts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: WaxTranslate-Mac-Card-Layouts
+          path: card-layout-artifacts
+      - name: Build release
+        run: swift build -c release -j 2
