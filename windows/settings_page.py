@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QBoxLayout, QCheckBox, QComboBox, QFrame, QGridLa
 
 from install_model import DEFAULT_LANGUAGES, install_language, language_ready, translation_dir
 from languages import NAMES
-from theme import label
+from theme import COLORS, label
 
 
 class Switch(QCheckBox):
@@ -32,7 +32,7 @@ class Switch(QCheckBox):
         if not self.isEnabled():
             fill, border = "#e6e5df", "#d5d4ce"
         elif self.isChecked():
-            fill, border = "#161615", "#161615"
+            fill, border = COLORS["accent"], COLORS["accent"]
         else:
             fill, border = "#bcbcb6", "#90908a"
         painter.setBrush(QColor(fill))
@@ -55,7 +55,7 @@ class Choice(QComboBox):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor("#595955"), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(QColor(COLORS["muted"]), 1.4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         x, y = self.width() - 11, self.height() / 2
         painter.drawPolyline([QPointF(x - 3, y - 1.5), QPointF(x, y + 1.5), QPointF(x + 3, y - 1.5)])
 
@@ -91,7 +91,7 @@ class SectionMark(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor("#161615"), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(QColor(COLORS["ink"]), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         painter.setBrush(Qt.NoBrush)
         if self.window_mark:
             painter.drawRoundedRect(QRectF(7.5, 9, 17, 14), 2, 2)
@@ -137,7 +137,9 @@ class SettingsPage(QScrollArea):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setFrameShape(QFrame.NoFrame)
         self.setFocusPolicy(Qt.NoFocus)
+        self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         content = QWidget(objectName="settingsSurface")
+        content.setMaximumWidth(780)
         self.setWidget(content)
         layout = QVBoxLayout(content)
         layout.setContentsMargins(32, 24, 32, 24)
@@ -186,16 +188,17 @@ class SettingsPage(QScrollArea):
         setting_row(reading, "屏幕取词键", self.trigger)
         reading.addWidget(QFrame(objectName="hairline"))
         self.auto_online = Switch()
-        setting_row(reading, "未收录词自动查百科", self.auto_online,
-                    "本机查不到时，仅将选中的英文词条发送给 Wikidata。")
+        # Retain legacy preference for compatibility; network lookup is now
+        # explicitly triggered from the card and has no automatic setting.
+        self.auto_online.hide()
         self.packs = PreferenceSection("语言包")
         layout.addWidget(self.packs)
         self.pack_choice = Choice()
         self.pack_choice.setAccessibleName("选择要管理的语言包")
         for code in NAMES:
             self.pack_choice.addItem(NAMES[code], code)
-        defaults = "、".join(NAMES[c] for c in DEFAULT_LANGUAGES)
-        setting_row(self.packs.options, "离线语言", self.pack_choice, f"默认提供{defaults}。每个语言包包含识字和简体中文翻译资源。")
+        defaults = "、".join(NAMES[c] for c in DEFAULT_LANGUAGES if c in NAMES)
+        setting_row(self.packs.options, "离线语言", self.pack_choice, f"默认提供{defaults}。每个语言包包含识字和简体中文翻译资源；另内置中文至英语模型，供中文语境按需句译。")
         actions = QHBoxLayout()
         self.pack_status = label("", "meta")
         self.pack_status.setWordWrap(True)

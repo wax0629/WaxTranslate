@@ -8,6 +8,9 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QMenu, QToolButton
 
 
+from theme import theme_css
+
+
 WORKER = Path(__file__).with_name("speech_worker.py")
 
 
@@ -98,34 +101,37 @@ class ListenButton(QToolButton):
         self.player = player
         self.word = self.sentence = ""
         self.language = "en"
+        self.sentence_language = "en"
         self.setObjectName("listen")
         self.setCursor(Qt.PointingHandCursor)
         self.setIconSize(QSize(16, 16))
         self.setPopupMode(QToolButton.MenuButtonPopup)
         self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.setStyleSheet("""
-            QToolButton#listen {font:12px 'Microsoft YaHei UI'; color:#363634;
-                background:#faf9f6; border:1px solid #bcbcb6; border-radius:5px; padding:3px 7px;}
-            QToolButton#listen:hover {background:#e6e5df;}
-            QToolButton#listen:focus {border-color:#555551;}
-            QToolButton#listen::menu-button {border:0; border-left:1px solid #d5d4ce;
+        self.setStyleSheet(theme_css("""
+            QToolButton#listen {font:12px 'Microsoft YaHei UI'; color:$ink;
+                background:$soft; border:1px solid transparent; border-radius:14px; padding:3px 7px;}
+            QToolButton#listen:hover {background:$rule;}
+            QToolButton#listen:focus {border-color:$focus;}
+            QToolButton#listen::menu-button {border:0; border-left:1px solid $rule;
                 border-top-right-radius:4px; border-bottom-right-radius:4px; width:16px;}
-        """)
+        """))
         menu = QMenu(self)
         self.setMenu(menu)
         self.slow = menu.addAction("慢速读词", lambda: self.play(self.word, True))
-        self.read = menu.addAction("朗读原句", lambda: self.play(self.sentence))
-        self.slow_sentence = menu.addAction("慢速读原句", lambda: self.play(self.sentence, True))
+        self.read = menu.addAction("朗读原句", lambda: self.play(self.sentence, language=self.sentence_language))
+        self.slow_sentence = menu.addAction("慢速读原句", lambda: self.play(self.sentence, True, self.sentence_language))
         self.clicked.connect(self.toggle)
         self.player.changed.connect(self.update_state)
         self.player.failed.connect(self.on_error)
         self.update_state()
         self.hide()
 
-    def set_content(self, word="", sentence="", language="en"):
-        if (word, sentence, language) != (self.word, self.sentence, self.language):
+    def set_content(self, word="", sentence="", language="en", *, sentence_language=None):
+        sentence_language = sentence_language or language
+        if (word, sentence, language, sentence_language) != (self.word, self.sentence, self.language, self.sentence_language):
             self.stop()
         self.word, self.sentence, self.language = word, sentence, language
+        self.sentence_language = sentence_language
         self.slow.setVisible(bool(word))
         self.read.setVisible(bool(word and sentence))
         self.slow_sentence.setVisible(bool(sentence))
@@ -146,10 +152,10 @@ class ListenButton(QToolButton):
         else:
             self.play(self.word or self.sentence)
 
-    def play(self, text, slow=False):
+    def play(self, text, slow=False, language=None):
         if text:
             self.notice.emit("")
-            self.player.play(self, text, slow, self.language)
+            self.player.play(self, text, slow, language or self.language)
 
     def stop(self):
         if self.player.owner is self:

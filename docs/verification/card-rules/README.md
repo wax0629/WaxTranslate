@@ -34,11 +34,11 @@ build14实机截图位于screenshots/，来自当时的本机原生运行，使�
 
 名称证据仍为可解释的本地规则与资料，不是训练模型；Apple翻译长句可能有独立词义与句译不一致。当前直接证据不包含物理Option在全部第三方应用的普适成功率，也未把语音听感和VoiceOver朗读当作通过。Windows最终d699d8b的[桌面CI](https://github.com/wax0629/WaxTranslate/actions/runs/42624022310)两档107/107及[多语OCR](https://github.com/wax0629/WaxTranslate/actions/runs/42624022312)均通过，#87已合入main。
 
-## build15 不控制桌面的复现
+## 不控制桌面的复现
 
 `./scripts/check.sh` 运行规则、真实Vision、隔离数据和可用的Apple服务；`./scripts/check-card-layouts.sh /tmp/wax-card-layouts` 渲染实际ResultCard。后者明确使用固定释义/本机术语作为布局夹具，不播放声音、不移动鼠标、不读取用户词本。当前本机为macOS26.6.2 Intel，英中/日中真实服务已通过；远程若缺语言资源会明确跳过真实服务。
 
-2026-11-10源码检查、Release及同身份安装通过，已装0.3.0 build15。主界面旧设置与词本键保留；本轮不做历史词本批量改写。Mac #85仍依赖#80，当前未合并。
+build15 阶段的源码检查、Release及同身份安装通过；后续 build16 结果见下节。主界面旧设置与词本键保留，本轮不做历史词本批量改写。Mac 按 #80 → #85 依次交付。
 
 ## build16 · 语境语种决定句译（#88）
 
