@@ -87,6 +87,9 @@ struct ResultCard: View {
                         originLabel(result)
                     }
                     translationStatus
+                    if !isRegion && !hasSentence && !passage.hasCompleteContext {
+                        Text(passage.extent.notice).font(.caption).foregroundStyle(DeskTheme.muted)
+                    }
                     queryExtras
                     if !references.isEmpty {
                         BookRule()
@@ -240,10 +243,10 @@ struct ResultCard: View {
         VStack(alignment: .leading, spacing: 10) {
             BookRule()
             HStack {
-                Text(isRegion ? "原文" : passage.structure == .fragment ? "识别片段" : passage.structure == .path ? "所在路径" : !expanded && excerpt.isTruncated ? "相关原文节选" : "相关原文").font(.caption).foregroundStyle(DeskTheme.muted)
+                Text(isRegion ? "原文" : !passage.hasCompleteContext ? "原文片段" : passage.structure == .code ? "代码片段" : passage.structure == .path ? "所在路径" : !expanded && excerpt.isTruncated ? "相关原文节选" : "相关原文").font(.caption).foregroundStyle(DeskTheme.muted)
                 Spacer()
                 Button { speak(isRegion ? passage.text : displayedPassage.context, source.minimalIdentifier) } label: { Image(systemName: "speaker.wave.2") }
-                    .buttonStyle(.plain).help("朗读原句").accessibilityLabel("朗读原句")
+                    .buttonStyle(.plain).help(passage.hasCompleteContext ? "朗读原句" : "朗读可见片段").accessibilityLabel(passage.hasCompleteContext ? "朗读原句" : "朗读可见片段")
             }
             Text(contextText)
                 .font(.custom("Baskerville", size: 16)).lineSpacing(3)
@@ -253,13 +256,13 @@ struct ResultCard: View {
             }
             HStack(spacing: 18) {
                 if hasSentence && excerpt.isTruncated {
-                    Button(expanded ? "收起" : passage.structure == .list ? "展开当前项" : passage.structure == .fragment ? "展开识别片段" : "展开当前句") {
+                    Button(expanded ? "收起" : !passage.hasCompleteContext ? "展开可见片段" : passage.structure == .list ? "展开当前项" : "展开当前句") {
                         expanded.toggle()
                         cancelManualTranslation()
                     }
                 }
-                if !policy.automaticallyTranslatesContext && passage.structure != .path && passage.structure != .fragment {
-                    Button(manual.request != nil ? "取消句译" : manual.visible && displayedSentenceTranslation != nil ? "收起句译" : "翻译这段原文") {
+                if !policy.automaticallyTranslatesContext && passage.structure != .path && passage.structure != .code {
+                    Button(manual.request != nil ? "取消翻译" : manual.visible && displayedSentenceTranslation != nil ? "收起译文" : !passage.hasCompleteContext ? "翻译可见片段" : "翻译这段原文") {
                         if manual.visible { cancelManualTranslation() }
                         else { requestContextTranslation() }
                     }
@@ -268,7 +271,11 @@ struct ResultCard: View {
             }.buttonStyle(.plain).font(.caption).foregroundStyle(DeskTheme.muted)
             if manual.request != nil { ProgressView("正在翻译这段原文…").controlSize(.small) }
             if !manual.error.isEmpty { Button(manual.error + " 重试") { requestContextTranslation() }.font(.caption) }
-            if passage.structure == .fragment { Text("可重新取词或从菜单框选完整原文。").font(.caption).foregroundStyle(DeskTheme.muted) }
+            if !passage.hasCompleteContext {
+                Text(passage.extent == .complete ? "原文不完整，当前显示可见片段。" : passage.extent.notice)
+                    .font(.caption).foregroundStyle(DeskTheme.muted)
+                Text("可从菜单框选完整原文后再译。").font(.caption).foregroundStyle(DeskTheme.muted)
+            }
         }
     }
 

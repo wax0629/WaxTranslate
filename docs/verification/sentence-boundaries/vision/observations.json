@@ -1,0 +1,244 @@
+[
+  {
+    "automatic" : true,
+    "case" : "wrap-light-system",
+    "extent" : "complete",
+    "selection" : [
+      25,
+      6
+    ],
+    "source" : "The engineer checked the sensor before starting the experiment.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "negation-light-system",
+    "extent" : "complete",
+    "selection" : [
+      18,
+      6
+    ],
+    "source" : "Do not remove the sensor until the experiment has finished.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "comments-light-system",
+    "extent" : "complete",
+    "selection" : [
+      25,
+      6
+    ],
+    "source" : "The engineer checked the sensor before starting the experiment.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "list-light-system",
+    "extent" : "complete",
+    "selection" : [
+      40,
+      6
+    ],
+    "source" : "- Inspect the instrument and record the sensor temperature.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "paragraph-light-system",
+    "extent" : "complete",
+    "selection" : [
+      4,
+      6
+    ],
+    "source" : "The sensor remains connected.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "columns-light-system",
+    "extent" : "complete",
+    "selection" : [
+      25,
+      6
+    ],
+    "source" : "The engineer checked the sensor before starting the experiment.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "abbreviation-light-system",
+    "extent" : "complete",
+    "selection" : [
+      21,
+      6
+    ],
+    "source" : "Dr. Chen checked the sensor.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "decimal-light-system",
+    "extent" : "complete",
+    "selection" : [
+      41,
+      6
+    ],
+    "source" : "Version 3.14.2 reports 2.5 units for the sensor.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : false,
+    "case" : "clipped-start-light-system",
+    "extent" : "missingStart",
+    "selection" : [
+      0,
+      6
+    ],
+    "source" : "sensor before starting the experiment.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : false,
+    "case" : "clipped-end-light-system",
+    "extent" : "missingEnd",
+    "selection" : [
+      25,
+      6
+    ],
+    "source" : "The engineer checked the sensor",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : false,
+    "case" : "clipped-both-light-system",
+    "extent" : "missingBoth",
+    "selection" : [
+      0,
+      6
+    ],
+    "source" : "sensor before starting the experiment",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : false,
+    "case" : "wrap-dark-mono",
+    "extent" : "uncertain",
+    "selection" : [
+      25,
+      6
+    ],
+    "source" : "The engineer checked the sensor before starting the experiment",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "negation-dark-mono",
+    "extent" : "complete",
+    "selection" : [
+      18,
+      6
+    ],
+    "source" : "Do not remove the sensor until the experiment has finished.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "comments-dark-mono",
+    "extent" : "complete",
+    "selection" : [
+      25,
+      6
+    ],
+    "source" : "The engineer checked the sensor before starting the experiment.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "list-dark-mono",
+    "extent" : "complete",
+    "selection" : [
+      40,
+      6
+    ],
+    "source" : "- Inspect the instrument and record the sensor temperature.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "paragraph-dark-mono",
+    "extent" : "complete",
+    "selection" : [
+      4,
+      6
+    ],
+    "source" : "The sensor remains connected.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "columns-dark-mono",
+    "extent" : "complete",
+    "selection" : [
+      25,
+      6
+    ],
+    "source" : "The engineer checked the sensor before starting the experiment.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "abbreviation-dark-mono",
+    "extent" : "complete",
+    "selection" : [
+      21,
+      6
+    ],
+    "source" : "Dr. Chen checked the sensor.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : true,
+    "case" : "decimal-dark-mono",
+    "extent" : "complete",
+    "selection" : [
+      41,
+      6
+    ],
+    "source" : "Version 3.14.2 reports 2.5 units for the sensor.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : false,
+    "case" : "clipped-start-dark-mono",
+    "extent" : "missingStart",
+    "selection" : [
+      0,
+      6
+    ],
+    "source" : "sensor before starting the experiment.",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : false,
+    "case" : "clipped-end-dark-mono",
+    "extent" : "missingEnd",
+    "selection" : [
+      25,
+      6
+    ],
+    "source" : "The engineer checked the sensor",
+    "word" : "sensor"
+  },
+  {
+    "automatic" : false,
+    "case" : "clipped-both-dark-mono",
+    "extent" : "missingBoth",
+    "selection" : [
+      0,
+      6
+    ],
+    "source" : "sensor before starting the experiment",
+    "word" : "sensor"
+  }
+]

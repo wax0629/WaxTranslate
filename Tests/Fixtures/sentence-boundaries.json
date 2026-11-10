@@ -1,0 +1,1361 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "soft-wrap",
+      "category": "continuation",
+      "mode": "editor",
+      "language": "en",
+      "input": "The engineer checked the\n⟦sensor⟧ before starting the experiment.",
+      "expected": "The engineer checked the ⟦sensor⟧ before starting the experiment.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": true
+    },
+    {
+      "id": "many-wraps",
+      "category": "continuation",
+      "mode": "editor",
+      "language": "en",
+      "input": "The engineer\nchecked the ⟦sensor⟧\nbefore starting\nthe experiment.",
+      "expected": "The engineer checked the ⟦sensor⟧ before starting the experiment.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "negative-wrap",
+      "category": "continuation",
+      "mode": "editor",
+      "language": "en",
+      "input": "Do not remove the ⟦sensor⟧\nuntil the experiment has finished.",
+      "expected": "Do not remove the ⟦sensor⟧ until the experiment has finished.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": true
+    },
+    {
+      "id": "second-sentence",
+      "category": "segmentation",
+      "mode": "editor",
+      "language": "en",
+      "input": "The test has finished.\nThe ⟦sensor⟧ remains connected.",
+      "expected": "The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "blank-paragraph",
+      "category": "false-merge",
+      "mode": "editor",
+      "language": "en",
+      "input": "The unrelated definition is above.\n\nThe ⟦sensor⟧ remains connected.",
+      "expected": "The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "short-paragraphs",
+      "category": "false-merge",
+      "mode": "editor",
+      "language": "en",
+      "input": "General overview\n⟦Sensor⟧ documentation",
+      "expected": "⟦Sensor⟧ documentation",
+      "structure": "sentence",
+      "extent": "uncertain",
+      "automatic": false
+    },
+    {
+      "id": "indent-new-paragraph",
+      "category": "false-merge",
+      "mode": "editor",
+      "language": "en",
+      "input": "The previous paragraph has no punctuation\n    The ⟦sensor⟧ remains connected.",
+      "expected": "The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "list-wrap",
+      "category": "list",
+      "mode": "editor",
+      "language": "en",
+      "input": "- Inspect the ⟦sensor⟧ and\n  record its temperature.\n- Replace the cable.",
+      "expected": "- Inspect the ⟦sensor⟧ and record its temperature.",
+      "structure": "list",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "list-continuation-hit",
+      "category": "list",
+      "mode": "editor",
+      "language": "en",
+      "input": "- Inspect the instrument and\n  record the ⟦sensor⟧ temperature.\n- Replace the cable.",
+      "expected": "- Inspect the instrument and record the ⟦sensor⟧ temperature.",
+      "structure": "list",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "numbered-list",
+      "category": "list",
+      "mode": "editor",
+      "language": "en",
+      "input": "1. Inspect the ⟦sensor⟧ and\n   record its temperature.\n2. Replace the cable.",
+      "expected": "1. Inspect the ⟦sensor⟧ and record its temperature.",
+      "structure": "list",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "nested-list",
+      "category": "list",
+      "mode": "editor",
+      "language": "en",
+      "input": "- Main item\n  - Inspect the ⟦sensor⟧.\n  - Replace the cable.",
+      "expected": "- Inspect the ⟦sensor⟧.",
+      "structure": "list",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "list-independent-next",
+      "category": "list",
+      "mode": "editor",
+      "language": "en",
+      "input": "- Inspect the ⟦sensor⟧.\nThe following paragraph is unrelated.",
+      "expected": "- Inspect the ⟦sensor⟧.",
+      "structure": "list",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "comment-wrap",
+      "category": "comment",
+      "mode": "editor",
+      "language": "en",
+      "input": "// The engineer checked the\n// ⟦sensor⟧ before starting the experiment.\nconst sensor = 1;",
+      "expected": "The engineer checked the ⟦sensor⟧ before starting the experiment.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "comment-two-sentences",
+      "category": "comment",
+      "mode": "editor",
+      "language": "en",
+      "input": "// The test has finished.\n// The ⟦sensor⟧ remains connected.\nreturn sensor",
+      "expected": "The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "comment-blank",
+      "category": "comment",
+      "mode": "editor",
+      "language": "en",
+      "input": "// The unrelated definition is above.\n//\n// The ⟦sensor⟧ remains connected.",
+      "expected": "The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "prose-code",
+      "category": "false-merge",
+      "mode": "editor",
+      "language": "en",
+      "input": "The ⟦sensor⟧ remains connected.\nconst sensor = 1;\nreturn sensor",
+      "expected": "The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "code-selection",
+      "category": "code",
+      "mode": "editor",
+      "language": "en",
+      "input": "const ⟦sensor⟧ = 1;\nThe following paragraph is unrelated.",
+      "expected": "const ⟦sensor⟧ = 1;",
+      "structure": "code",
+      "extent": "complete",
+      "automatic": false
+    },
+    {
+      "id": "markdown-title",
+      "category": "title",
+      "mode": "editor",
+      "language": "en",
+      "input": "# ⟦Sensor⟧ documentation\nThe sensor remains connected.",
+      "expected": "# ⟦Sensor⟧ documentation",
+      "structure": "title",
+      "extent": "complete",
+      "automatic": false
+    },
+    {
+      "id": "title-body-hit",
+      "category": "title",
+      "mode": "editor",
+      "language": "en",
+      "input": "# Sensor documentation\nThe ⟦sensor⟧ remains connected.",
+      "expected": "The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "path",
+      "category": "code",
+      "mode": "editor",
+      "language": "en",
+      "input": "Sources/⟦Sensor⟧.swift\nThe next paragraph.",
+      "expected": "Sources/⟦Sensor⟧.swift",
+      "structure": "path",
+      "extent": "complete",
+      "automatic": false
+    },
+    {
+      "id": "honorific",
+      "category": "segmentation",
+      "mode": "editor",
+      "language": "en",
+      "input": "Dr. Chen checked the ⟦sensor⟧. The experiment started.",
+      "expected": "Dr. Chen checked the ⟦sensor⟧.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": true
+    },
+    {
+      "id": "initials",
+      "category": "segmentation",
+      "mode": "editor",
+      "language": "en",
+      "input": "A. B. Chen checked the ⟦sensor⟧. The experiment started.",
+      "expected": "A. B. Chen checked the ⟦sensor⟧.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "abbreviation",
+      "category": "segmentation",
+      "mode": "editor",
+      "language": "en",
+      "input": "Several instruments, e.g. the ⟦sensor⟧, are connected. The test started.",
+      "expected": "Several instruments, e.g. the ⟦sensor⟧, are connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": true
+    },
+    {
+      "id": "decimal-version",
+      "category": "segmentation",
+      "mode": "editor",
+      "language": "en",
+      "input": "Version 3.14.2 reports 2.5 units for the ⟦sensor⟧. Another test follows.",
+      "expected": "Version 3.14.2 reports 2.5 units for the ⟦sensor⟧.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "url-email",
+      "category": "segmentation",
+      "mode": "editor",
+      "language": "en",
+      "input": "See https://example.org/v1.2 for the ⟦sensor⟧. Contact a.b@example.org later.",
+      "expected": "See https://example.org/v1.2 for the ⟦sensor⟧.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "acronym",
+      "category": "segmentation",
+      "mode": "editor",
+      "language": "en",
+      "input": "The U.S. team checked the ⟦sensor⟧. Another test follows.",
+      "expected": "The U.S. team checked the ⟦sensor⟧.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "acronym-at-end",
+      "category": "segmentation",
+      "mode": "editor",
+      "language": "en",
+      "input": "The team works in the U.S. The ⟦sensor⟧ remains connected.",
+      "expected": "The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "quote-attribution",
+      "category": "quotes",
+      "mode": "editor",
+      "language": "en",
+      "input": "“Is the ⟦sensor⟧ connected?” she asked. The test started.",
+      "expected": "“Is the ⟦sensor⟧ connected?” she asked.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "quote-boundary",
+      "category": "quotes",
+      "mode": "editor",
+      "language": "en",
+      "input": "“The test is complete.” The ⟦sensor⟧ remains connected.",
+      "expected": "The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "parentheses",
+      "category": "quotes",
+      "mode": "editor",
+      "language": "en",
+      "input": "The ⟦sensor⟧ (see Fig. 2) remains connected. Another test follows.",
+      "expected": "The ⟦sensor⟧ (see Fig. 2) remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "zh-wrap",
+      "category": "multilingual",
+      "mode": "editor",
+      "language": "zh-Hans",
+      "input": "工程师检查了⟦sensor⟧，\n确认它没有断开。下一项测试已开始。",
+      "expected": "工程师检查了⟦sensor⟧，确认它没有断开。",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": false
+    },
+    {
+      "id": "zh-quote",
+      "category": "multilingual",
+      "mode": "editor",
+      "language": "zh-Hans",
+      "input": "他说：“先检查⟦sensor⟧。”然后继续测试。下一项已开始。",
+      "expected": "他说：“先检查⟦sensor⟧。”然后继续测试。",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": false
+    },
+    {
+      "id": "ja-wrap",
+      "category": "multilingual",
+      "mode": "editor",
+      "language": "ja",
+      "input": "研究者は⟦センサー⟧を\n確認しました。次の実験です。",
+      "expected": "研究者は⟦センサー⟧を確認しました。",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "ko-wrap",
+      "category": "multilingual",
+      "mode": "editor",
+      "language": "ko",
+      "input": "연구자는 ⟦센서⟧를\n확인했습니다. 다음 실험입니다.",
+      "expected": "연구자는 ⟦센서⟧를 확인했습니다.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "fr-wrap",
+      "category": "multilingual",
+      "mode": "editor",
+      "language": "fr",
+      "input": "Le chercheur a vérifié le\n⟦capteur⟧ avant le test. Le test commence.",
+      "expected": "Le chercheur a vérifié le ⟦capteur⟧ avant le test.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "repeat-emoji",
+      "category": "offset",
+      "mode": "editor",
+      "language": "en",
+      "input": "🐾 The sensor is ready. The second\n⟦sensor⟧ remains connected.",
+      "expected": "The second ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "combining-accent",
+      "category": "offset",
+      "mode": "editor",
+      "language": "fr",
+      "input": "Le café utilise un\n⟦capteur⟧ fiable.",
+      "expected": "Le café utilise un ⟦capteur⟧ fiable.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "soft-hyphen",
+      "category": "hyphen",
+      "mode": "editor",
+      "language": "en",
+      "input": "The ⟦inter⟧­\nface remains stable.",
+      "expected": "The ⟦interface⟧ remains stable.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "query": "interface"
+    },
+    {
+      "id": "hard-hyphen",
+      "category": "hyphen",
+      "mode": "editor",
+      "language": "en",
+      "input": "The well-\n⟦known⟧ sensor remains connected.",
+      "expected": "The ⟦well-known⟧ sensor remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "query": "well-known"
+    },
+    {
+      "id": "missing-start",
+      "category": "incomplete",
+      "mode": "editor",
+      "language": "en",
+      "input": "…checked the ⟦sensor⟧ before the test.",
+      "expected": "…checked the ⟦sensor⟧ before the test.",
+      "structure": "fragment",
+      "extent": "missingStart",
+      "automatic": false
+    },
+    {
+      "id": "missing-end",
+      "category": "incomplete",
+      "mode": "editor",
+      "language": "en",
+      "input": "The engineer checked the ⟦sensor⟧…",
+      "expected": "The engineer checked the ⟦sensor⟧…",
+      "structure": "fragment",
+      "extent": "missingEnd",
+      "automatic": false
+    },
+    {
+      "id": "missing-both",
+      "category": "incomplete",
+      "mode": "editor",
+      "language": "en",
+      "input": "…checked the ⟦sensor⟧…",
+      "expected": "…checked the ⟦sensor⟧…",
+      "structure": "fragment",
+      "extent": "missingBoth",
+      "automatic": false
+    },
+    {
+      "id": "no-terminal",
+      "category": "incomplete",
+      "mode": "editor",
+      "language": "en",
+      "input": "The engineer checked the ⟦sensor⟧",
+      "expected": "The engineer checked the ⟦sensor⟧",
+      "structure": "sentence",
+      "extent": "uncertain",
+      "automatic": false
+    },
+    {
+      "id": "dangling-connector",
+      "category": "incomplete",
+      "mode": "editor",
+      "language": "en",
+      "input": "The ⟦sensor⟧ remains connected because",
+      "expected": "The ⟦sensor⟧ remains connected because",
+      "structure": "sentence",
+      "extent": "missingEnd",
+      "automatic": false
+    },
+    {
+      "id": "unclosed-quote",
+      "category": "incomplete",
+      "mode": "editor",
+      "language": "en",
+      "input": "“The ⟦sensor⟧ remains connected.",
+      "expected": "“The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "missingEnd",
+      "automatic": false
+    },
+    {
+      "id": "ocr-wrap",
+      "category": "continuation",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "The engineer checked the",
+          "x": 40,
+          "y": 100,
+          "width": 410,
+          "height": 18
+        },
+        {
+          "text": "⟦sensor⟧ before starting the experiment.",
+          "x": 40,
+          "y": 126,
+          "width": 370,
+          "height": 18
+        }
+      ],
+      "expected": "The engineer checked the ⟦sensor⟧ before starting the experiment.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "ocr-glyph-height",
+      "category": "continuation",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "The engineer checked the",
+          "x": 40,
+          "y": 100,
+          "width": 410,
+          "height": 18
+        },
+        {
+          "text": "⟦sensor⟧ before starting the experiment.",
+          "x": 40,
+          "y": 126,
+          "width": 370,
+          "height": 13
+        }
+      ],
+      "expected": "The engineer checked the ⟦sensor⟧ before starting the experiment.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "ocr-short-unrelated",
+      "category": "false-merge",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "General overview",
+          "x": 40,
+          "y": 100,
+          "width": 160,
+          "height": 18
+        },
+        {
+          "text": "⟦Sensor⟧ documentation",
+          "x": 40,
+          "y": 126,
+          "width": 210,
+          "height": 18
+        }
+      ],
+      "expected": "⟦Sensor⟧ documentation",
+      "structure": "sentence",
+      "extent": "uncertain",
+      "automatic": false
+    },
+    {
+      "id": "ocr-paragraph-gap",
+      "category": "false-merge",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "The unrelated definition is above",
+          "x": 40,
+          "y": 100,
+          "width": 410,
+          "height": 18
+        },
+        {
+          "text": "The ⟦sensor⟧ remains connected.",
+          "x": 40,
+          "y": 145,
+          "width": 300,
+          "height": 18
+        }
+      ],
+      "expected": "The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "ocr-indent-paragraph",
+      "category": "false-merge",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "Unrelated text ends without punctuation",
+          "x": 40,
+          "y": 100,
+          "width": 320,
+          "height": 18
+        },
+        {
+          "text": "The ⟦sensor⟧ remains connected.",
+          "x": 76,
+          "y": 126,
+          "width": 300,
+          "height": 18
+        }
+      ],
+      "expected": "The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "ocr-columns",
+      "category": "false-merge",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "The engineer checked the",
+          "x": 40,
+          "y": 100,
+          "width": 320,
+          "height": 18
+        },
+        {
+          "text": "⟦sensor⟧ before starting the experiment.",
+          "x": 40,
+          "y": 126,
+          "width": 320,
+          "height": 18
+        },
+        {
+          "text": "Different column metadata",
+          "x": 450,
+          "y": 100,
+          "width": 320,
+          "height": 18
+        },
+        {
+          "text": "This must never enter the source.",
+          "x": 450,
+          "y": 126,
+          "width": 320,
+          "height": 18
+        }
+      ],
+      "expected": "The engineer checked the ⟦sensor⟧ before starting the experiment.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "ocr-list",
+      "category": "list",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "- Inspect the sensor and",
+          "x": 40,
+          "y": 100,
+          "width": 410,
+          "height": 18
+        },
+        {
+          "text": "record the ⟦sensor⟧ temperature.",
+          "x": 58,
+          "y": 126,
+          "width": 350,
+          "height": 18
+        },
+        {
+          "text": "- Replace the cable.",
+          "x": 40,
+          "y": 152,
+          "width": 220,
+          "height": 18
+        }
+      ],
+      "expected": "- Inspect the sensor and record the ⟦sensor⟧ temperature.",
+      "structure": "list",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "ocr-code-stop",
+      "category": "comment",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "// The engineer checked the",
+          "x": 40,
+          "y": 100,
+          "width": 410,
+          "height": 18
+        },
+        {
+          "text": "// ⟦sensor⟧ before starting the experiment.",
+          "x": 40,
+          "y": 126,
+          "width": 390,
+          "height": 18
+        },
+        {
+          "text": "const sensor = 1;",
+          "x": 40,
+          "y": 152,
+          "width": 300,
+          "height": 18
+        }
+      ],
+      "expected": "The engineer checked the ⟦sensor⟧ before starting the experiment.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "ocr-top-clipped",
+      "category": "incomplete",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "the engineer checked the ⟦sensor⟧.",
+          "x": 40,
+          "y": 2,
+          "width": 400,
+          "height": 18
+        }
+      ],
+      "expected": "the engineer checked the ⟦sensor⟧.",
+      "structure": "sentence",
+      "extent": "missingStart",
+      "automatic": false,
+      "capture": [
+        0,
+        0,
+        800,
+        180
+      ]
+    },
+    {
+      "id": "ocr-bottom-clipped",
+      "category": "incomplete",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "The engineer checked the ⟦sensor⟧",
+          "x": 40,
+          "y": 158,
+          "width": 400,
+          "height": 18
+        }
+      ],
+      "expected": "The engineer checked the ⟦sensor⟧",
+      "structure": "sentence",
+      "extent": "missingEnd",
+      "automatic": false,
+      "capture": [
+        0,
+        0,
+        800,
+        180
+      ]
+    },
+    {
+      "id": "ocr-left-clipped",
+      "category": "incomplete",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "checked the ⟦sensor⟧ before the test.",
+          "x": 1,
+          "y": 90,
+          "width": 450,
+          "height": 18
+        }
+      ],
+      "expected": "checked the ⟦sensor⟧ before the test.",
+      "structure": "sentence",
+      "extent": "missingStart",
+      "automatic": false,
+      "capture": [
+        0,
+        0,
+        800,
+        220
+      ]
+    },
+    {
+      "id": "ocr-right-clipped",
+      "category": "incomplete",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "The engineer checked the ⟦sensor⟧",
+          "x": 410,
+          "y": 90,
+          "width": 389,
+          "height": 18
+        }
+      ],
+      "expected": "The engineer checked the ⟦sensor⟧",
+      "structure": "sentence",
+      "extent": "missingEnd",
+      "automatic": false,
+      "capture": [
+        0,
+        0,
+        800,
+        220
+      ]
+    },
+    {
+      "id": "ocr-both-clipped",
+      "category": "incomplete",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "checked the ⟦sensor⟧ and",
+          "x": 1,
+          "y": 2,
+          "width": 798,
+          "height": 18
+        }
+      ],
+      "expected": "checked the ⟦sensor⟧ and",
+      "structure": "sentence",
+      "extent": "missingBoth",
+      "automatic": false,
+      "capture": [
+        0,
+        0,
+        800,
+        180
+      ]
+    },
+    {
+      "id": "jp-short-particle",
+      "category": "multilingual",
+      "mode": "editor",
+      "language": "ja",
+      "input": "彼は川の\n⟦近く⟧にいる。",
+      "expected": "彼は川の⟦近く⟧にいる。",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "zh-short-particle",
+      "category": "multilingual",
+      "mode": "editor",
+      "language": "zh-Hans",
+      "input": "工程师在\n检查⟦sensor⟧是否连接。",
+      "expected": "工程师在检查⟦sensor⟧是否连接。",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": false
+    },
+    {
+      "id": "ambiguous-hard-break",
+      "category": "incomplete",
+      "mode": "editor",
+      "language": "en",
+      "input": "General information\nThe ⟦sensor⟧ remains connected.",
+      "expected": "The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "uncertain",
+      "automatic": false
+    },
+    {
+      "id": "abbreviation-hard-break",
+      "category": "segmentation",
+      "mode": "editor",
+      "language": "en",
+      "input": "Use several instruments, e.g.\nthe ⟦sensor⟧, during the test.",
+      "expected": "Use several instruments, e.g. the ⟦sensor⟧, during the test.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "honorific-hard-break",
+      "category": "segmentation",
+      "mode": "editor",
+      "language": "en",
+      "input": "Dr.\nChen checked the ⟦sensor⟧.",
+      "expected": "Dr. Chen checked the ⟦sensor⟧.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "empty-comment-boundary",
+      "category": "comment",
+      "mode": "editor",
+      "language": "en",
+      "input": "// Unrelated information\n//\n// The ⟦sensor⟧ remains connected.",
+      "expected": "The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "period-inside-parens",
+      "category": "quotes",
+      "mode": "editor",
+      "language": "en",
+      "input": "The ⟦sensor⟧ (e.g. the red one) remains connected. The next test starts.",
+      "expected": "The ⟦sensor⟧ (e.g. the red one) remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "question-inside-parens",
+      "category": "quotes",
+      "mode": "editor",
+      "language": "en",
+      "input": "The ⟦sensor⟧ (is it connected?) remains visible. The next test starts.",
+      "expected": "The ⟦sensor⟧ (is it connected?) remains visible.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "list-decimal",
+      "category": "list",
+      "mode": "editor",
+      "language": "en",
+      "input": "3. Inspect the ⟦sensor⟧ at 2.5 volts.\n4. Replace it.",
+      "expected": "3. Inspect the ⟦sensor⟧ at 2.5 volts.",
+      "structure": "list",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "url-ending",
+      "category": "segmentation",
+      "mode": "editor",
+      "language": "en",
+      "input": "Use the ⟦sensor⟧ described at https://example.org. The next test starts.",
+      "expected": "Use the ⟦sensor⟧ described at https://example.org.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "apostrophes",
+      "category": "quotes",
+      "mode": "editor",
+      "language": "en",
+      "input": "The engineer's ⟦sensor⟧ doesn't need calibration. The next test starts.",
+      "expected": "The engineer's ⟦sensor⟧ doesn't need calibration.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "comment-url",
+      "category": "comment",
+      "mode": "editor",
+      "language": "en",
+      "input": "// Read https://example.org to\n// inspect the ⟦sensor⟧.",
+      "expected": "Read https://example.org to inspect the ⟦sensor⟧.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "code-assignment",
+      "category": "code",
+      "mode": "editor",
+      "language": "en",
+      "input": "⟦sensor⟧ := value\nThe next test starts.",
+      "expected": "⟦sensor⟧ := value",
+      "structure": "code",
+      "extent": "complete",
+      "automatic": false
+    },
+    {
+      "id": "no-period-before-list",
+      "category": "incomplete",
+      "mode": "editor",
+      "language": "en",
+      "input": "The ⟦sensor⟧ remains connected\n- Next item",
+      "expected": "The ⟦sensor⟧ remains connected",
+      "structure": "sentence",
+      "extent": "uncertain",
+      "automatic": false
+    },
+    {
+      "id": "standalone-word",
+      "category": "standalone",
+      "mode": "editor",
+      "language": "en",
+      "input": "⟦sensor⟧",
+      "expected": "⟦sensor⟧",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": false
+    },
+    {
+      "id": "mixed-latin-seam",
+      "category": "multilingual",
+      "mode": "editor",
+      "language": "zh-Hans",
+      "input": "工程师检查了⟦sensor⟧\n并记录结果。",
+      "expected": "工程师检查了⟦sensor⟧并记录结果。",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": false,
+      "reflow": false
+    },
+    {
+      "id": "mixed-ja-latin-seam",
+      "category": "multilingual",
+      "mode": "editor",
+      "language": "ja",
+      "input": "研究者は⟦sensor⟧\nを確認しました。",
+      "expected": "研究者は⟦sensor⟧を確認しました。",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": false
+    },
+    {
+      "id": "proper-name-after-preposition",
+      "category": "continuation",
+      "mode": "editor",
+      "language": "en",
+      "input": "The engineer sent the ⟦sensor⟧ to\nAtlas before the experiment started.",
+      "expected": "The engineer sent the ⟦sensor⟧ to Atlas before the experiment started.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": true
+    },
+    {
+      "id": "subordinate-subject-wrap",
+      "category": "continuation",
+      "mode": "editor",
+      "language": "en",
+      "input": "The engineer confirmed that\nAtlas uses the ⟦sensor⟧ during the test.",
+      "expected": "The engineer confirmed that Atlas uses the ⟦sensor⟧ during the test.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": true
+    },
+    {
+      "id": "url-next-article",
+      "category": "segmentation",
+      "mode": "editor",
+      "language": "en",
+      "input": "Read the ⟦sensor⟧ guide at https://example.org. A new test starts.",
+      "expected": "Read the ⟦sensor⟧ guide at https://example.org.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": false
+    },
+    {
+      "id": "literal-slashes",
+      "category": "comment",
+      "mode": "editor",
+      "language": "en",
+      "input": "The I/O ⟦sensor⟧ remains connected.",
+      "expected": "The I/O ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": false
+    },
+    {
+      "id": "literal-variant-editor",
+      "category": "comment",
+      "mode": "editor",
+      "language": "en",
+      "input": "|/ The ⟦sensor⟧ remains connected.",
+      "expected": "|/ The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": false
+    },
+    {
+      "id": "same-baseline-fragments",
+      "category": "continuation",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "The engineer checked the",
+          "x": 40,
+          "y": 100,
+          "width": 300,
+          "height": 18
+        },
+        {
+          "text": "⟦sensor⟧ before the test.",
+          "x": 348,
+          "y": 100,
+          "width": 280,
+          "height": 18
+        }
+      ],
+      "expected": "The engineer checked the ⟦sensor⟧ before the test.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "overlapping-observations",
+      "category": "continuation",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "The engineer checked",
+          "x": 40,
+          "y": 100,
+          "width": 260,
+          "height": 18
+        },
+        {
+          "text": "checked the ⟦sensor⟧.",
+          "x": 210,
+          "y": 101,
+          "width": 250,
+          "height": 18
+        }
+      ],
+      "expected": "The engineer checked the ⟦sensor⟧.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "overlap-pointed-prefix",
+      "category": "offset",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "The engineer ⟦checked⟧",
+          "x": 40,
+          "y": 100,
+          "width": 260,
+          "height": 18
+        },
+        {
+          "text": "checked the sensor.",
+          "x": 210,
+          "y": 101,
+          "width": 250,
+          "height": 18
+        }
+      ],
+      "expected": "The engineer ⟦checked⟧ the sensor.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "repeat-overlap-pointer",
+      "category": "offset",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "The sensor checked the",
+          "x": 40,
+          "y": 100,
+          "width": 300,
+          "height": 18
+        },
+        {
+          "text": "the second ⟦sensor⟧.",
+          "x": 298,
+          "y": 100,
+          "width": 220,
+          "height": 18
+        }
+      ],
+      "expected": "The sensor checked the second ⟦sensor⟧.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "lost-period-new-subject",
+      "category": "incomplete",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "The engineer checked the ⟦sensor⟧",
+          "x": 40,
+          "y": 100,
+          "width": 410,
+          "height": 18
+        },
+        {
+          "text": "Another test follows.",
+          "x": 40,
+          "y": 126,
+          "width": 240,
+          "height": 18
+        }
+      ],
+      "expected": "The engineer checked the ⟦sensor⟧",
+      "structure": "sentence",
+      "extent": "uncertain",
+      "automatic": false
+    },
+    {
+      "id": "comment-variant-context",
+      "category": "comment",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "/ The engineer checked the",
+          "x": 40,
+          "y": 100,
+          "width": 400,
+          "height": 18
+        },
+        {
+          "text": "Il ⟦sensor⟧ before the test.",
+          "x": 40,
+          "y": 126,
+          "width": 360,
+          "height": 18
+        },
+        {
+          "text": "const sensor = 1;",
+          "x": 40,
+          "y": 152,
+          "width": 250,
+          "height": 18
+        }
+      ],
+      "expected": "The engineer checked the ⟦sensor⟧ before the test.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "comment-variant-unconfirmed",
+      "category": "comment",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "|/ The ⟦sensor⟧ remains connected.",
+          "x": 40,
+          "y": 100,
+          "width": 400,
+          "height": 18
+        }
+      ],
+      "expected": "|/ The ⟦sensor⟧ remains connected.",
+      "structure": "sentence",
+      "extent": "uncertain",
+      "automatic": false
+    },
+    {
+      "id": "small-capital-columns",
+      "category": "false-merge",
+      "mode": "ocr",
+      "language": "en",
+      "lines": [
+        {
+          "text": "⟦Sensor⟧.",
+          "x": 40,
+          "y": 100,
+          "width": 80,
+          "height": 18
+        },
+        {
+          "text": "Status",
+          "x": 200,
+          "y": 100,
+          "width": 80,
+          "height": 18
+        }
+      ],
+      "expected": "⟦Sensor⟧.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true
+    },
+    {
+      "id": "heldout-prose-1",
+      "category": "continuation",
+      "mode": "editor",
+      "language": "en",
+      "input": "The researchers did not disconnect the ⟦sensor⟧ until the current test was complete.",
+      "expected": "The researchers did not disconnect the ⟦sensor⟧ until the current test was complete.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": true
+    },
+    {
+      "id": "heldout-prose-2",
+      "category": "continuation",
+      "mode": "editor",
+      "language": "en",
+      "input": "Before starting the test, the technician verified that the ⟦sensor⟧ was connected.",
+      "expected": "Before starting the test, the technician verified that the ⟦sensor⟧ was connected.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": true
+    },
+    {
+      "id": "heldout-prose-3",
+      "category": "continuation",
+      "mode": "editor",
+      "language": "en",
+      "input": "The team in the northern laboratory inspected the ⟦sensor⟧ and recorded every measurement.",
+      "expected": "The team in the northern laboratory inspected the ⟦sensor⟧ and recorded every measurement.",
+      "structure": "sentence",
+      "extent": "complete",
+      "automatic": true,
+      "reflow": true
+    }
+  ]
+}

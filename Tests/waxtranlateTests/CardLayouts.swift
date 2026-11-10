@@ -30,7 +30,14 @@ import SwiftUI
             ("whole-title", Passage(text: "Keep this door closed", context: "", language: "en", structure: .title),
              LookupResult(meaning: "请保持这扇门关闭。", origin: .region)),
             ("comment", Passage(text: "avoid", context: comment, language: "en"),
-             LookupResult(meaning: "避免", origin: .sentence, sentenceTranslation: "显式传输视图避免意外暴露未来的领域字段。"))
+             LookupResult(meaning: "避免", origin: .sentence, sentenceTranslation: "显式传输视图避免意外暴露未来的领域字段。")),
+            ("partial-start", Passage(text: "sensor", context: "checked the sensor before the experiment.", language: "en", extent: .missingStart),
+             LookupResult(meaning: "传感器", origin: .dictionary)),
+            ("partial-end", Passage(text: "API", context: "The API returns a response before", language: "en", extent: .missingEnd), nil),
+            ("partial-both", Passage(text: "sensor", context: "checked the sensor and", language: "en", extent: .missingBoth),
+             LookupResult(meaning: "传感器", origin: .dictionary)),
+            ("uncertain-boundary", Passage(text: "sensor", context: "The sensor remains connected.", language: "en", extent: .uncertain),
+             LookupResult(meaning: "传感器", origin: .dictionary))
         ]
         var manifest: [[String: Any]] = []
         for (name, passage, fixture) in samples {

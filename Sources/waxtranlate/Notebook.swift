@@ -12,6 +12,8 @@ struct Entry: Codable, Identifiable {
     var selection: NSRange? = nil
     var anchor: NSRange? = nil
     var structure: Passage.Structure? = nil
+    var sourceKind: String? = nil
+    var extent: ContextExtent? = nil
     var origin: String? = nil
 
     var displayMeaning: String {
@@ -19,7 +21,7 @@ struct Entry: Codable, Identifiable {
         return TranslationOutput.normalize(target, target: LookupPolicy(passage).headwordLanguage.hasPrefix("zh") ? "en" : "zh-Hans")
     }
     var displaySentenceTranslation: String? { sentenceTranslation.map { TranslationOutput.normalize($0, target: passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans") } }
-    var passage: Passage { Passage(text: source, context: context, selection: selection, anchor: anchor, language: language, structure: structure ?? .sentence) }
+    var passage: Passage { Passage(text: source, context: context, selection: selection, anchor: anchor, language: language, structure: sourceKind.flatMap(Passage.Structure.init(rawValue:)) ?? structure ?? .sentence, extent: extent ?? .complete) }
 }
 
 struct RecentLookup: Codable, Identifiable {
@@ -38,7 +40,9 @@ struct StoredPassage: Codable {
     let anchor: NSRange?
     let language: String
     var structure: Passage.Structure? = nil
-    var value: Passage { Passage(text: text, context: context, selection: selection, anchor: anchor, language: language, structure: structure ?? .sentence) }
+    var sourceKind: String? = nil
+    var extent: ContextExtent? = nil
+    var value: Passage { Passage(text: text, context: context, selection: selection, anchor: anchor, language: language, structure: sourceKind.flatMap(Passage.Structure.init(rawValue:)) ?? structure ?? .sentence, extent: extent ?? .complete) }
 }
 
 private struct LookupActivity: Codable {
@@ -81,6 +85,7 @@ private struct LookupActivity: Codable {
     private func sameEntry(_ entry: Entry, _ passage: Passage) -> Bool {
         entry.source == passage.text && entry.context == passage.context &&
         (entry.language == nil || entry.language == passage.sourceLanguage) &&
+        (entry.extent ?? .complete) == passage.extent &&
         (entry.selection == nil || entry.selection == passage.selection)
     }
 
@@ -90,7 +95,9 @@ private struct LookupActivity: Codable {
         let target = passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans"
         next.insert(Entry(id: UUID(), source: passage.text, target: TranslationOutput.normalize(translation, target: LookupPolicy(passage).headwordLanguage.hasPrefix("zh") ? "en" : "zh-Hans"), context: passage.context,
                           sentenceTranslation: sentenceTranslation.map { TranslationOutput.normalize($0, target: target) }, due: Date(), streak: 0,
-                          language: passage.sourceLanguage, selection: passage.selection, anchor: passage.anchor, structure: passage.structure, origin: origin), at: 0)
+                          language: passage.sourceLanguage, selection: passage.selection, anchor: passage.anchor,
+                          structure: passage.structure == .code ? .fragment : passage.structure, sourceKind: passage.structure.rawValue,
+                          extent: passage.extent, origin: origin), at: 0)
         return persist(next)
     }
 
@@ -116,7 +123,8 @@ private struct LookupActivity: Codable {
         next.recent.removeAll { $0.word.caseInsensitiveCompare(passage.text) == .orderedSame && $0.passage.language == passage.sourceLanguage }
         let id = UUID()
         next.recent.insert(RecentLookup(id: id,
-            passage: StoredPassage(text: passage.text, context: passage.context, selection: passage.selection, anchor: passage.anchor, language: passage.sourceLanguage, structure: passage.structure),
+            passage: StoredPassage(text: passage.text, context: passage.context, selection: passage.selection, anchor: passage.anchor, language: passage.sourceLanguage,
+                                  structure: passage.structure == .code ? .fragment : passage.structure, sourceKind: passage.structure.rawValue, extent: passage.extent),
             meaning: String(meaning.prefix(120)), date: now), at: 0)
         next.recent = Array(next.recent.prefix(6))
         guard let data = try? JSONEncoder().encode(next) else { error = "学习记录未能保存，请重试。"; return nil }

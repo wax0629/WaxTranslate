@@ -170,7 +170,10 @@ struct LibraryView: View {
                             VStack(alignment: .leading, spacing: 7) {
                                 Text(item.source).font(.custom("Baskerville", size: 25))
                                 Text(item.displayMeaning).font(.system(size: 15, weight: .medium))
-                                if !item.context.isEmpty { Text(item.context).font(.custom("Baskerville", size: 17)).foregroundStyle(DeskTheme.muted) }
+                                if !item.context.isEmpty {
+                                    if !item.passage.hasCompleteContext { Text("原文片段").font(.caption).foregroundStyle(DeskTheme.muted) }
+                                    Text(item.context).font(.custom("Baskerville", size: 17)).foregroundStyle(DeskTheme.muted)
+                                }
                                 if let sentence = item.displaySentenceTranslation { Text(sentence).font(.callout).foregroundStyle(DeskTheme.muted) }
                             }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                         }.buttonStyle(.plain)
@@ -195,7 +198,10 @@ struct LibraryView: View {
                         Button { speak(item.source, item.passage.headwordLanguage) } label: { Image(systemName: "speaker.wave.2") }
                             .buttonStyle(.plain).accessibilityLabel("朗读复习词语")
                     }
-                    if !item.context.isEmpty { Text(item.context).font(.custom("Baskerville", size: 20)) }
+                    if !item.context.isEmpty {
+                        if !item.passage.hasCompleteContext { Text("原文片段").font(.caption).foregroundStyle(DeskTheme.muted) }
+                        Text(item.context).font(.custom("Baskerville", size: 20))
+                    }
                     BookRule()
                     if revealed == item.id {
                         Text(item.displayMeaning).font(.title3)

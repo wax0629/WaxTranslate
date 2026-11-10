@@ -9,7 +9,7 @@
 
 ## 试用状态（2026-11-10）
 
-本轮确认的查询规则、原文边界和卡片流程已完成双端验收，可以进入开发版试用。Mac **0.3.0 build16** 已同身份覆盖安装，真实 Vision、Apple 英中/日中、数据兼容、八类原生布局和 Release 通过；实现按 [#80](https://github.com/wax0629/WaxTranslate/pull/80) → [#85](https://github.com/wax0629/WaxTranslate/pull/85) 合入主分支。[Mac 验收](docs/verification/card-rules/README.md)
+本轮确认的查询规则、原文边界和卡片流程已完成双端验收，可以进入开发版试用。Mac 本轮源码版本为 **0.3.0 build17**，规则、真实 Vision、Apple 英中/日中、数据兼容和12类原生卡片布局通过；当前提交的 Release、覆盖安装及远程CI以 #90 最终记录为准。本轮换行/断句与半句处理由 [#90](https://github.com/wax0629/WaxTranslate/issues/90) 接续，Mac先验收，Windows随后同步；[新规则与验收](docs/verification/sentence-boundaries/README.md)。原卡片实现按 [#80](https://github.com/wax0629/WaxTranslate/pull/80) → [#85](https://github.com/wax0629/WaxTranslate/pull/85) 合入主分支。[Mac 验收](docs/verification/card-rules/README.md)
 
 Windows 视觉与卡片 #82 → #87 已合入；[最新句译规则 #89](https://github.com/wax0629/WaxTranslate/pull/89) 的实际便携包在 100%／150% 下各 **111/111** 项桌面检查通过，含真实离线句译、启动/再唤回、语言包和原生截图。当前试用包与最终集成检查统一由 #89 记录；旧 #87 的 107 项结果仅作历史基线。[Windows 验收](docs/verification/windows-card-rules/README.md)
 

@@ -1,0 +1,158 @@
+[
+  {
+    "case" : "word",
+    "height" : 274,
+    "kind" : "native-view-layout-fixture",
+    "knownMeaningFixture" : "岸边",
+    "pixels" : [
+      730,
+      548
+    ],
+    "query" : "bank",
+    "source" : "They sat on the river bank and watched the water.",
+    "width" : 365
+  },
+  {
+    "case" : "foreign-term",
+    "height" : 318,
+    "kind" : "native-view-layout-fixture",
+    "knownMeaningFixture" : "应用程序编程接口（application programming interface），供一个程序调用另一个程序提供的功能。",
+    "pixels" : [
+      730,
+      636
+    ],
+    "query" : "API",
+    "source" : "The API returns a response.",
+    "width" : 365
+  },
+  {
+    "case" : "name",
+    "height" : 202,
+    "kind" : "native-view-layout-fixture",
+    "knownMeaningFixture" : "local terminology or unresolved policy",
+    "pixels" : [
+      730,
+      404
+    ],
+    "query" : "VoiceOver",
+    "source" : "在macOS辅助功能中启用VoiceOver。",
+    "width" : 365
+  },
+  {
+    "case" : "mixed",
+    "height" : 265,
+    "kind" : "native-view-layout-fixture",
+    "knownMeaningFixture" : "local terminology or unresolved policy",
+    "pixels" : [
+      730,
+      530
+    ],
+    "query" : "Redis",
+    "source" : "用Docker部署Redis，通过API访问缓存。",
+    "width" : 365
+  },
+  {
+    "case" : "unknown",
+    "height" : 264,
+    "kind" : "native-view-layout-fixture",
+    "knownMeaningFixture" : "local terminology or unresolved policy",
+    "pixels" : [
+      730,
+      528
+    ],
+    "query" : "UnknownSDK",
+    "source" : "用Docker部署UnknownSDK。",
+    "width" : 365
+  },
+  {
+    "case" : "title",
+    "height" : 290,
+    "kind" : "native-view-layout-fixture",
+    "knownMeaningFixture" : "门",
+    "pixels" : [
+      730,
+      580
+    ],
+    "query" : "door",
+    "source" : "Keep this door closed",
+    "width" : 365
+  },
+  {
+    "case" : "whole-title",
+    "height" : 212,
+    "kind" : "native-view-layout-fixture",
+    "knownMeaningFixture" : "请保持这扇门关闭。",
+    "pixels" : [
+      730,
+      424
+    ],
+    "query" : "Keep this door closed",
+    "source" : "",
+    "width" : 365
+  },
+  {
+    "case" : "comment",
+    "height" : 274,
+    "kind" : "native-view-layout-fixture",
+    "knownMeaningFixture" : "避免",
+    "pixels" : [
+      730,
+      548
+    ],
+    "query" : "avoid",
+    "source" : "Explicit transport views avoid exposing future domain fields by accident.",
+    "width" : 365
+  },
+  {
+    "case" : "partial-start",
+    "height" : 311,
+    "kind" : "native-view-layout-fixture",
+    "knownMeaningFixture" : "传感器",
+    "pixels" : [
+      730,
+      622
+    ],
+    "query" : "sensor",
+    "source" : "checked the sensor before the experiment.",
+    "width" : 365
+  },
+  {
+    "case" : "partial-end",
+    "height" : 351,
+    "kind" : "native-view-layout-fixture",
+    "knownMeaningFixture" : "local terminology or unresolved policy",
+    "pixels" : [
+      730,
+      702
+    ],
+    "query" : "API",
+    "source" : "The API returns a response before",
+    "width" : 365
+  },
+  {
+    "case" : "partial-both",
+    "height" : 311,
+    "kind" : "native-view-layout-fixture",
+    "knownMeaningFixture" : "传感器",
+    "pixels" : [
+      730,
+      622
+    ],
+    "query" : "sensor",
+    "source" : "checked the sensor and",
+    "width" : 365
+  },
+  {
+    "case" : "uncertain-boundary",
+    "height" : 311,
+    "kind" : "native-view-layout-fixture",
+    "knownMeaningFixture" : "传感器",
+    "pixels" : [
+      730,
+      622
+    ],
+    "query" : "sensor",
+    "source" : "The sensor remains connected.",
+    "width" : 365
+  }
+]

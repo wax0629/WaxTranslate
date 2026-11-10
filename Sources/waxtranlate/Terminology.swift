@@ -259,12 +259,13 @@ struct LookupPolicy {
         if passage.context.isEmpty { object = .region }
         else if term != nil { object = .term }
         else if passage.text == "VoiceOver" { object = .uncertainName }
-        else if passage.structure == .path || passage.text.range(of: #"[a-z][A-Z]|[_/#]|\.\w+$"#, options: .regularExpression) != nil { object = .code }
+        else if passage.structure == .path || passage.structure == .code || passage.text.range(of: #"[a-z][A-Z]|[_/#]|\.\w+$"#, options: .regularExpression) != nil { object = .code }
         else { object = .word }
     }
     var isChineseContext: Bool { passage.sourceLanguage.hasPrefix("zh") }
     var needsConfirmation: Bool { object == .uncertainName || object == .code }
     var defaultsToContext: Bool {
+        if !passage.hasCompleteContext { return true }
         if automaticallyTranslatesContext && passage.context != passage.text { return true }
         if object == .word || needsConfirmation { return true }
         guard object == .term, isChineseContext, !["README", "VoiceOver"].contains(passage.text) else { return false }
@@ -273,7 +274,7 @@ struct LookupPolicy {
     }
     var automaticallyTranslatesContext: Bool {
         if object == .region { return true }
-        guard !isChineseContext, passage.structure == .sentence || passage.structure == .list else { return false }
+        guard passage.hasCompleteContext, !isChineseContext, passage.structure == .sentence || passage.structure == .list else { return false }
         // The surrounding language controls bilingual context, not whether the
         // selected object was found in the terminology or ordinary dictionary.
         return object == .word || (object == .term && passage.context != passage.text)
@@ -282,12 +283,12 @@ struct LookupPolicy {
     var caption: String {
         if passage.structure == .title { return "标题翻译" }
         if object == .region { return "选区翻译" }
-        if passage.structure == .fragment { return "词义参考 · 识别片段" }
+        if !passage.hasCompleteContext { return "词义参考 · 原文片段" }
         if object == .uncertainName { return "名称待确认" + (isChineseContext ? " · 中文语境" : "") }
         if object == .code { return "代码名称" + (isChineseContext ? " · 中文语境" : "") }
         return (term?.kind ?? (headwordLanguage == "en" ? "英语" : "词语")) + (isChineseContext ? " · 中文语境" : "")
     }
     var unresolvedMessage: String {
-        passage.structure == .fragment ? "原文片段不完整，暂不能确认句中含义。" : object == .uncertainName ? "可能指 Apple 的屏幕朗读功能，当前片段不足以确认。" : object == .code ? "暂未确认这个代码名称的含义。" : "本机资料中没有找到可靠解释。"
+        !passage.hasCompleteContext ? "原文片段不完整，暂不能确认句中含义。" : object == .uncertainName ? "可能指 Apple 的屏幕朗读功能，当前片段不足以确认。" : object == .code ? "暂未确认这个代码名称的含义。" : "本机资料中没有找到可靠解释。"
     }
 }

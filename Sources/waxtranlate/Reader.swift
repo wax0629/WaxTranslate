@@ -13,13 +13,15 @@ struct Passage: Equatable {
     let language: String?
     let nearbyContext: String?
     let nearbySelection: NSRange?
-    enum Structure: String, Codable { case sentence, list, title, path, fragment }
+    enum Structure: String, Codable { case sentence, list, title, path, code, fragment }
     let structure: Structure
-    var isPhrase: Bool { selection != anchor }
+    let extent: ContextExtent
+    var isPhrase: Bool { selection != anchor && text.contains(where: \.isWhitespace) }
 
     init(text: String, context: String, selection: NSRange? = nil, anchor: NSRange? = nil, language: String? = nil,
-         nearbyContext: String? = nil, nearbySelection: NSRange? = nil, structure: Structure = .sentence) {
+         nearbyContext: String? = nil, nearbySelection: NSRange? = nil, structure: Structure = .sentence, extent: ContextExtent = .complete) {
         self.structure = structure
+        self.extent = extent
         self.text = text
         self.context = context
         // OCR supplies the exact occurrence. Demo/manual passages can infer it.
@@ -55,14 +57,19 @@ struct Passage: Equatable {
         let evidence = semanticEvidence
         let evidenceOffset = (evidence.selection?.location ?? selection?.location ?? 0) - (selection?.location ?? 0)
         return Passage(text: String(context[selected]), context: context, selection: range, language: language,
-                       nearbyContext: evidence.text, nearbySelection: NSRange(location: range.location + evidenceOffset, length: range.length), structure: structure)
+                       nearbyContext: evidence.text, nearbySelection: NSRange(location: range.location + evidenceOffset, length: range.length), structure: structure, extent: extent)
     }
 
     var wholeTitle: Passage { Passage(text: context, context: "", language: language, structure: .title) }
 
     func using(language: String?) -> Passage {
         Passage(text: text, context: context, selection: selection, anchor: anchor, language: language,
-                nearbyContext: nearbyContext, nearbySelection: nearbySelection, structure: structure)
+                nearbyContext: nearbyContext, nearbySelection: nearbySelection, structure: structure, extent: extent)
+    }
+
+    var hasCompleteContext: Bool { extent == .complete && structure != .fragment }
+    var needsContextExpansion: Bool {
+        !context.isEmpty && !hasCompleteContext && (context != text || extent != .uncertain) && [.sentence, .list, .fragment].contains(structure)
     }
 }
 
@@ -115,20 +122,43 @@ enum Reader {
         trace.record("capture.enumerate", since: enumerateBegan)
         guard let display = available.displays.first(where: { $0.displayID == displayID }) else { throw ReaderError.noScreen }
         let filter = SCContentFilter(display: display, excludingWindows: [])
-        let configuration = screenshotConfiguration(bounds: bounds, screen: screen.frame, scale: screen.backingScaleFactor)
-        let captureBegan = LookupTrace.now
-        let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-        trace.record("capture.image", since: captureBegan)
-        let target = region == nil ? CGPoint(x: (point.x - bounds.minX) / bounds.width,
-                                               y: (point.y - bounds.minY) / bounds.height) : nil
-        let ocrBegan = LookupTrace.now
-        return try await Task.detached(priority: .userInitiated) {
-            defer { trace.record("capture.ocr", since: ocrBegan) }
-            return try recognize(image: image, target: target, language: language)
-        }.value
+        func read(_ area: CGRect) async throws -> Passage {
+            try Task.checkCancellation()
+            let configuration = screenshotConfiguration(bounds: area, screen: screen.frame, scale: screen.backingScaleFactor)
+            let captureBegan = LookupTrace.now
+            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+            trace.record("capture.image", since: captureBegan)
+            try Task.checkCancellation()
+            let target = region == nil ? CGPoint(x: (point.x - area.minX) / area.width,
+                                                y: (point.y - area.minY) / area.height) : nil
+            let ocrBegan = LookupTrace.now
+            let worker = Task.detached(priority: .userInitiated) {
+                defer { trace.record("capture.ocr", since: ocrBegan) }
+                try Task.checkCancellation()
+                let value = try recognize(image: image, target: target, language: language, isCrop: region == nil)
+                try Task.checkCancellation()
+                return value
+            }
+            return try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
+        }
+        let first = try await read(bounds)
+        guard region == nil else { return first }
+        return try await ContextCapture.complete(first) {
+            let expanded = expandedHoverRect(at: point, on: screen.frame)
+            guard expanded != bounds else { return first }
+            let began = LookupTrace.now
+            defer { trace.record("capture.expand", since: began) }
+            return try await read(expanded)
+        }
     }
 
-    static func recognize(image: CGImage, target: CGPoint?, language: String? = nil) throws -> Passage {
+    static func expandedHoverRect(at point: CGPoint, on screen: CGRect) -> CGRect {
+        let width = min(screen.width, 1200), height = min(screen.height, 480)
+        return CGRect(x: min(max(point.x - width / 2, screen.minX), screen.maxX - width),
+                      y: min(max(point.y - height / 2, screen.minY), screen.maxY - height), width: width, height: height)
+    }
+
+    static func recognize(image: CGImage, target: CGPoint?, language: String? = nil, isCrop: Bool = false) throws -> Passage {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.automaticallyDetectsLanguage = language == nil || language == ""
@@ -143,7 +173,8 @@ enum Reader {
         }
         let size = CGSize(width: image.width, height: image.height)
         let point = CGPoint(x: target.x * size.width, y: target.y * size.height)
-        return try SentenceContext.passage(in: lines.flatMap { fragments(of: $0, imageSize: size, point: point) }, language: requested)
+        return try SentenceContext.passage(in: lines.flatMap { fragments(of: $0, imageSize: size, point: point) }, language: requested,
+                                           captureBounds: isCrop ? CGRect(origin: .zero, size: size) : nil)
     }
 
     // Vision can group two columns on the same baseline into one observation.
