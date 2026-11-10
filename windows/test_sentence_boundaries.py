@@ -225,6 +225,7 @@ class WindowsBoundaryTests(unittest.TestCase):
                 self.assertEqual(passage.extent,'complete')
 
     def test_desktop_bounded_context_expansion(self):
+        import os
         import time
         from tempfile import TemporaryDirectory
         from unittest.mock import patch
@@ -234,6 +235,7 @@ class WindowsBoundaryTests(unittest.TestCase):
         from PySide6.QtWidgets import QApplication, QWidget
         from app import Window
         from notebook import Notebook
+        import reader
         app=QApplication.instance()
         if app.platformName() != 'windows': self.skipTest('isolated desktop required')
         rows=['The inspection team opened the machine and',
@@ -243,24 +245,38 @@ class WindowsBoundaryTests(unittest.TestCase):
               'controller and the backup power supply so',
               'the recorded measurements could be compared with',
               'the previous results after the inspection ended.']
-        # Exceed the initial 180-DIP crop at both scales. Tighter line spacing
-        # can fit all seven lines, making a required second capture depend on OCR bounds.
-        line_gap=34
+        # Exceed the first 180-DIP crop, with body-text spacing that OCR can
+        # reliably keep in one paragraph at both Windows scale factors.
+        line_gap=30
         class Sample(QWidget):
             def paintEvent(self,event):
                 with QPainter(self) as painter:
                     painter.fillRect(self.rect(),Qt.white)
                     painter.setPen(Qt.black)
-                    font=QFont('Segoe UI'); font.setPixelSize(18); painter.setFont(font)
+                    font=QFont('Segoe UI'); font.setPixelSize(22); painter.setFont(font)
                     for i,row in enumerate(rows): painter.drawText(24,47+i*line_gap,row)
                     metrics=painter.fontMetrics()
                     self.hit=QPoint(24+metrics.horizontalAdvance('while the sen'),47+3*line_gap-metrics.capHeight()//2)
         sample=Sample(); sample.resize(620,320)
         area=app.primaryScreen().availableGeometry(); sample.move(area.center()-sample.rect().center())
         sample.show(); sample.raise_(); QTest.qWait(200)
-        with TemporaryDirectory() as temp, patch.object(QProcess,'start'):
+        observations=[]; captures=[]; parser=reader.passage_from_lines
+        def observed_lines(lines,point,source_code='',**options):
+            item={'lines':[{'text':' '.join(w.text for w in row),'rect':reader.line_rect(row).getRect()} for row in lines],
+                  'point':point.toTuple() if point is not None else None,'options':options}
+            observations.append(item)
+            result=parser(lines,point,source_code,**options)
+            item.update(word=result.word,text=result.text,structure=result.structure,extent=result.extent)
+            return result
+        with TemporaryDirectory() as temp, patch.object(QProcess,'start'), patch.object(reader,'passage_from_lines',side_effect=observed_lines):
             window=Window(Notebook(Path(temp)/'desktop.sqlite3'))
             calls=[]; original=window.capture
+            submit=window.submit
+            def observed_submit(point,**options):
+                if options.get('image') is not None:
+                    captures.append(options['image'].copy())
+                return submit(point,**options)
+            window.submit=observed_submit
             def tracked(*args,**kwargs):
                 calls.append((args,kwargs)); return original(*args,**kwargs)
             window.capture=tracked
@@ -272,7 +288,7 @@ class WindowsBoundaryTests(unittest.TestCase):
                     QApplication.processEvents(); QTest.qWait(15)
                     if time.monotonic()>deadline: self.fail('bounded lookup did not finish: '+window.card.text.toPlainText())
                 passage,result=window.saved_result
-                self.assertEqual(len(calls),2,f"word={passage.word!r}, extent={passage.extent}, text={passage.text!r}")
+                self.assertEqual(len(calls),2,f"word={passage.word!r}, structure={passage.structure}, extent={passage.extent}, text={passage.text!r}")
                 self.assertEqual((passage.word,passage.text,passage.extent),('sensor',' '.join(rows),'complete'))
                 self.assertIn('sensor',window.card.listen.sentence)
                 # Closing/new work invalidates a scheduled capture before it reads the screen.
@@ -281,6 +297,11 @@ class WindowsBoundaryTests(unittest.TestCase):
                     original(ticket,sample.mapToGlobal(sample.hit),False,passage)
                     submit.assert_not_called()
             finally:
+                if os.environ.get('GITHUB_ACTIONS')=='true':
+                    folder=Path('visuals/context-expansion'); folder.mkdir(parents=True,exist_ok=True)
+                    scale=os.environ.get('QT_SCALE_FACTOR','1')
+                    for i,image in enumerate(captures): image.save(str(folder/f'scale-{scale}-capture-{i+1}.png'))
+                    (folder/f'scale-{scale}.json').write_text(json.dumps(observations,ensure_ascii=False,indent=2),encoding='utf-8')
                 window.shutdown(); window.card.close(); window.hide(); window.deleteLater(); sample.close()
 
 
