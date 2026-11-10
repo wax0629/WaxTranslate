@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsDropShadowEffect, 
 
 from languages import SUPPORTED
 from lookup import DICTIONARY
-from card_policy import bounded_context, chinese_context, needs_confirmation
+from card_policy import automatic_context, bounded_context, chinese_context, needs_confirmation
 from speech import ListenButton, SpeechPlayer
 from theme import APP_NAME, COLORS, marked_source, plain, theme_css, ui_icon
 
@@ -284,7 +284,7 @@ class Card(QWidget):
             if action == 'context': self.rule_context = not self.rule_context
             elif action == 'expand':
                 self.rule_expanded = not self.rule_expanded
-                self.rule_translation = ''
+                self.rule_translation = (self.rule_full_translation if self.rule_expanded else self.rule_excerpt_translation) if self.rule_automatic else ''
                 self.rule_waiting = False
                 self.rule_request_id += 1
             elif action == 'translate':
@@ -308,7 +308,7 @@ class Card(QWidget):
                     can_save=True, can_search=False, references=(), web_search=False):
         self.loading = False
         if passage.selection and not (references or web_search) and (chinese_context(passage) or passage.structure in ('path','fragment','title') or origin == '暂未收录' or origin in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考')):
-            self.show_rule_result(passage, origin, gloss, sentence, point, language, pos, can_save, can_search)
+            self.show_rule_result(passage, origin, gloss, sentence, point, language, pos, can_save, can_search, excerpt)
             return
         self.rule_state = None
         self.listen.set_content(passage.word, passage.text, passage.source_code or "en",
@@ -362,12 +362,16 @@ class Card(QWidget):
         self.present(origin, short, point, translated, can_save, (full, sentence), can_search=can_search,
                      word=passage.word, phonetic=passage.phonetic)
 
-    def show_rule_result(self, passage, origin, gloss, sentence, point, language, pos, can_save, can_search):
+    def show_rule_result(self, passage, origin, gloss, sentence, point, language, pos, can_save, can_search, excerpt=None):
+        self.rule_automatic = origin != '暂未收录' and automatic_context(passage, confirmed=True)
+        self.rule_full_translation = sentence
+        compact, _ = bounded_context(passage)
+        self.rule_excerpt_translation = sentence if compact.text == passage.text else excerpt[1] if excerpt and excerpt[0].text == compact.text else ''
         self.rule_state = (passage, origin, gloss, point, language, pos, can_save, can_search)
-        self.rule_context = origin not in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考') or (chinese_context(passage) and len(re.findall(r'[A-Za-z][A-Za-z0-9+#]*',passage.text)) > 1 and passage.word not in ('README','VoiceOver'))
+        self.rule_context = self.rule_automatic or origin not in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考') or (chinese_context(passage) and len(re.findall(r'[A-Za-z][A-Za-z0-9+#]*',passage.text)) > 1 and passage.word not in ('README','VoiceOver'))
         self.rule_saved = False
         self.rule_expanded = False
-        self.rule_translation = sentence
+        self.rule_translation = self.rule_excerpt_translation if self.rule_automatic else sentence
         self.rule_waiting = False
         self.rule_error = ''
         self.rule_request_id = getattr(self,'rule_request_id',0)+1
@@ -403,8 +407,8 @@ class Card(QWidget):
             if self.rule_translation: content += f"<p class='translation'>{plain(self.rule_translation)}</p>"
             if part.text != passage.text or self.rule_expanded:
                 content += '<p><a href="waxcard://expand">'+('收起' if self.rule_expanded else '展开当前项' if passage.structure=='list' else '展开当前句')+'</a></p>'
-            if passage.structure not in ('path','fragment'):
-                label = '取消句译' if self.rule_waiting else '收起句译' if self.rule_translation else '翻译这段原文'
+            if passage.structure not in ('path','fragment') and (not self.rule_automatic or not self.rule_translation):
+                label = '取消句译' if self.rule_waiting else '重试句译' if self.rule_automatic else '收起句译' if self.rule_translation else '翻译这段原文'
                 content += f'<p><a href="waxcard://translate">{label}</a></p>'
             if self.rule_waiting: content += "<p class='details'>正在翻译这段原文…</p>"
             if self.rule_error: content += f"<p class='details'>{plain(self.rule_error)}</p>"
@@ -423,6 +427,8 @@ class Card(QWidget):
         if not getattr(self,'rule_state',None) or request_id != self.rule_request_id or not self.rule_waiting:
             return False
         self.rule_waiting = False; self.rule_translation = translated; self.rule_error = error
+        if self.rule_displayed.text == self.rule_state[0].text: self.rule_full_translation = translated
+        else: self.rule_excerpt_translation = translated
         self.render_rule_card()
         return True
 

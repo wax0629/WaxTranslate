@@ -1,7 +1,7 @@
 """Combine document, terminology, dictionary and translation evidence for a word."""
 import re
 
-from card_policy import chinese_context, local_reference, needs_confirmation
+from card_policy import automatic_context, bounded_context, chinese_context, local_reference, needs_confirmation
 from lexicon import lookup_details
 from reader import Passage
 from terminology import resolve_term
@@ -31,6 +31,30 @@ def sentence_translation(text):
         return ""
 
 
+def term_context_translation(passage):
+    """Return full and compact translations with the exact source of each.
+
+    A failed language pack/model must not remove the already known explanation.
+    """
+    if not automatic_context(passage, confirmed=True):
+        return "", None
+    if not passage.source_code:
+        try:
+            passage.source_code = detect_source(passage.text) or "en"
+        except UnsupportedLanguage:
+            return "", None
+
+    def translated(part):
+        try:
+            return translate(Passage(part.text, source_code=passage.source_code))[1]
+        except (ValueError, RuntimeError, OSError):
+            return ""
+    full = translated(passage)
+    part, _ = bounded_context(passage)
+    excerpt = (part, translated(part)) if part.text != passage.text else None
+    return full, excerpt
+
+
 def preserves_reference(word, gloss, translated):
     if word.casefold() in translated.casefold():
         return True
@@ -54,7 +78,8 @@ def explain(passage):
         special = local_reference(passage)
         if special:
             origin, gloss, kind = special
-            return (origin, gloss, ""), None, "中文语境" if chinese_context(passage) else "英语", kind
+            sentence, excerpt = term_context_translation(passage)
+            return (origin, gloss, sentence), excerpt, "中文语境" if chinese_context(passage) else NAMES.get(passage.source_code, "英语"), kind
         if needs_confirmation(passage) and not resolve_term(passage, passage.local_context):
             message = "可能指 Apple 的屏幕朗读功能，当前片段不足以确认。" if passage.word == "VoiceOver" else "暂未确认这个代码名称的含义。"
             return (UNKNOWN, message, ""), None, "中文语境" if chinese_context(passage) else "", "代码名称"
@@ -81,11 +106,12 @@ def explain(passage):
             word = Passage(passage.word, (0, len(passage.word)), source_code=code)
             origin, gloss, _ = translate(word)
             return (origin, gloss, ""), None, language, ""
-        if code in ("ja", "ko") and passage.word.isascii() and passage.word:
+        if passage.word.isascii() and passage.word:
             term = resolve_term(passage, passage.local_context)
             if term:
                 origin, gloss, pos = term
-                return (origin, gloss, ""), None, language + "语境", pos
+                sentence, excerpt = term_context_translation(passage)
+                return (origin, gloss, sentence), excerpt, language + "语境", pos
         return translate(passage), None, language, ""
     if not passage.selection:
         result, excerpt = translate_lookup(passage)
@@ -121,6 +147,8 @@ def explain(passage):
             translated = sentence_translation(gloss).rstrip("。.")
             if re.search(r"[\u3400-\u9fff]", translated):
                 gloss = translated + "（机译）\n" + gloss
+        sentence, excerpt = term_context_translation(passage)
+        return (origin, gloss, sentence), excerpt, language, pos
     elif entry:
         if common and english_context and has_sentence and not identifier and passage.structure not in ("title", "path", "fragment"):
             try:
