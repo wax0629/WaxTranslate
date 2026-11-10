@@ -243,16 +243,19 @@ class WindowsBoundaryTests(unittest.TestCase):
               'controller and the backup power supply so',
               'the recorded measurements could be compared with',
               'the previous results after the inspection ended.']
+        # Exceed the initial 180-DIP crop at both scales. Tighter line spacing
+        # can fit all seven lines, making a required second capture depend on OCR bounds.
+        line_gap=34
         class Sample(QWidget):
             def paintEvent(self,event):
                 with QPainter(self) as painter:
                     painter.fillRect(self.rect(),Qt.white)
                     painter.setPen(Qt.black)
                     font=QFont('Segoe UI'); font.setPixelSize(18); painter.setFont(font)
-                    for i,row in enumerate(rows): painter.drawText(24,47+i*27,row)
+                    for i,row in enumerate(rows): painter.drawText(24,47+i*line_gap,row)
                     metrics=painter.fontMetrics()
-                    self.hit=QPoint(24+metrics.horizontalAdvance('while the sen'),47+3*27-metrics.capHeight()//2)
-        sample=Sample(); sample.resize(620,285)
+                    self.hit=QPoint(24+metrics.horizontalAdvance('while the sen'),47+3*line_gap-metrics.capHeight()//2)
+        sample=Sample(); sample.resize(620,320)
         area=app.primaryScreen().availableGeometry(); sample.move(area.center()-sample.rect().center())
         sample.show(); sample.raise_(); QTest.qWait(200)
         with TemporaryDirectory() as temp, patch.object(QProcess,'start'):
@@ -269,7 +272,7 @@ class WindowsBoundaryTests(unittest.TestCase):
                     QApplication.processEvents(); QTest.qWait(15)
                     if time.monotonic()>deadline: self.fail('bounded lookup did not finish: '+window.card.text.toPlainText())
                 passage,result=window.saved_result
-                self.assertEqual(len(calls),2)
+                self.assertEqual(len(calls),2,f"word={passage.word!r}, extent={passage.extent}, text={passage.text!r}")
                 self.assertEqual((passage.word,passage.text,passage.extent),('sensor',' '.join(rows),'complete'))
                 self.assertIn('sensor',window.card.listen.sentence)
                 # Closing/new work invalidates a scheduled capture before it reads the screen.
