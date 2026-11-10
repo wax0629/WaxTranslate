@@ -9,11 +9,11 @@
 
 ## 试用状态（2026-11-10）
 
-本轮确认的查询规则、原文边界和卡片流程已完成双端验收，可以进入开发版试用。Mac 本轮源码版本为 **0.3.0 build17**，规则、真实 Vision、Apple 英中/日中、数据兼容和12类原生卡片布局通过；当前提交的 Release、覆盖安装及远程CI以 #90 最终记录为准。本轮换行/断句与半句处理由 [#90](https://github.com/wax0629/WaxTranslate/issues/90) 接续，Mac先验收，Windows随后同步；[新规则与验收](docs/verification/sentence-boundaries/README.md)。原卡片实现按 [#80](https://github.com/wax0629/WaxTranslate/pull/80) → [#85](https://github.com/wax0629/WaxTranslate/pull/85) 合入主分支。[Mac 验收](docs/verification/card-rules/README.md)
+本轮换行、断句与半句处理已完成双端验收：Mac **0.3.0 build17** 已同身份安装并验签，160项共享契约、22项真实Vision、12类原生卡片布局、真实Apple服务与Release通过；Mac当前提交CI成功后才开始Windows同步。
 
-Windows 视觉与卡片 #82 → #87 已合入；[最新句译规则 #89](https://github.com/wax0629/WaxTranslate/pull/89) 的实际便携包在 100%／150% 下各 **111/111** 项桌面检查通过，含真实离线句译、启动/再唤回、语言包和原生截图。当前试用包与最终集成检查统一由 #89 记录；旧 #87 的 107 项结果仅作历史基线。[Windows 验收](docs/verification/windows-card-rules/README.md)
+Windows同一共享契约160/160，实际便携包在100%／150%下各 **118/118** 项桌面检查通过，多语种原生OCR **2+16** 项通过；四种片段卡片和缩放截图已复核。[当前试用包](https://github.com/wax0629/WaxTranslate/actions/runs/42780828105/artifacts/13746860612) · [验收报告与直接截图](docs/verification/sentence-boundaries/README.md) · [本轮交付与合并状态 #90](https://github.com/wax0629/WaxTranslate/issues/90)
 
-任意第三方应用的全部物理手势、人工听感/读屏和真实历史词本升级继续由 [路线图 #3](https://github.com/wax0629/WaxTranslate/issues/3) 跟踪。[当前试用边界](docs/verification/macos-sync/trial-readiness.md)
+完整外语句中的普通词和专业术语自动显示同范围原文与译文，中文语境点击才句译。跨行先区分段落、列表、标题、代码和注释，疑似裁切最多补采一次；仍不完整时明确显示片段，不补造原文。任意第三方应用的全部物理手势、人工听感/读屏和真实历史词本升级继续独立跟踪。[当前翻译逻辑](docs/translation-logic.md)
 
 ## 当前开发进度
 

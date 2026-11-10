@@ -1,0 +1,23 @@
+{
+  "platform": "win32",
+  "qt_platform": "windows",
+  "source_root": "D:\\a\\_temp\\wax-visual-baseline",
+  "scale": "1.5",
+  "boundary_metadata_supported": false,
+  "captures": [
+    {
+      "name": "partial-missingEnd",
+      "width": 381,
+      "height": 282,
+      "physical_width": 572,
+      "physical_height": 423,
+      "device_ratio": 1.5,
+      "headword": "sensor",
+      "text": "英语 → 简体中文\n传感器\n\n单词参考 · 原句\nThe sensor is connected to the",
+      "can_save": true
+    }
+  ],
+  "artifact_url": "https://github.com/wax0629/WaxTranslate/actions/runs/42780828105/artifacts/13747075155",
+  "source_commit": "2493b3b0320d086d8b58223804df35b0bfaed26b",
+  "note": "本文件只保留仓库内直接截图；完整80张图及manifest见artifact。固定声明释义仅验证布局。"
+}
