@@ -11,7 +11,7 @@
 
 Windows 语境卡片与视觉同步已进入主分支：最终便携包在 100%／150% 下各 107 项桌面检查通过，多语种 OCR 通过。[Windows 试用包与验收](https://github.com/wax0629/WaxTranslate/pull/87)。
 
-Mac 0.3.0 build16 已完成本机规则、真实英中／日中、数据兼容与七类原生卡片布局检查，并同身份覆盖安装。卡片区分普通词、名称、中文多术语混排及未知代码；外语术语自动附原文对照、中文语境按需句译、原文术语可点击、注释不接相邻代码。[Mac 规则与界面验收](docs/verification/card-rules/README.md)。Mac #85 依赖 #80，尚未合入主分支。
+Mac 0.3.0 build16 已完成本机规则、真实英中／日中、数据兼容与八类原生卡片布局检查，并同身份覆盖安装。卡片区分普通词、名称、中文多术语混排及未知代码；外语术语自动附原文对照、中文语境按需句译、原文术语可点击、注释不接相邻代码。[Mac 规则与界面验收](docs/verification/card-rules/README.md)。Mac #85 依赖 #80，尚未合入主分支。
 
 可以进入开发版试用；自动验收覆盖记录中的样本与流程。任意第三方应用的取词准确率、人工听感、屏幕阅读器和真实历史词本升级继续由[路线图 #3](https://github.com/wax0629/WaxTranslate/issues/3)跟踪。[当前试用边界](docs/verification/macos-sync/trial-readiness.md)。
 
@@ -50,7 +50,7 @@ open "$HOME/Applications/waxtranlate.app" --args --show
 1. 在「设置 → 屏幕取词」查看权限；跨应用取词需在系统设置的「屏幕与系统音频录制」中允许「我靠翻译」，按系统提示重新打开。
 2. 指向原文，轻按并松开 **Option** 查词，或按 **⌥⇧R** 后拖选；Esc 取消。组合键输入、拖动或长按 Option 不触发查词。可改为 ⌥⇧T / R、⌃⌥T / R 或仅应用内模式，保留已有显式选择。连续 `rule out`、`run out of`、`look up` 按整组解释。
 3. 在「对照翻译」粘贴文章，双击原文查词，点「翻译全文」或按 ⌘Enter 翻译。卡片可听读、固定、展开语境、复制和收藏。
-4. 首页查看实际取词统计及最近六条；在「生词本 → 到期复习」复习收藏。设置可选择源语言、下载 Apple 语言包、控制自动百科补查及「在 Dock 中显示」。默认在菜单栏待命。[Mac 使用与开发指南](docs/macos.md)
+4. 首页查看实际取词统计及最近六条；在「生词本 → 到期复习」复习收藏。设置可选择源语言、下载 Apple 语言包、控制「在 Dock 中显示」。默认在菜单栏待命。[Mac 使用与开发指南](docs/macos.md)
 
 安装脚本会退出正在运行的旧版、复用签名并保留生词本。请保留 `~/Library/Application Support/waxtranlate/BuildSigning` 中的签名材料。从旧版临时签名升级后，如果仍显示未授权，请在「屏幕与系统音频录制」中移除旧条目，重新添加当前应用并重启。正式安装包覆盖已有真实生词记录的验收仍在跟踪。[macOS 升级记录](https://github.com/wax0629/WaxTranslate/issues/1)
 

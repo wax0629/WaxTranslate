@@ -1,10 +1,10 @@
 # 开发进度与验收记录
 
-当前主分支为 `76ac0d0`：Windows 视觉 #82 和语境卡片 #87 已合入。Mac 同步 #80 与规则 #85 仍为独立 PR，build15 已在本机安装；以下历史功能表保留原来的基线和证据。
+当前主分支为 `76ac0d0`：Windows 视觉 #82 和语境卡片 #87 已合入。Mac 同步 #80 与规则 #85 仍为独立 PR，build16 已在本机安装；以下历史功能表保留原来的基线和证据。
 
 ## 当前准入结论（2026-11-10）
 
-已确认的卡片规则可以进入开发版试用。Windows 最终 d699d8b 的 100%／150% 各107项真实桌面与安装包检查，以及多语OCR均通过；[最终PR与下载](https://github.com/wax0629/WaxTranslate/pull/87)。Mac build15 的完整规则／真实服务回归、Release安装及七类原生离屏布局通过，四类早期实机交互证据保留。[Mac当前验收](verification/card-rules/README.md)。
+已确认的卡片规则可以进入开发版试用。Windows 最终 d699d8b 的 100%／150% 各107项真实桌面与安装包检查，以及多语OCR均通过；[最终PR与下载](https://github.com/wax0629/WaxTranslate/pull/87)。Mac build16 的完整规则／真实服务回归、Release安装及八类原生离屏布局通过，四类早期实机交互证据保留。[Mac当前验收](verification/card-rules/README.md)。
 
 已修复中文混排方向、未知代码误解释、编辑区软换行/列表/标题/多行注释边界、跨段定义、词头朗读、标题整译、重复词位置及取消竞争；新增字段兼容旧词本。任意应用普适准确率、人工听音／读屏与真实历史词本升级不记作自动通过，见[试用边界](verification/macos-sync/trial-readiness.md)。
 
