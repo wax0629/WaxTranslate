@@ -379,7 +379,8 @@ class Card(QWidget):
         mixed = chinese_context(passage)
         word_language = passage.source_code or 'en'
         self.listen.set_content(passage.word, passage.text, word_language,
-                                sentence_language='zh' if mixed else word_language)
+                                sentence_language='zh' if mixed else word_language,
+                                fragment=not passage.has_complete_context)
         details = ' · '.join(filter(None,(pos, '英语词条 · 中文语境' if mixed and passage.word.isascii() else '中文语境' if mixed else language)))
         content = f"<p class='details'>{plain(details)}</p><p class='gloss'>{plain(gloss)}</p><p class='details'>{plain(origin)}</p>"
         part, offset = (passage,0) if self.rule_expanded else bounded_context(passage)

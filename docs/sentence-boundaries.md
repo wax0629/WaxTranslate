@@ -1,6 +1,6 @@
 # 换行、断句与原文片段
 
-屏幕上的一行可能只是句子的一部分，也可能属于标题、列表、代码或另一栏。程序保留来源行和命中词位置，按下面的顺序选出相关原文。实施与双端验证由 [#90](https://github.com/wax0629/WaxTranslate/issues/90) 跟踪，Mac 验收通过后同步 Windows。
+屏幕上的一行可能只是句子的一部分，也可能属于标题、列表、代码或另一栏。程序保留来源行和命中词位置，按下面的顺序选出相关原文。Mac 实现与验收由 [#91](https://github.com/wax0629/WaxTranslate/pull/91) 交付，验收通过后才开始 [Windows 同步 #92](https://github.com/wax0629/WaxTranslate/pull/92)。双端终态和直接证据由 [#90](https://github.com/wax0629/WaxTranslate/issues/90) 跟踪。
 
 ```mermaid
 flowchart TD

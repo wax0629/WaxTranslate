@@ -113,6 +113,7 @@ class WindowsBoundaryTests(unittest.TestCase):
             try:
                 card.show_result(passage,'术语参考','应用程序编程接口','',QPoint(10,10),language='英语')
                 self.assertIn('原文片段',card.text.toPlainText()); self.assertIn('翻译可见片段',card.text.toPlainText())
+                self.assertEqual(card.listen.read.text(),'朗读可见片段')
                 card.open_reference(QUrl('waxcard://translate')); request,part=requests[-1]
                 self.assertEqual((part.text,part.extent),(passage.text,extent))
                 card.open_reference(QUrl('waxcard://translate'))
@@ -157,6 +158,7 @@ class WindowsBoundaryTests(unittest.TestCase):
 
     def test_saved_fragment_migration_and_review(self):
         from tempfile import TemporaryDirectory
+        from contextlib import closing
         import sqlite3
         from notebook import Notebook, ENTRIES_SCHEMA
         from reader import Passage
@@ -164,7 +166,7 @@ class WindowsBoundaryTests(unittest.TestCase):
         from theme import result_html
         with TemporaryDirectory() as temp:
             path=Path(temp)/'old.sqlite3'
-            with sqlite3.connect(path) as db:
+            with closing(sqlite3.connect(path)) as db, db:
                 db.execute(ENTRIES_SCHEMA)
                 db.execute("INSERT INTO entries VALUES(1,'sensor','The sensor is ready.',4,'词典','传感器','完整译文',12345,2,'en')")
             book=Notebook(path)
@@ -186,6 +188,7 @@ class WindowsBoundaryTests(unittest.TestCase):
                 index=next(i for i,r in enumerate(library.rows) if r['id']==row['id'])
                 library.list.setCurrentRow(index)
                 self.assertIn('原文片段',library.detail.toPlainText())
+                self.assertEqual(library.listen.read.text(),'朗读可见片段')
                 library.testing=True; library.revealed=False; library.display()
                 self.assertIn('原文片段',library.detail.toPlainText())
                 library.revealed=True; library.display()
@@ -196,7 +199,7 @@ class WindowsBoundaryTests(unittest.TestCase):
             row=next(r for r in book.entries() if r['context']==code.text)
             self.assertEqual((row['structure'],row['source_kind']),('fragment','code'))
             # The old-column reader can still consume every record.
-            with sqlite3.connect(path) as db:
+            with closing(sqlite3.connect(path)) as db:
                 self.assertEqual(len(db.execute('SELECT word,context,position,language,structure FROM entries').fetchall()),3)
 
     def test_real_multiline_native_and_offline_ocr(self):
@@ -275,7 +278,7 @@ class WindowsBoundaryTests(unittest.TestCase):
                     original(ticket,sample.mapToGlobal(sample.hit),False,passage)
                     submit.assert_not_called()
             finally:
-                window.shutdown(); window.card.close(); window.close(); window.deleteLater(); sample.close()
+                window.shutdown(); window.card.close(); window.hide(); window.deleteLater(); sample.close()
 
 
 if __name__=='__main__':

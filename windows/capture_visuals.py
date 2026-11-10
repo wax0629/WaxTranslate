@@ -37,7 +37,8 @@ def main():
     apply_theme(app)
     args.output.mkdir(parents=True, exist_ok=True)
     metadata = {"platform": sys.platform, "qt_platform": app.platformName(),
-                "source_root": str(root), "scale": os.environ.get("QT_SCALE_FACTOR", "1"), "captures": []}
+                "source_root": str(root), "scale": os.environ.get("QT_SCALE_FACTOR", "1"),
+                "boundary_metadata_supported": "extent" in Passage.__dataclass_fields__, "captures": []}
 
     with TemporaryDirectory(prefix="wax-visual-") as temp, patch.object(QProcess, "start"):
         book = Notebook(Path(temp) / "notebook.sqlite3")
@@ -139,7 +140,8 @@ def main():
                 ('missingBoth','the sensor is connected to the'),
                 ('uncertain','The sensor remains connected')):
                 a=source.index('sensor')
-                show_card(Passage(source,(a,a+6),source_code='en',extent=extent),
+                options={"extent":extent} if "extent" in Passage.__dataclass_fields__ else {}
+                show_card(Passage(source,(a,a+6),source_code='en',**options),
                           '单词参考','传感器','',point,language='英语',can_search=True)
                 capture(card,'partial-'+extent)
             card.show_message("需要处理", "这里没有识别到文字。请移动到词语中央，或从托盘菜单使用框选翻译。", point)

@@ -265,7 +265,8 @@ class Library(QWidget):
             saved = Passage(row["context"], (row["position"], row["position"] + len(row["word"])),
                             source_code=row["language"], structure=row["source_kind"] or row["structure"], extent=row["extent"])
             self.listen.set_content(row["word"], row["context"], row["language"],
-                                    sentence_language="zh" if chinese_context(saved) else row["language"])
+                                    sentence_language="zh" if chinese_context(saved) else row["language"],
+                                    fragment=not saved.has_complete_context)
         else:
             self.listen.set_content()
         self.empty.setVisible(not self.rows)
