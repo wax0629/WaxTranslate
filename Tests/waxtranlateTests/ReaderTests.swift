@@ -64,6 +64,9 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
             try expect(passage.context == expected && passage.structure == structure)
             try expect(passage.selection == NSRange(expected.range(of: word, options: .backwards)!, in: expected))
         }
+        let ordinaryVoice = Passage(text: "voice-over", context: "The film uses a voice-over to narrate the story.", language: "en")
+        try expect(!LookupPolicy(ordinaryVoice).needsConfirmation && LookupPolicy(ordinaryVoice).automaticallyTranslatesContext)
+        try expect(CompactGloss.candidates(for: ordinaryVoice, language: "en").first == "画外音")
         let mixed = Passage(text: "cache", context: "文档介绍cache的实现。", language: "zh-Hans")
         try expect(mixed.headwordLanguage == "en" && !LookupPolicy(mixed).automaticallyTranslatesContext)
         let french = Passage(text: "pain", context: "Du pain frais", language: "fr", structure: .title)

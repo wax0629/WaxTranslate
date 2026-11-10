@@ -72,6 +72,10 @@ enum CompactGloss {
         // Dictionary Services can return an entry for just one word of a phrase.
         guard language == "en", !passage.isPhrase, let selection = passage.selection,
               let range = Range(selection, in: passage.context) else { return [] }
+        // The hyphenated common noun is distinct from Apple's VoiceOver name.
+        // Keep a complete local reference if the system dictionary exposes an
+        // adjectival fragment before its ordinary noun sense.
+        if passage.text.lowercased() == "voice-over" { return ["画外音", "旁白"] }
         let source = passage.context as CFString
         let selected = CFRange(location: selection.location, length: selection.length)
         guard let entry = DCSCopyTextDefinition(nil, source, selected)?.takeRetainedValue() else { return [] }
