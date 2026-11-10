@@ -1,6 +1,6 @@
 import asyncio
 import ctypes
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 import json
 import sqlite3
 from pathlib import Path
@@ -20,6 +20,7 @@ from popup import Card
 from speech import SpeechPlayer
 from library import Library
 from reader import Passage, recognize
+from context_boundary import choose_capture
 from settings_page import SettingsPage
 from startup import LoginStartup
 from theme import APP_NAME, COLORS, apply_theme, label, ui_icon
@@ -116,15 +117,26 @@ class Selection(QWidget):
             super().keyPressEvent(event)
 
 
-def analyze(image, point, passage, source_code=""):
+def analyze(image, point, passage, source_code="", *, is_crop=False, original=None,
+            defer_expansion=False, cancelled=lambda: False):
     # Pasted/editor selections already carry exact text and offsets. Resolve
     # them directly so unknown identifiers do not wait behind OCR/model warmup.
-    if passage is not None and passage.selection is not None:
-        passage.source_code = passage.source_code or source_code
-        return passage, *explain(passage)
+    if cancelled():
+        raise CancelledError()
     if passage is None:
-        passage = asyncio.run(recognize(image, point, source_code))
+        try:
+            passage = asyncio.run(recognize(image, point, source_code, **({"is_crop": True} if is_crop else {})))
+        except (ValueError, RuntimeError, OSError):
+            if original is None:
+                raise
+            passage = original
+    if cancelled():
+        raise CancelledError()
+    if original is not None:
+        passage = choose_capture(original, passage)
     passage.source_code = passage.source_code or source_code
+    if defer_expansion and passage.needs_context_expansion:
+        return passage, None, None, "", ""
     return passage, *explain(passage)
 
 
@@ -171,6 +183,7 @@ class Window(QWidget):
         self.login_startup = login_startup if login_startup is not None else LoginStartup()
         self.overlay = None
         self.ticket = 0
+        self.capture_state = None
         self.stopping = False
         # A paragraph translation can continue while the reader looks up a word.
         self.pool = ThreadPoolExecutor(max_workers=2)
@@ -598,6 +611,7 @@ class Window(QWidget):
 
     def invalidate(self):
         self.ticket += 1
+        self.capture_state = None
         self.search_context = None
         if self.online_job is not None:
             self.online_job.cancel()
@@ -658,27 +672,37 @@ class Window(QWidget):
         ticket = self.ticket
         QTimer.singleShot(80, lambda: self.capture(ticket, point, region))
 
-    def capture(self, ticket, point, region):
+    def capture(self, ticket, point, region, original=None, screen_key=None):
         if ticket != self.ticket:
             return
         screen = QApplication.screenAt(point)
         if not screen:
+            if original is not None:
+                self.submit(point, passage=original)
             return
-        local = point - screen.geometry().topLeft()
-        height = screen.size().height()
+        key = (screen.name(), screen.geometry())
+        if screen_key is not None and key != screen_key:
+            self.submit(point, passage=original)
+            return
         if region:
             self.open_selection(screen, point)
             return
-        band = max(1, height // 4)
-        top = max(0, min(local.y() - band // 2, height - band))
-        shot = screen.grabWindow(0, 0, top, screen.size().width(), band)
+        local = point - screen.geometry().topLeft()
+        size = screen.size()
+        width, height = (1200, 480) if original is not None else (900, 180)
+        width, height = min(width, size.width()), min(height, size.height())
+        left = max(0, min(local.x() - width // 2, size.width() - width))
+        top = max(0, min(local.y() - height // 2, size.height() - height))
+        shot = screen.grabWindow(0, left, top, width, height)
         if shot.isNull():
+            if original is not None:
+                self.submit(point, passage=original)
+                return
             self.card.show_message("截图失败", "请返回普通桌面后重试。", point)
             return
-        logical = screen.size()
-        logical.setHeight(band)
-        hit = image_point(QPointF(local.x(), local.y() - top), logical, shot.size())
-        self.submit(point, image=shot.toImage(), hit=hit)
+        hit = image_point(QPointF(local.x()-left, local.y()-top), QSize(width, height), shot.size())
+        self.submit(point, image=shot.toImage(), hit=hit, original=original,
+                    capture_state={"screen": key, "expanded": original is not None})
 
     def open_selection(self, screen, point, from_ctrl=False):
         shot = screen.grabWindow(0)
@@ -727,10 +751,14 @@ class Window(QWidget):
             if self.card.rule_displayed.text == passage.text:
                 self.saved_result = passage,(result[0],result[1],translated)
 
-    def submit(self, point, image=None, hit=None, passage=None):
+    def submit(self, point, image=None, hit=None, passage=None, *, original=None, capture_state=None):
         ticket = self.ticket
+        self.capture_state = capture_state
         self.card.show_message("本机翻译", "正在读取并翻译…", point)
-        future = self.pool.submit(analyze, image, hit, passage, self.workspace.source_code)
+        options = {"cancelled": lambda: ticket != self.ticket or self.stopping}
+        if capture_state is not None:
+            options.update(is_crop=True, original=original, defer_expansion=not capture_state["expanded"])
+        future = self.pool.submit(analyze, image, hit, passage, self.workspace.source_code, **options)
         self.pending = future
 
         def completed(job):
@@ -749,6 +777,15 @@ class Window(QWidget):
         except Exception as error:
             self.card.show_message("需要处理", str(error), point)
             return
+        if result is None:
+            # Hide the loading window before the one bounded extra capture.
+            # The GUI thread owns QScreen; the worker only sees image pixels.
+            state = self.capture_state
+            if state is not None and not state["expanded"]:
+                self.card.hide()
+                QTimer.singleShot(80, lambda: self.capture(ticket, point, False, passage, state["screen"]))
+            return
+        self.capture_state = None
         unknown = result[0] == UNKNOWN
         can_search = bool(passage.selection) and passage.source_code in ("", "en")
         self.search_context = (passage, result, point, language, pos) if can_search else None

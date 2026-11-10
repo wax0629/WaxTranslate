@@ -263,7 +263,7 @@ class Library(QWidget):
         if row:
             from card_policy import chinese_context
             saved = Passage(row["context"], (row["position"], row["position"] + len(row["word"])),
-                            source_code=row["language"])
+                            source_code=row["language"], structure=row["source_kind"] or row["structure"], extent=row["extent"])
             self.listen.set_content(row["word"], row["context"], row["language"],
                                     sentence_language="zh" if chinese_context(saved) else row["language"])
         else:
@@ -284,12 +284,14 @@ class Library(QWidget):
             self.detail.clear()
             return
         pos, word, context = row["position"], row["word"], row["context"]
-        passage = Passage(context, (pos, pos + len(word)), source_code=row["language"], structure=row["structure"])
+        passage = Passage(context, (pos, pos + len(word)), source_code=row["language"],
+                          structure=row["source_kind"] or row["structure"], extent=row["extent"])
         if not self.testing or self.revealed:
             details = f"{NAMES.get(row['language'], row['language'])} · {row['source']}"
             content = result_html(passage, row["gloss"], row["translation"], details)
         else:
-            content = f"<p class='word'>{plain(word)}</p><p class='source'>{marked_source(passage)}</p>"
+            caption = "原文片段" if not passage.has_complete_context else "原文"
+            content = f"<p class='word'>{plain(word)}</p><p class='details'>{caption}</p><p class='source'>{marked_source(passage)}</p>"
         self.detail.setHtml(content)
 
     def show_speech_error(self, message):

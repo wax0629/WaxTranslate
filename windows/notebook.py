@@ -76,13 +76,14 @@ class Notebook:
                 if not db.execute("SELECT 1 FROM pragma_table_info('recent_lookups') WHERE name='looked_up_at'").fetchone():
                     db.execute("ALTER TABLE recent_lookups ADD COLUMN looked_up_at INTEGER")
                 db.commit()
-            if not db.execute("SELECT 1 FROM pragma_table_info('entries') WHERE name='structure'").fetchone():
-                try:
-                    db.execute("ALTER TABLE entries ADD COLUMN structure TEXT NOT NULL DEFAULT 'sentence'")
-                    db.commit()
-                except sqlite3.OperationalError:
-                    if not db.execute("SELECT 1 FROM pragma_table_info('entries') WHERE name='structure'").fetchone():
-                        raise
+            for column, default in (("structure", "sentence"), ("extent", "complete"), ("source_kind", "")):
+                if not db.execute("SELECT 1 FROM pragma_table_info('entries') WHERE name=?", (column,)).fetchone():
+                    try:
+                        db.execute(f"ALTER TABLE entries ADD COLUMN {column} TEXT NOT NULL DEFAULT '{default}'")
+                        db.commit()
+                    except sqlite3.OperationalError:
+                        if not db.execute("SELECT 1 FROM pragma_table_info('entries') WHERE name=?", (column,)).fetchone():
+                            raise
             yield db
 
     def record_lookup(self, now=None, *, word="", language="", gloss=""):
@@ -141,11 +142,15 @@ class Notebook:
     def save(self, passage, result):
         source, gloss, translation = result
         with self.connection() as db:
-            db.execute("""INSERT INTO entries(word, context, position, source, gloss, translation, due, language, structure)
-                          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(word, context, position, language) DO UPDATE SET
-                          source=excluded.source, gloss=excluded.gloss, translation=excluded.translation, structure=excluded.structure""",
+            # Old builds can continue reading the established structure values.
+            structure = getattr(passage, "structure", "sentence")
+            db.execute("""INSERT INTO entries(word, context, position, source, gloss, translation, due, language, structure, extent, source_kind)
+                          VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(word, context, position, language) DO UPDATE SET
+                          source=excluded.source, gloss=excluded.gloss, translation=excluded.translation,
+                          structure=excluded.structure, extent=excluded.extent, source_kind=excluded.source_kind""",
                        (passage.word, passage.text, passage.selection[0], source, gloss, translation,
-                        int(time.time()), passage.source_code or "en", getattr(passage,"structure","sentence")))
+                        int(time.time()), passage.source_code or "en", "fragment" if structure == "code" else structure,
+                        getattr(passage, "extent", "complete"), structure))
 
     def entries(self):
         with self.connection() as db:

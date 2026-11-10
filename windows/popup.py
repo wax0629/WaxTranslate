@@ -274,10 +274,7 @@ class Card(QWidget):
             except ValueError:
                 return
             if 0 <= a < b <= len(passage.text):
-                offset = passage.context_offset
-                if offset is not None:
-                    offset += a - passage.selection[0]
-                self.term_requested.emit(replace(passage, selection=(a,b), context_offset=offset))
+                self.term_requested.emit(passage.selecting(a,b))
             return
         if url.scheme() == 'waxcard' and getattr(self, 'rule_state', None):
             action = url.host()
@@ -307,7 +304,7 @@ class Card(QWidget):
     def show_result(self, passage, origin, gloss, sentence, point, excerpt=None, language="", pos="",
                     can_save=True, can_search=False, references=(), web_search=False):
         self.loading = False
-        if passage.selection and not (references or web_search) and (chinese_context(passage) or passage.structure in ('path','fragment','title') or origin == '暂未收录' or origin in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考')):
+        if passage.selection and not (references or web_search) and (chinese_context(passage) or (passage.structure in ('path','code','fragment','title') or not passage.has_complete_context) or origin == '暂未收录' or origin in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考')):
             self.show_rule_result(passage, origin, gloss, sentence, point, language, pos, can_save, can_search, excerpt)
             return
         self.rule_state = None
@@ -368,7 +365,7 @@ class Card(QWidget):
         compact, _ = bounded_context(passage)
         self.rule_excerpt_translation = sentence if compact.text == passage.text else excerpt[1] if excerpt and excerpt[0].text == compact.text else ''
         self.rule_state = (passage, origin, gloss, point, language, pos, can_save, can_search)
-        self.rule_context = self.rule_automatic or origin not in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考') or (chinese_context(passage) and len(re.findall(r'[A-Za-z][A-Za-z0-9+#]*',passage.text)) > 1 and passage.word not in ('README','VoiceOver'))
+        self.rule_context = not passage.has_complete_context or self.rule_automatic or origin not in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考') or (chinese_context(passage) and len(re.findall(r'[A-Za-z][A-Za-z0-9+#]*',passage.text)) > 1 and passage.word not in ('README','VoiceOver'))
         self.rule_saved = False
         self.rule_expanded = False
         self.rule_translation = self.rule_excerpt_translation if self.rule_automatic else sentence
@@ -390,7 +387,7 @@ class Card(QWidget):
         if passage.structure == 'title' and passage.word != passage.text:
             content += '<p><a href="waxcard://title">翻译整个标题</a></p>'
         if self.rule_context and passage.word != passage.text:
-            label = '所在路径' if passage.structure == 'path' else '识别片段' if passage.structure == 'fragment' else '相关原文节选' if part.text != passage.text else '相关原文'
+            label = '原文片段' if not passage.has_complete_context else '代码片段' if passage.structure == 'code' else '所在路径' if passage.structure == 'path' else '相关原文节选' if part.text != passage.text else '相关原文'
             body = ''
             cursor = 0
             for match in re.finditer(r'[A-Za-z][A-Za-z0-9+#]*',part.text):
@@ -406,15 +403,20 @@ class Card(QWidget):
             content += f"<hr><p class='details'>{label}</p><p class='source'>{body}</p>"
             if self.rule_translation: content += f"<p class='translation'>{plain(self.rule_translation)}</p>"
             if part.text != passage.text or self.rule_expanded:
-                content += '<p><a href="waxcard://expand">'+('收起' if self.rule_expanded else '展开当前项' if passage.structure=='list' else '展开当前句')+'</a></p>'
-            if passage.structure not in ('path','fragment') and (not self.rule_automatic or not self.rule_translation):
-                label = '取消句译' if self.rule_waiting else '重试句译' if self.rule_automatic else '收起句译' if self.rule_translation else '翻译这段原文'
+                content += '<p><a href="waxcard://expand">'+('收起' if self.rule_expanded else '展开可见片段' if not passage.has_complete_context else '展开当前项' if passage.structure=='list' else '展开当前句')+'</a></p>'
+            if passage.structure not in ('path','code') and (not self.rule_automatic or not self.rule_translation):
+                label = '取消句译' if self.rule_waiting else '重试句译' if self.rule_automatic else '收起句译' if self.rule_translation else '翻译可见片段' if not passage.has_complete_context else '翻译这段原文'
                 content += f'<p><a href="waxcard://translate">{label}</a></p>'
             if self.rule_waiting: content += "<p class='details'>正在翻译这段原文…</p>"
             if self.rule_error: content += f"<p class='details'>{plain(self.rule_error)}</p>"
-            if passage.structure=='fragment': content += "<p class='details'>可重新取词或从菜单框选完整原文。</p>"
+            if not passage.has_complete_context:
+                from context_boundary import NOTICES
+                content += f"<p class='details'>{plain(NOTICES.get(passage.extent) or '原文不完整，当前显示可见片段。')}</p><p class='details'>可从菜单框选完整原文后再译。</p>"
         elif passage.word != passage.text:
             content += '<p><a href="waxcard://context">查看相关原文</a></p>'
+        elif not passage.has_complete_context:
+            from context_boundary import NOTICES
+            content += f"<p class='details'>{plain(NOTICES.get(passage.extent) or '原文不完整。')}</p>"
         self.present(origin,content,point,gloss if can_save else '',can_save,can_search=can_search,
                      word=passage.word, phonetic=passage.phonetic)
         self.save.setVisible(True); self.save.setEnabled(can_save and not self.rule_saved)

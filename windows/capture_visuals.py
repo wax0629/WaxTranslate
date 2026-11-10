@@ -79,6 +79,10 @@ def main():
             if hasattr(widget, "headword"):
                 snapshot.update(headword=widget.headword.text(), text=widget.text.toPlainText(),
                                 can_save=widget.save.isEnabled() and widget.save.isVisible())
+                if getattr(widget,"rule_state",None):
+                    passage=widget.rule_state[0]
+                    snapshot.update(extent=getattr(passage,'extent','complete'),structure=passage.structure,
+                                    automatic=widget.rule_automatic)
             metadata["captures"].append(snapshot)
 
         try:
@@ -128,6 +132,16 @@ def main():
                              '术语参考','应用程序编程接口，供一个程序调用另一个程序提供的功能。',
                              '该接口返回一个响应。',point,language='英语',pos='缩写',can_search=True)
             capture(card,'rules-foreign-term')
+            # Declared layout fixtures, separate from the real OCR/model tests.
+            for extent,source in (
+                ('missingStart','the sensor remains connected.'),
+                ('missingEnd','The sensor is connected to the'),
+                ('missingBoth','the sensor is connected to the'),
+                ('uncertain','The sensor remains connected')):
+                a=source.index('sensor')
+                show_card(Passage(source,(a,a+6),source_code='en',extent=extent),
+                          '单词参考','传感器','',point,language='英语',can_search=True)
+                capture(card,'partial-'+extent)
             card.show_message("需要处理", "这里没有识别到文字。请移动到词语中央，或从托盘菜单使用框选翻译。", point)
             capture(card, "lookup-error")
             show_card(Passage("Example. " * 90), "选区译文", "很长的示例译文。" * 90, "", point, language="英语")

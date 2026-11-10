@@ -102,7 +102,7 @@ def explain(passage):
         language = "按俄语查词" if passage.selection else "按俄语翻译"
     passage.source_code = code
     if code and code != "en":
-        if passage.selection and passage.structure in ("title", "fragment"):
+        if passage.selection and (passage.structure in ("title", "fragment", "code", "path") or not passage.has_complete_context):
             word = Passage(passage.word, (0, len(passage.word)), source_code=code)
             origin, gloss, _ = translate(word)
             return (origin, gloss, ""), None, language, ""
@@ -150,7 +150,7 @@ def explain(passage):
         sentence, excerpt = term_context_translation(passage)
         return (origin, gloss, sentence), excerpt, language, pos
     elif entry:
-        if common and english_context and has_sentence and not identifier and passage.structure not in ("title", "path", "fragment"):
+        if common and english_context and has_sentence and not identifier and passage.structure not in ("title", "path", "code", "fragment") and passage.has_complete_context:
             try:
                 result, excerpt = translate_lookup(passage)
             except (ValueError, RuntimeError, OSError):
@@ -172,7 +172,7 @@ def explain(passage):
                     origin,gloss = '单词参考',candidate
             except (ValueError, RuntimeError, OSError):
                 pass
-    sentence = sentence_translation(passage.text) if has_sentence and english_context and passage.structure not in ("title", "path", "fragment") else ""
+    sentence = sentence_translation(passage.text) if has_sentence and english_context and passage.structure not in ("title", "path", "code", "fragment") and passage.has_complete_context else ""
     if sentence and not preserves_reference(word, "" if origin == UNKNOWN else gloss, sentence):
         sentence = ""
     return (origin, gloss, sentence), None, language, pos
