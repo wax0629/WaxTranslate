@@ -7,8 +7,64 @@ struct TextLine {
     let hit: NSRange?     // UTF-16 range of the token under the pointer
 }
 
+// Translate the same bounded excerpt that the compact card displays. Keep the
+// original Passage for full context, saving and exact-occurrence cache keys.
+struct SentenceExcerpt {
+    let passage: Passage
+    let isTruncated: Bool
+
+    init(_ original: Passage) {
+        let text = original.context
+        let limit = original.sourceLanguage.hasPrefix("zh") ? 90 : 180
+        guard text.count > limit, let selection = original.selection,
+              let hit = Range(selection, in: text), text[hit] == original.text else {
+            passage = original; isTruncated = false; return
+        }
+        let separators = CharacterSet(charactersIn: ",;:，；：—")
+        let isSeparator: (Character) -> Bool = { $0.unicodeScalars.allSatisfy { separators.contains($0) } }
+        let clauseStart = text[..<hit.lowerBound].lastIndex(where: isSeparator).map { text.index(after: $0) } ?? text.startIndex
+        let clauseEnd = text[hit.upperBound...].firstIndex(where: isSeparator) ?? text.endIndex
+        let clause = text[clauseStart..<clauseEnd].trimmingCharacters(in: .whitespacesAndNewlines)
+        if clause.count >= max(24, original.text.count + 12), clause.count <= limit,
+           let bounds = text.range(of: clause, range: clauseStart..<clauseEnd) {
+            passage = Self.slice(original, bounds: bounds); isTruncated = true; return
+        }
+        let tokenizer = NLTokenizer(unit: .word)
+        tokenizer.string = text
+        let words = tokenizer.tokens(for: text.startIndex..<text.endIndex)
+        guard let first = words.firstIndex(where: { $0.upperBound > hit.lowerBound }),
+              let last = words.lastIndex(where: { $0.lowerBound < hit.upperBound }) else {
+            passage = original; isTruncated = false; return
+        }
+        var left = first, right = last
+        while true {
+            let canLeft = left > 0 && text[words[left - 1].lowerBound..<words[right].upperBound].count <= limit
+            let canRight = right + 1 < words.count && text[words[left].lowerBound..<words[right + 1].upperBound].count <= limit
+            guard canLeft || canRight else { break }
+            if canLeft && (!canRight || text[words[left].lowerBound..<hit.lowerBound].count <= text[hit.upperBound..<words[right].upperBound].count) {
+                left -= 1
+            } else { right += 1 }
+        }
+        let start = left == 0 ? text.startIndex : words[left].lowerBound
+        let end = right + 1 == words.count ? text.endIndex : words[right].upperBound
+        passage = Self.slice(original, bounds: start..<end)
+        isTruncated = passage.context != text
+    }
+
+    private static func slice(_ original: Passage, bounds: Range<String.Index>) -> Passage {
+        let context = String(original.context[bounds])
+        let offset = bounds.lowerBound.utf16Offset(in: original.context)
+        let shifted: (NSRange?) -> NSRange? = { range in
+            range.map { NSRange(location: $0.location - offset, length: $0.length) }
+        }
+        return Passage(text: original.text, context: context, selection: shifted(original.selection),
+                       anchor: shifted(original.anchor), language: original.sourceLanguage)
+    }
+
+}
+
 enum SentenceContext {
-    static func passage(in lines: [TextLine]) throws -> Passage {
+    static func passage(in lines: [TextLine], language: String? = nil) throws -> Passage {
         guard let anchor = lines.firstIndex(where: { $0.hit != nil }),
               let wordRange = lines[anchor].hit,
               let range = Range(wordRange, in: lines[anchor].text) else { throw ReaderError.noText }
@@ -31,8 +87,29 @@ enum SentenceContext {
         let slice = paragraph[bounds].drop(while: { $0.isWhitespace })
         let context = String(slice).trimmingCharacters(in: .whitespacesAndNewlines)
         let offset = wordOffset - slice.startIndex.utf16Offset(in: paragraph)
-        return Passage(text: word, context: context, selection: NSRange(location: offset, length: wordRange.length))
+        let hit = NSRange(location: offset, length: wordRange.length)
+        let token = Passage(text: word, context: context, selection: hit, language: language,
+                            nearbyContext: paragraph, nearbySelection: NSRange(location: wordOffset, length: wordRange.length))
+        let sentenceRange = NSRange(context.startIndex..., in: context)
+        guard let match = englishPhrases.matches(in: context, range: sentenceRange).first(where: {
+            NSIntersectionRange($0.range, hit) == hit
+        }), token.sourceLanguage == "en", let range = Range(match.range, in: context) else { return token }
+        return Passage(text: String(context[range]), context: context, selection: match.range, anchor: hit, language: language)
     }
+
+    // Match only contiguous expressions, including ordinary inflections. Keep the
+    // actual spelling for display and exclude fragments of hyphenated compounds.
+    private static let englishPhrases = try! NSRegularExpression(
+        pattern: #"""
+            (?<![\w‐‑-])
+            (?:
+                (?:rule|rules|ruled|ruling)    \h+ out
+              | (?:run|runs|ran|running)       \h+ out \h+ of
+              | (?:look|looks|looked|looking)  \h+ up
+            )
+            (?![\w‐‑-])
+            """#,
+        options: [.caseInsensitive, .allowCommentsAndWhitespace])
 
     private static func neighbors(from anchor: Int, in lines: [TextLine], upward: Bool) -> [Int] {
         var result: [Int] = []

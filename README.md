@@ -5,13 +5,17 @@
 | 开发版 | 查鼠标下的词 | 翻译一段 |
 | --- | --- | --- |
 | Windows 11 x64 | 轻按并松开左 Ctrl | 按住取词键，用鼠标左键拖选 |
-| macOS 15.2 及以上 | ⌥⇧T（Option + Shift + T） | 按 ⌥⇧R 后拖选 |
+| macOS 15.2 及以上 | 轻按并松开 Option | 按 ⌥⇧R 后拖选 |
+
+## 试用状态（2026-11-10）
+
+当前提供开发版有限试用。Windows 已完成视觉同步 #82 与语境卡片 #87，实际便携包的两档桌面回归和多语 OCR 记录见 [交付记录 #86](https://github.com/wax0629/WaxTranslate/issues/86)。Mac **0.3.0 build12** 补齐阅读学习、窗口和设置，固定样本的真实 Vision、Apple 翻译、安装与签名已验证。[Mac 同步验收](docs/verification/macos-sync/README.md)
+
+查询对象、原文边界及卡片规则的后续实现由 [Mac #85](https://github.com/wax0629/WaxTranslate/pull/85) 和 [Windows #89](https://github.com/wax0629/WaxTranslate/pull/89) 记录。试用请核对所用提交与对应构建；通用语境准确率、真实历史词本升级、人工听读/读屏和完整物理交互仍由 [路线图 #3](https://github.com/wax0629/WaxTranslate/issues/3) 跟踪。
 
 ## 当前开发进度
 
-截至 2026-11-09，Windows 和 macOS 均有可运行的开发版。Windows 支持九种原文语言离线中译、对照阅读、生词复习和查词看板，界面已按 Mac 开发版统一。取词卡区分名称、普通词和未知标识，中文混排可点词、按需翻译原文。macOS 主分支版本为 0.2.2，后续阅读学习与语境卡片仍在独立 PR 中验证。[开发进度与验收记录](docs/development.md) · [双端路线图](https://github.com/wax0629/WaxTranslate/issues/3)
-
-Windows 的两档缩放、真实便携包及多语 OCR 验收与下载入口见 [Windows 交付记录 #86](https://github.com/wax0629/WaxTranslate/issues/86)。[语境卡片验收样例](docs/verification/windows-card-rules/README.md)记录实际词义、原文边界、取消与收藏规则。
+双端均有可运行的开发版。Windows 支持九种原文语言离线中译、对照阅读、生词复习和查词看板，界面按 Mac 的纸色与阅读层级统一。macOS 本轮补齐首页四格统计、最近取词、对照阅读、紧凑卡片与常用设置，接通连续英语短语修复。Mac 继续使用 Vision 和 Apple 本机翻译，系统语言包与 Windows 模型分别管理。[开发进度与验收记录](docs/development.md) · [Windows 卡片验收](docs/verification/windows-card-rules/README.md)
 
 ## WaxTranslate Windows 桌面版
 
@@ -36,12 +40,13 @@ Windows 的两档缩放、真实便携包及多语 OCR 验收与下载入口见 
 
 ```sh
 ./scripts/install.sh
-open "$HOME/Applications/waxtranlate.app"
+open "$HOME/Applications/waxtranlate.app" --args --show
 ```
 
-1. 在「系统设置 → 隐私与安全性 → 屏幕与系统音频录制」允许「我靠翻译」，按系统提示重新打开。首页会显示当前授权状态。
-2. 将鼠标指向原文按 **⌥⇧T**，或按 **⌥⇧R** 后拖选一段文字。应用用 Vision 在本机识字，使用 Apple 翻译。需要语言包时可从结果卡片下载。中文译为英文，其余系统支持的原文语言译为简体中文。
-3. 在结果卡片上朗读、复制或收藏。要复习时，从菜单栏的书本图标打开主窗口，切到「复习」。
+1. 在「设置 → 屏幕取词」查看权限；跨应用取词需在系统设置的「屏幕与系统音频录制」中允许「我靠翻译」，按系统提示重新打开。
+2. 指向原文，轻按并松开 **Option** 查词，或按 **⌥⇧R** 后拖选；Esc 取消。组合键输入、拖动或长按 Option 不触发查词。可改为 ⌥⇧T / R、⌃⌥T / R 或仅应用内模式，保留已有显式选择。连续 `rule out`、`run out of`、`look up` 按整组解释。
+3. 在「对照翻译」粘贴文章，双击原文查词，点「翻译全文」或按 ⌘Enter 翻译。卡片可听读、固定、展开语境、复制和收藏。
+4. 首页查看实际取词统计及最近六条；在「生词本 → 到期复习」复习收藏。设置可选择源语言、下载 Apple 语言包、控制自动百科补查及「在 Dock 中显示」。默认在菜单栏待命。[Mac 使用与开发指南](docs/macos.md)
 
 安装脚本会退出正在运行的旧版、复用签名并保留生词本。请保留 `~/Library/Application Support/waxtranlate/BuildSigning` 中的签名材料。从旧版临时签名升级后，如果仍显示未授权，请在「屏幕与系统音频录制」中移除旧条目，重新添加当前应用并重启。正式安装包覆盖已有真实生词记录的验收仍在跟踪。[macOS 升级记录](https://github.com/wax0629/WaxTranslate/issues/1)
 

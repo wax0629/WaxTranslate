@@ -1,0 +1,12 @@
+[lookup F000E1FA] translation.prepare 39.5 ms; elapsed 39.5 ms
+[lookup F000E1FA] translation.aligned_sentence 1109.8 ms; elapsed 1150.3 ms
+[lookup F000E1FA] lookup.complete 1175.5 ms; elapsed 1175.5 ms
+[lookup F1FE5600] translation.prepare 34.5 ms; elapsed 34.6 ms
+[lookup F1FE5600] translation.aligned_sentence 293.1 ms; elapsed 327.8 ms
+[lookup F1FE5600] lookup.complete 328.2 ms; elapsed 328.2 ms
+[lookup CEC59643] translation.prepare 38.2 ms; elapsed 38.2 ms
+[lookup CEC59643] translation.aligned_sentence 304.0 ms; elapsed 342.4 ms
+[lookup CEC59643] lookup.complete 342.9 ms; elapsed 342.9 ms
+Query 1 整数值 整数值必须为正值。
+Query 2 整数值 整数值必须为正值。
+Query 3 整数值 整数值必须为正值。
