@@ -1,0 +1,82 @@
+{
+  "platform": "win32",
+  "qt_platform": "windows",
+  "source_root": "D:\\a\\_temp\\便携测试 Windows x64\\WaxTranslate",
+  "scale": "1.5",
+  "boundary_metadata_supported": true,
+  "captures": [
+    {
+      "name": "rules-foreign-term",
+      "width": 381,
+      "height": 372,
+      "physical_width": 572,
+      "physical_height": 558,
+      "device_ratio": 1.5,
+      "headword": "API",
+      "text": "缩写 · 英语\n应用程序编程接口，供一个程序调用另一个程序提供的功能。\n术语参考\n\n相关原文\nThe API returns a response.\n该接口返回一个响应。",
+      "can_save": true,
+      "extent": "complete",
+      "structure": "sentence",
+      "automatic": true
+    },
+    {
+      "name": "partial-missingStart",
+      "width": 381,
+      "height": 365,
+      "physical_width": 572,
+      "physical_height": 548,
+      "device_ratio": 1.5,
+      "headword": "sensor",
+      "text": "英语\n传感器\n单词参考\n\n原文片段\nthe sensor remains connected.\n翻译可见片段\n句首可能缺失，当前显示可见片段。\n可从菜单框选完整原文后再译。",
+      "can_save": true,
+      "extent": "missingStart",
+      "structure": "sentence",
+      "automatic": false
+    },
+    {
+      "name": "partial-missingEnd",
+      "width": 381,
+      "height": 365,
+      "physical_width": 572,
+      "physical_height": 548,
+      "device_ratio": 1.5,
+      "headword": "sensor",
+      "text": "英语\n传感器\n单词参考\n\n原文片段\nThe sensor is connected to the\n翻译可见片段\n句尾可能缺失，当前显示可见片段。\n可从菜单框选完整原文后再译。",
+      "can_save": true,
+      "extent": "missingEnd",
+      "structure": "sentence",
+      "automatic": false
+    },
+    {
+      "name": "partial-missingBoth",
+      "width": 381,
+      "height": 365,
+      "physical_width": 572,
+      "physical_height": 548,
+      "device_ratio": 1.5,
+      "headword": "sensor",
+      "text": "英语\n传感器\n单词参考\n\n原文片段\nthe sensor is connected to the\n翻译可见片段\n原文两端可能缺失，当前显示可见片段。\n可从菜单框选完整原文后再译。",
+      "can_save": true,
+      "extent": "missingBoth",
+      "structure": "sentence",
+      "automatic": false
+    },
+    {
+      "name": "partial-uncertain",
+      "width": 381,
+      "height": 365,
+      "physical_width": 572,
+      "physical_height": 548,
+      "device_ratio": 1.5,
+      "headword": "sensor",
+      "text": "英语\n传感器\n单词参考\n\n原文片段\nThe sensor remains connected\n翻译可见片段\n尚不能确认原文完整，当前显示可见片段。\n可从菜单框选完整原文后再译。",
+      "can_save": true,
+      "extent": "uncertain",
+      "structure": "sentence",
+      "automatic": false
+    }
+  ],
+  "artifact_url": "https://github.com/wax0629/WaxTranslate/actions/runs/42780828105/artifacts/13747075155",
+  "source_commit": "c2984180ac1bf005c865b8af5f9960a07b2b23d0",
+  "note": "本文件只保留仓库内直接截图；完整80张图及manifest见artifact。固定声明释义仅验证布局。"
+}

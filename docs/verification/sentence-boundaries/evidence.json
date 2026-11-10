@@ -1,0 +1,38 @@
+{
+  "mac_source": "2493b3b0320d086d8b58223804df35b0bfaed26b",
+  "windows_source": "c2984180ac1bf005c865b8af5f9960a07b2b23d0",
+  "mac_ci": 42775293869,
+  "windows_desktop_ci": 42780828105,
+  "windows_ocr_ci": 42780828231,
+  "shared_contract": {
+    "base": 91,
+    "categories": 13,
+    "checks": 160,
+    "passed": 160
+  },
+  "desktop": [
+    {
+      "qt_scale": 1,
+      "tests": 118,
+      "passed": 118,
+      "seconds": 130.89,
+      "skipped": 0
+    },
+    {
+      "qt_scale": 1.5,
+      "tests": 118,
+      "passed": 118,
+      "seconds": 120.404,
+      "skipped": 0
+    }
+  ],
+  "native_ocr_tests": [
+    2,
+    16
+  ],
+  "visual_artifact": 13747075155,
+  "package_artifact": 13746860612,
+  "github_package_artifact_digest": "sha256:6efe08ed62b2d070faedef9c8d6c3e282afc879319a01804f2f245e9a302353e",
+  "digest_note": "GitHub artifact整体摘要，非内部便携ZIP单文件摘要。",
+  "manual_hardware_acceptance": false
+}

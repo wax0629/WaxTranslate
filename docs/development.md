@@ -6,7 +6,9 @@
 
 Mac `2493b3b` 的 [CI42775293869](https://github.com/wax0629/WaxTranslate/actions/runs/42775293869) 已通过：共享契约160/160、真实Vision22项、12类原生卡片布局与Release。本机真实Apple服务通过，远程因缺语言包明确跳过；本机已安装并验签0.3.0 build17。之后才开始Windows实现。
 
-Windows消费同一91个基础场景、13类共享语料与变体160项；实际便携包、原生/离线多行OCR、一次补采、取消、片段卡片和旧词本回读，在独立runner的100%/150%检查。最终提交、检查终态和包入口见 [PR#92](https://github.com/wax0629/WaxTranslate/pull/92)，当前未结束的检查不计通过。[本轮验收与复现](verification/sentence-boundaries/README.md)
+Windows `c298418` 的[实际包CI42780828105](https://github.com/wax0629/WaxTranslate/actions/runs/42780828105)成功：共享160/160，100%118/118（130.890秒）、150%118/118（120.404秒），启动器、重复激活、默认/可选模型通过。多语种原生OCR [42780828231](https://github.com/wax0629/WaxTranslate/actions/runs/42780828231)真实截图2/2、路由16/16通过。新增平台入口91项、原生/离线多行识别、实际一次补采、变词/取消、片段UI和旧词本回读分别验证；两档四种片段及完整术语原生截图已复核。[本轮验收、复现与包](verification/sentence-boundaries/README.md)
+
+本轮源码按 Mac [#91](https://github.com/wax0629/WaxTranslate/pull/91) → Windows [#92](https://github.com/wax0629/WaxTranslate/pull/92) 依赖集成，最终文档仅归档证据、不改程序。合并终态、main提交及对应检查统一记录在[#90](https://github.com/wax0629/WaxTranslate/issues/90)。
 
 完整外语自然句中的普通词与已确认术语自动双语；中文混排按需句译。不完整原文明确显示片段，只允许显式翻译可见范围；关闭或新查询丢弃旧结果。人工听感/读屏、真实历史用户词本升级和任意第三方应用物理交互继续独立跟踪，不由离屏或合成数据代替。[当前规则图](translation-logic.md)
 
@@ -25,11 +27,11 @@ Windows消费同一91个基础场景、13类共享语料与变体160项；实际
 | Windows · 取词与学习 | 从托盘轻按取词、拖动框选。在对照页粘贴文章，听读、保存和复习。首页固定展示四项学习统计及最多六条最近取词，取词卡可固定、展开和复制。 | [便携版与生词本 #18](https://github.com/wax0629/WaxTranslate/pull/18) · [阅读与听读 #30](https://github.com/wax0629/WaxTranslate/pull/30) · [看板和取词卡 #71](https://github.com/wax0629/WaxTranslate/pull/71) |
 | Windows · 语言与识字 | 默认英、日、韩，法、德、西、意、葡、俄按需安装，九种均可离线译为简体中文。悬停按命中行判断，框选可译整行歌名。支持切换取词键、仅应用内查词，以及单独长按 Ctrl 后松开而不触发。 | [语言包 #59](https://github.com/wax0629/WaxTranslate/pull/59) · [长按手势 #70](https://github.com/wax0629/WaxTranslate/issues/70) · [多语种 OCR #73](https://github.com/wax0629/WaxTranslate/pull/73) |
 | Windows · 界面与语境卡片 | 首页、阅读、词本、设置和取词卡采用统一纸色与字体层级。名称、普通词和未知标识分别展示；外语自然句自动附原文及句译，中文混排保留短原文并按需句译，点词保留具体位置与边界。未知结果禁收藏，百科由用户主动发起。词头和原文分别选择朗读语种，旧词本与复习计划兼容。 | [视觉同步 #82](https://github.com/wax0629/WaxTranslate/pull/82) · [卡片规则 #87](https://github.com/wax0629/WaxTranslate/pull/87) · [验收样例](verification/windows-card-rules/README.md) |
-| macOS · 取词、阅读与复习 | 0.3.0 build17（本轮安装，合并状态见#91）：默认 Option 取词、框选、对照阅读、生词与到期复习；首页两排统计与最近查询。四页整合顶栏，设置控制 Dock、快捷键及系统语言包。Vision 与 Apple 翻译路线保留。 | [同步 #80](https://github.com/wax0629/WaxTranslate/pull/80) · [Mac 验收](verification/macos-sync/README.md) · [升级验证 #1](https://github.com/wax0629/WaxTranslate/issues/1) |
+| macOS · 取词、阅读与复习 | 0.3.0 build17：默认 Option 取词、框选、对照阅读、生词与到期复习；首页两排统计与最近查询。四页整合顶栏，设置控制 Dock、快捷键及系统语言包。Vision 与 Apple 翻译路线保留。 | [同步 #80](https://github.com/wax0629/WaxTranslate/pull/80) · [Mac 验收](verification/macos-sync/README.md) · [升级验证 #1](https://github.com/wax0629/WaxTranslate/issues/1) |
 
 ## 前一轮 Windows 卡片验收（#89）
 
-上一轮在独立 Windows runner 中对实际便携包检查启动、重复激活、默认与可选语言包、100%／150% 桌面交互及原生截图；英、日、韩、俄原生 OCR 专项由 #87 单独记录。完整检查现覆盖 111 项，其中 #87 的107项为历史基线，#89 新增四项自动对照验证。每次运行的终态和提交对应关系记在 [#89](https://github.com/wax0629/WaxTranslate/pull/89)，截图含实际尺寸、倍率及卡片文字与收藏状态，避免把旧帧当成新结果。
+上一轮在独立 Windows runner 中对实际便携包检查启动、重复激活、默认与可选语言包、100%／150% 桌面交互及原生截图；英、日、韩、俄原生 OCR 专项由 #87 单独记录。当轮完整检查覆盖 111 项，其中 #87 的107项为历史基线，#89 新增四项自动对照验证。每次运行的终态和提交对应关系记在 [#89](https://github.com/wax0629/WaxTranslate/pull/89)，截图含实际尺寸、倍率及卡片文字与收藏状态，避免把旧帧当成新结果。
 
 本机 Windows 11 的离屏回归覆盖真实模型与 OCR，桌面操作在独立 runner 执行。新增语义样例实际区分 bank 的河岸／银行、VoiceOver 与 voice-over、README、INTEGER、重复 token 和未知代码；同时检查标题整译、注释与列表边界、按需句译取消以及收藏读回。人工听感、屏幕阅读器操作和任意第三方应用的物理手势仍不是这些自动检查的结论。[本轮验证与范围](verification/windows-card-rules/README.md)
 
