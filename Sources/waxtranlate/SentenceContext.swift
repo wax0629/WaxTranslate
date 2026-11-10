@@ -78,6 +78,11 @@ enum SentenceContext {
            heading.range(of: #"^[\p{Katakana}ー・ 　]+$"#, options: .regularExpression) != nil {
             return Passage(text: heading, context: heading, language: language ?? "ja", structure: .title)
         }
+        let singleStructure = structure(of: heading)
+        if singleStructure == .title || singleStructure == .path {
+            let leading = lines[anchor].text.prefix(while: { $0.isWhitespace }).utf16.count
+            return Passage(text: word, context: heading, selection: NSRange(location: wordRange.location - leading, length: wordRange.length), language: language, structure: singleStructure)
+        }
         let above = neighbors(from: anchor, in: lines, upward: true)
         let below = neighbors(from: anchor, in: lines, upward: false)
         var paragraph = ""
@@ -114,16 +119,67 @@ enum SentenceContext {
         return Passage(text: String(context[range]), context: context, selection: match.range, anchor: hit, language: language, structure: structure)
     }
 
-    // Text editors preserve hard block boundaries. Never flatten the whole
-    // document into one OCR line, or let a definition leak from another item.
+    // Keep the original capture separate from the semantic block. Hard wraps
+    // inside prose/comments may continue; headings, lists, blank lines and code
+    // transitions stop the block before sentence tokenization runs.
     static func passage(in text: String, selection: NSRange, language: String? = nil) throws -> Passage {
-        guard let selected = Range(selection, in: text) else { throw ReaderError.noText }
-        let left = text[..<selected.lowerBound].lastIndex(of: "\n").map { text.index(after: $0) } ?? text.startIndex
-        let right = text[selected.upperBound...].firstIndex(of: "\n") ?? text.endIndex
-        let block = String(text[left..<right])
-        let offset = left.utf16Offset(in: text)
-        return try passage(in: [TextLine(text: block, frame: CGRect(x: 0, y: 0, width: 1, height: 1),
-                                        hit: NSRange(location: selection.location - offset, length: selection.length))], language: language)
+        let block = try evidence(in: text, selection: selection)
+        var lines: [TextLine] = []
+        var offset = 0
+        let pieces = block.text.components(separatedBy: "\n")
+        for (index, line) in pieces.enumerated() {
+            let span = NSRange(location: offset, length: line.utf16.count)
+            let hit = NSIntersectionRange(span, block.selection).length > 0 ?
+                NSRange(location: block.selection.location - offset, length: block.selection.length) : nil
+            lines.append(TextLine(text: line, frame: CGRect(x: 0, y: (pieces.count - index) * 25, width: 800, height: 18), hit: hit))
+            offset += line.utf16.count + 1
+        }
+        return try passage(in: lines, language: language)
+    }
+
+    static func evidence(in text: String, selection: NSRange) throws -> (text: String, selection: NSRange) {
+        guard Range(selection, in: text) != nil else { throw ReaderError.noText }
+        let pieces = text.components(separatedBy: "\n")
+        var ranges: [NSRange] = []
+        var offset = 0
+        for line in pieces {
+            ranges.append(NSRange(location: offset, length: line.utf16.count))
+            offset += line.utf16.count + 1
+        }
+        guard let anchor = ranges.firstIndex(where: { NSLocationInRange(selection.location, $0) }) else { throw ReaderError.noText }
+        let kind = blockKind(pieces[anchor])
+        var left = anchor, right = anchor
+        if kind == "prose" || kind == "comment" {
+            while left > 0 && blockKind(pieces[left - 1]) == kind { left -= 1 }
+            while right + 1 < pieces.count && blockKind(pieces[right + 1]) == kind { right += 1 }
+        }
+        let start = ranges[left].location
+        let stop = NSMaxRange(ranges[right])
+        let bounds = NSRange(location: start, length: stop - start)
+        guard NSMaxRange(selection) <= stop, let slice = Range(bounds, in: text) else { throw ReaderError.noText }
+        return (String(text[slice]), NSRange(location: selection.location - start, length: selection.length))
+    }
+
+    private static func structure(of text: String) -> Passage.Structure {
+        switch blockKind(text) {
+        case "title": return .title
+        case "path": return .path
+        case "list": return .list
+        case "fragment": return .fragment
+        default: return .sentence
+        }
+    }
+
+    private static func blockKind(_ text: String) -> String {
+        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if line.isEmpty { return "empty" }
+        if commentPrefix(text) > 0 { return "comment" }
+        if line.range(of: #"^(?:[A-Za-z]:)?[\w./\\-]+[/\\][\w.\-]+$"#, options: .regularExpression) != nil { return "path" }
+        if line.range(of: #"^(?:[•●▪◦*+-]|[0-9]+[.)、])\s*"#, options: .regularExpression) != nil { return "list" }
+        if line.range(of: #"^#{1,6}\s+"#, options: .regularExpression) != nil { return "title" }
+        if codeLine(line) { return "code" }
+        if line.hasPrefix("…") || line.hasSuffix("…") || line.hasPrefix("...") || line.hasSuffix("...") { return "fragment" }
+        return "prose"
     }
 
     // Match only contiguous expressions, including ordinary inflections. Keep the
@@ -158,6 +214,7 @@ enum SentenceContext {
                 // A comment is a prose block, never the following declaration or
                 // field column. Each adjacent marked comment line may soft-wrap.
                 if currentComment != candidateComment { return false }
+                if blockKind(currentText) == "title" || blockKind(candidateText) == "title" { return false }
                 if codeLine(currentText) != codeLine(candidateText) { return false }
                 let listStart = #"^\s*(?:[•●▪◦*+-]|[0-9]+[.)、])\s*"#
                 if upward {

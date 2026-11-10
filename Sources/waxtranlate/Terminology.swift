@@ -37,6 +37,9 @@ enum LocalTerminology {
     static func lookup(_ passage: Passage) -> TermMeaning? {
         if let selected = passage.selection, let range = Range(selected, in: passage.context), passage.context[range] == passage.text {
             let context = passage.context
+            if passage.text == "INTEGER", context.range(of: #"字段|数据类型|整数|编程|数据库|\b(?:column|type|SQL)\b"#, options: [.regularExpression, .caseInsensitive]) != nil {
+                return TermMeaning(label: "术语参考", meaning: "整数类型，用于存储没有小数部分的数值。", kind: "数据类型")
+            }
             if passage.text == "README" || passage.text == "README.md" {
                 return TermMeaning(label: "惯用名称参考", meaning: "项目说明文件，通常介绍项目、安装和使用方法。", kind: "文件名称")
             }
@@ -187,8 +190,9 @@ enum LocalTerminology {
     }
 
     private static func writtenDefinition(_ passage: Passage, word: String) -> (value: String, direct: Bool, acronym: Bool)? {
-        let text = passage.nearbyContext ?? passage.context
-        let selected = passage.nearbySelection ?? passage.selection
+        let evidence = passage.semanticEvidence
+        let text = evidence.text
+        let selected = evidence.selection
         let pattern = "(?<![A-Za-z0-9_])" + NSRegularExpression.escapedPattern(for: passage.text) + "(?![A-Za-z0-9_])"
         guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return nil }
         var definitions: [(String, Bool, Bool)] = []
@@ -266,14 +270,12 @@ struct LookupPolicy {
         let regex = try! NSRegularExpression(pattern: "[A-Za-z][A-Za-z0-9+#]*")
         return regex.numberOfMatches(in: passage.context, range: NSRange(passage.context.startIndex..., in: passage.context)) > 1
     }
-    var automaticallyTranslatesContext: Bool { object == .region || (object == .word && !isChineseContext && passage.structure != .fragment && passage.structure != .path && (passage.structure != .title || passage.text == passage.context)) }
-    var headwordLanguage: String {
-        passage.text.range(of: #"^[A-Za-z][A-Za-z .+#_-]*$"#, options: .regularExpression) != nil && (isChineseContext || object != .word) ? "en" : passage.sourceLanguage
-    }
+    var automaticallyTranslatesContext: Bool { object == .region || (object == .word && !isChineseContext && passage.structure == .sentence) }
+    var headwordLanguage: String { passage.headwordLanguage }
     var caption: String {
+        if passage.structure == .title { return "标题翻译" }
         if object == .region { return "选区翻译" }
         if passage.structure == .fragment { return "词义参考 · 识别片段" }
-        if passage.structure == .title { return "标题翻译" }
         if object == .uncertainName { return "名称待确认" + (isChineseContext ? " · 中文语境" : "") }
         if object == .code { return "代码名称" + (isChineseContext ? " · 中文语境" : "") }
         return (term?.kind ?? (headwordLanguage == "en" ? "英语" : "词语")) + (isChineseContext ? " · 中文语境" : "")

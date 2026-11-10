@@ -25,10 +25,11 @@ struct LookupResult {
     static let shared = LookupCache()
     private struct Key: Hashable {
         let text: String, context: String, language: String
+        let structure: Passage.Structure
         let selection: NSRange?, anchor: NSRange?
         init(_ passage: Passage) {
             text = passage.text; context = passage.context; language = passage.sourceLanguage
-            selection = passage.selection; anchor = passage.anchor
+            selection = passage.selection; anchor = passage.anchor; structure = passage.structure
         }
     }
     private var entries: [Key: (LookupResult, Date)] = [:]

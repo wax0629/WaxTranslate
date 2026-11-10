@@ -1,12 +1,12 @@
 # 开发进度与验收记录
 
-主分支历史基线截至 **2026-11-08**，此记录以合入 `main` 的功能提交 `38171df` 为基线。Windows 通过 GitHub Actions 提供测试过的便携构建，macOS 提供源码安装脚本。仓库当前处于开发版阶段。[基线提交](https://github.com/wax0629/WaxTranslate/commit/38171dfd50e54e3b53ea472ef95648e97347b46d) · [双端路线图](https://github.com/wax0629/WaxTranslate/issues/3)
+当前主分支为 `76ac0d0`：Windows 视觉 #82 和语境卡片 #87 已合入。Mac 同步 #80 与规则 #85 仍为独立 PR，build15 已在本机安装；以下历史功能表保留原来的基线和证据。
 
-## 当前准入结论（2026-11-09）
+## 当前准入结论（2026-11-10）
 
-**有限试用不等于完整验收完成。** Windows 视觉同步分支 `31e0c8d`（PR #82）已有独立 Windows 桌面 100%/150% 各97项及便携包验证；实体 Windows 11、人工听音和读屏未执行。Mac build11（PR #80）固定样本、真实 Apple 服务与 CI 通过，但本轮用户截图暴露混排英文词和代码标识符的未释义遗漏，不能延用旧样本结论覆盖此场景。本轮修复、验证及剩余项见[试用准入复查](verification/macos-sync/trial-readiness.md)。两个 PR 均未合并。
+已确认的卡片规则可以进入开发版试用。Windows 最终 d699d8b 的 100%／150% 各107项真实桌面与安装包检查，以及多语OCR均通过；[最终PR与下载](https://github.com/wax0629/WaxTranslate/pull/87)。Mac build15 的完整规则／真实服务回归、Release安装及七类原生离屏布局通过，四类早期实机交互证据保留。[Mac当前验收](verification/card-rules/README.md)。
 
-下方 Windows 93项和主分支0.2.2记录属于历史基线。新的Windows97项结果见[Issue #81](https://github.com/wax0629/WaxTranslate/issues/81)和[当前构建](https://github.com/wax0629/WaxTranslate/actions/runs/42579217313)，不可混用版本或统计。
+已修复中文混排方向、未知代码误解释、编辑区软换行/列表/标题/多行注释边界、跨段定义、词头朗读、标题整译、重复词位置及取消竞争；新增字段兼容旧词本。任意应用普适准确率、人工听音／读屏与真实历史词本升级不记作自动通过，见[试用边界](verification/macos-sync/trial-readiness.md)。
 
 ## macOS 同步分支 0.3.0（2026-11-09）
 
@@ -72,4 +72,4 @@ macOS 15.2 为最低运行版本。macOS 26.4 及以上可尝试从整句译文�
 在装有 Swift 6 和 macOS 26.4 或更新 SDK 的 Mac 上，运行 `./scripts/check.sh` 和 `swift build -c release`。脚本覆盖 Vision 双栏跨行识字、屏幕边缘、重复词的命中位置、旧格式生词及复习记录。在系统支持并已安装英中翻译包时，还会检查 `bank` 在河边和存款两种语境中的真实译义。Mac 验收记录来自对应 issue 和 PR，这次文档整理在 Windows 上完成。[检查脚本](../scripts/check.sh) · [测试样例](../Tests/waxtranlateTests/ReaderTests.swift)
 
 
-2026-11-09：Mac build14 接入 #83 语境与卡片规则，四类实际界面截图和完整验证见 [卡片规则验收](verification/card-rules/README.md)。中文混排按需句译，原文其他术语可直接点击，名称默认折叠原文，未知名称禁止收藏。Windows规则接入由 #86 独立跟踪。
+2026-11-10：Mac build15 补齐 #83 的边界、朗读和任务状态回归；七类原生离屏布局、原先四类实机证据见 [卡片规则验收](verification/card-rules/README.md)。Windows #86 / #87 已独立验收合入 main。

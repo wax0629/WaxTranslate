@@ -27,11 +27,9 @@ struct ResultCard: View {
     @State private var pinned = false
     @State private var expanded = false
     @State private var contextVisible = false
-    @State private var contextRequested = false
     @State private var secondaryVisible = false
-    @State private var manualRequest: TranslationRequest?
-    @State private var manualID: UUID?
-    @State private var manualError = ""
+    @State private var manual = CardContextTranslation()
+    @State private var wordError = ""
     @State private var wordRequest: TranslationRequest?
     @State private var recordID: UUID?
     @State private var references: [WordReference] = []
@@ -68,7 +66,7 @@ struct ResultCard: View {
         trace.record("lookup.dictionary_and_terms", since: began)
         let cached = decision.object == .word || decision.object == .region ? LookupCache.shared.result(for: passage) : nil
         cacheHit = cached != nil
-        _phase = State(initialValue: cached == nil && term == nil ? .checking : .done)
+        _phase = State(initialValue: cached == nil && term == nil && !decision.needsConfirmation ? .checking : .done)
         _result = State(initialValue: decision.needsConfirmation ? LookupResult(meaning: "", origin: .unresolved) : LookupResult.initial(term: term, cached: cached, dictionary: dictionary))
     }
 
@@ -117,10 +115,8 @@ struct ResultCard: View {
             if policy.needsConfirmation { phase = .done; return }
             if !policy.automaticallyTranslatesContext {
                 if result == nil { result = LookupResult(meaning: "", origin: .unresolved) }
-                if policy.object == .word && policy.isChineseContext && result?.isUsable != true && policy.headwordLanguage == "en" {
-                    wordRequest = TranslationRequest(text: passage.text, source: "en")
-                }
                 phase = .done
+                if policy.object == .word && result?.isUsable != true { requestWordTranslation() }
                 // A mixed-language word needs an independent English reference,
                 // never a Chinese→English sentence call to explain its headword.
                 return
@@ -146,28 +142,27 @@ struct ResultCard: View {
             }
         }
         .background {
-            if let request = manualRequest {
+            if let request = manual.request {
                 TranslationRunner(request: request) { completed, outcome in
-                    guard manualID == completed.id, contextRequested else { return }
-                    manualRequest = nil
-                    switch outcome {
-                    case .success(let text):
-                        let text = TranslationOutput.normalize(text, target: completed.target)
-                        var value = result ?? LookupResult(meaning: "", origin: .unresolved)
-                        if completed.text == passage.context { value.sentenceTranslation = text }
-                        else { value.excerptTranslation = text }
-                        result = value
-                    case .failure: manualError = "这段原文翻译未完成，可重试。"
-                    }
+                    guard let text = manual.complete(completed, outcome: outcome) else { return }
+                    var value = result ?? LookupResult(meaning: "", origin: .unresolved)
+                    if completed.text == passage.context { value.sentenceTranslation = text }
+                    else { value.excerptTranslation = text }
+                    result = value
                 }.id(request.id)
             }
             if let request = wordRequest {
                 TranslationRunner(request: request) { completed, outcome in
                     guard wordRequest?.id == completed.id else { return }
                     wordRequest = nil
-                    if case .success(let text) = outcome {
+                    phase = .done
+                    switch outcome {
+                    case .success(let text):
                         let value = LookupTranslation.makeResult(for: passage, meaning: text, origin: .standalone)
                         result = value; record(value)
+                    case .failure:
+                        wordError = "单词参考未完成，请检查本机语言包后重试。"
+                        phase = .failed
                     }
                 }.id(request.id)
             }
@@ -177,6 +172,7 @@ struct ResultCard: View {
             openTerm(url)
             return .handled
         })
+        .onDisappear { manual.cancel(); wordRequest = nil }
         .task(id: referenceAttempt) {
             guard referenceAvailable, referenceAttempt > 0 else { return }
             referenceBusy = true
@@ -193,7 +189,7 @@ struct ResultCard: View {
     @ViewBuilder private var queryExtras: some View {
                     if passage.structure == .title && hasSentence {
                         Button("翻译整个标题") {
-                            query(Passage(text: passage.context, context: passage.context, language: passage.language, structure: .title))
+                            query(passage.wholeTitle)
                         }.buttonStyle(.plain).font(.caption)
                     }
                     if policy.needsConfirmation {
@@ -213,7 +209,7 @@ struct ResultCard: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(isRegion ? "框选翻译" : passage.text).font(isRegion ? .headline : .custom("Baskerville", size: 27))
+                Text(isRegion ? (passage.structure == .title ? "标题翻译" : "框选翻译") : passage.text).font(isRegion ? .headline : .custom("Baskerville", size: 27))
                     .lineLimit(2).textSelection(.enabled)
                 if !isRegion {
                     Button { speak(passage.text, policy.headwordLanguage) } label: { Image(systemName: "speaker.wave.2") }
@@ -225,7 +221,7 @@ struct ResultCard: View {
                 Button(action: close) { Image(systemName: "xmark") }
                     .help("关闭").accessibilityLabel("关闭取词卡").keyboardShortcut(.cancelAction)
             }.buttonStyle(.plain)
-            Text(policy.caption)
+            Text(isRegion ? sourceName + " → " + (passage.sourceLanguage.hasPrefix("zh") ? "英语" : "简体中文") : policy.caption)
                 .font(.system(size: 11)).foregroundStyle(DeskTheme.muted)
         }
     }
@@ -251,7 +247,7 @@ struct ResultCard: View {
             }
             Text(contextText)
                 .font(.custom("Baskerville", size: 16)).lineSpacing(3)
-            if (policy.automaticallyTranslatesContext || contextRequested), let translated = displayedSentenceTranslation { Text(translated).font(.system(size: 13)).lineSpacing(3) }
+            if (policy.automaticallyTranslatesContext || manual.visible), let translated = displayedSentenceTranslation { Text(translated).font(.system(size: 13)).lineSpacing(3) }
             else if expanded && result?.excerptTranslation != nil {
                 Text("完整句译暂不可用，可收起查看节选对照。").font(.caption).foregroundStyle(DeskTheme.muted)
             }
@@ -263,65 +259,30 @@ struct ResultCard: View {
                     }
                 }
                 if !policy.automaticallyTranslatesContext && passage.structure != .path && passage.structure != .fragment {
-                    Button(contextRequested && displayedSentenceTranslation != nil ? "收起句译" : "翻译这句") {
-                        if contextRequested { cancelManualTranslation() }
+                    Button(manual.request != nil ? "取消句译" : manual.visible && displayedSentenceTranslation != nil ? "收起句译" : "翻译这段原文") {
+                        if manual.visible { cancelManualTranslation() }
                         else { requestContextTranslation() }
                     }
                     if !policy.defaultsToContext { Button("收起原文") { contextVisible = false; cancelManualTranslation() } }
                 }
             }.buttonStyle(.plain).font(.caption).foregroundStyle(DeskTheme.muted)
-            if manualRequest != nil { ProgressView("正在翻译这段原文…").controlSize(.small) }
-            if !manualError.isEmpty { Button(manualError + " 重试") { requestContextTranslation() }.font(.caption) }
+            if manual.request != nil { ProgressView("正在翻译这段原文…").controlSize(.small) }
+            if !manual.error.isEmpty { Button(manual.error + " 重试") { requestContextTranslation() }.font(.caption) }
             if passage.structure == .fragment { Text("可重新取词或从菜单框选完整原文。").font(.caption).foregroundStyle(DeskTheme.muted) }
         }
     }
 
     private func openTerm(_ url: URL) {
-        guard let location = Int(url.host ?? ""), let length = Int(url.path.dropFirst()),
-              let range = Range(NSRange(location: location, length: length), in: passage.context) else { return }
-        query(Passage(text: String(passage.context[range]), context: passage.context,
-                      selection: NSRange(location: location, length: length), language: passage.language, structure: passage.structure))
+        if let next = CardContextContent(original: passage, expanded: expanded).selection(for: url) { query(next) }
     }
-    private func cancelManualTranslation() {
-        manualID = nil; manualRequest = nil; contextRequested = false; manualError = ""
-    }
-    private func requestContextTranslation() {
-        let request = TranslationRequest(text: displayedPassage.context, source: passage.sourceLanguage)
-        manualError = ""; contextRequested = true; manualID = request.id; manualRequest = request
+    private func cancelManualTranslation() { manual.cancel() }
+    private func requestContextTranslation() { manual.begin(displayedPassage) }
+    private func requestWordTranslation() {
+        wordError = ""; phase = .translating
+        wordRequest = TranslationRequest(text: passage.text, source: policy.headwordLanguage)
     }
     private var contextText: AttributedString {
-        var text = LookupTranslation.markedSentence(displayedPassage) ?? AttributedString(isRegion ? passage.text : displayedPassage.context)
-        if !expanded && excerpt.isTruncated {
-            let offset = (passage.selection?.location ?? 0) - (excerpt.passage.selection?.location ?? 0)
-            if offset > 0 { text = AttributedString("…") + text }
-            if offset + excerpt.passage.context.utf16.count < passage.context.utf16.count { text += AttributedString("…") }
-        }
-        guard policy.isChineseContext else { return text }
-        for candidate in relatedTerms {
-            guard let selection = candidate.selection,
-                  let local = relatedLocalRange(selection),
-                  let range = Range(local, in: text) else { continue }
-            text[range].link = URL(string: "waxterm://\(selection.location)/\(selection.length)")
-        }
-        return text
-    }
-    private func relatedLocalRange(_ selection: NSRange) -> NSRange? {
-        let offset = expanded ? 0 : (passage.selection?.location ?? 0) - (excerpt.passage.selection?.location ?? 0)
-        let range = NSRange(location: selection.location - offset + ((!expanded && excerpt.isTruncated && offset > 0) ? 1 : 0), length: selection.length)
-        return range.location >= 0 ? range : nil
-    }
-
-    private var relatedTerms: [Passage] {
-        let regex = try! NSRegularExpression(pattern: "[A-Za-z][A-Za-z0-9+#]*")
-        let context = displayedPassage.context
-        return regex.matches(in: context, range: NSRange(context.startIndex..., in: context)).compactMap { match in
-            guard let range = Range(match.range, in: context) else { return nil }
-            let text = String(context[range])
-            let offset = expanded ? 0 : (passage.selection?.location ?? 0) - (excerpt.passage.selection?.location ?? 0)
-            let selection = NSRange(location: match.range.location + offset, length: match.range.length)
-            guard selection != passage.selection else { return nil }
-            return Passage(text: text, context: passage.context, selection: selection, language: passage.language, structure: passage.structure)
-        }
+        isRegion ? AttributedString(passage.text) : CardContextContent(original: passage, expanded: expanded).text
     }
 
     private var displayedPassage: Passage { expanded ? passage : excerpt.passage }
@@ -353,11 +314,15 @@ struct ResultCard: View {
     @ViewBuilder private var translationStatus: some View {
         switch phase {
         case .checking: ProgressView("检查本机语言包…").controlSize(.small)
-        case .translating: ProgressView(hasSentence ? "正在翻译原句…" : "正在翻译…").controlSize(.small)
+        case .translating: ProgressView(wordRequest != nil ? "正在查询单词参考…" : hasSentence ? "正在翻译原句…" : "正在翻译…").controlSize(.small)
         case .download:
             Button("下载\(sourceName)翻译语言包…") { focusForDownload(); start() }.controlSize(.small)
         case .failed:
-            Button("系统翻译未完成 · 重试") { focusForDownload(); start() }.controlSize(.small)
+            if !wordError.isEmpty {
+                Button(wordError) { focusForDownload(); requestWordTranslation() }.controlSize(.small)
+            } else {
+                Button("系统翻译未完成 · 重试") { focusForDownload(); start() }.controlSize(.small)
+            }
         case .unsupported:
             Text("系统不支持这个语言组合，可在设置中选择源语言后重试。").font(.caption).foregroundStyle(DeskTheme.muted)
         case .done:

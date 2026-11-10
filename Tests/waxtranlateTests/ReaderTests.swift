@@ -35,6 +35,7 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testConciseGloss()
         try testContextExcerpt()
         try testCardPolicy()
+        try testFinalCardRules()
         try testSavingAndReview(ruledOut)
         try testLanguageRouting()
         try testActivityAndCorruptData(ruledOut)
@@ -49,6 +50,66 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testLookupCache()
         try await testInstalledTranslation(ruledOut: ruledOut, ranOut: ranOut)
         print("Passed: capture geometry, cursor-free Retina configuration, small mixed text, OCR, packed typography, phrase selection, exact occurrences, vocabulary migration, review, language routing, dashboard persistence, corrupt-data preservation, reading cancellation, mixed-language terminology, unchanged-result boundaries, verified gloss boundaries, bounded bilingual context, reference boundaries, Option tap guards and Dock preferences.")
+    }
+
+    static func testFinalCardRules() throws {
+        for (source, word, expected, structure) in [
+            ("They sat on the river\nbank and watched the water.", "bank", "They sat on the river bank and watched the water.", Passage.Structure.sentence),
+            ("// 🐾 avoid duplicates\n// then avoid leaking data\ntype Account struct {", "avoid", "🐾 avoid duplicates then avoid leaking data", .sentence),
+            ("# README\nUse the API below", "README", "# README", .title),
+            ("Read this README\n• Next item API", "README", "Read this README", .sentence)
+        ] {
+            let hit = NSRange(source.range(of: word, options: .backwards)!, in: source)
+            let passage = try SentenceContext.passage(in: source, selection: hit, language: "en")
+            try expect(passage.context == expected && passage.structure == structure)
+            try expect(passage.selection == NSRange(expected.range(of: word, options: .backwards)!, in: expected))
+        }
+        let mixed = Passage(text: "cache", context: "文档介绍cache的实现。", language: "zh-Hans")
+        try expect(mixed.headwordLanguage == "en" && !LookupPolicy(mixed).automaticallyTranslatesContext)
+        let french = Passage(text: "pain", context: "Du pain frais", language: "fr", structure: .title)
+        try expect(french.headwordLanguage == "fr" && !LookupPolicy(french).automaticallyTranslatesContext)
+        let integer = LocalTerminology.lookup(Passage(text: "INTEGER", context: "字段用INTEGER存储整数。", language: "zh-Hans"))
+        try expect(integer?.meaning.contains("整数") == true)
+        let source = "The authors introduce a query routing layer (QRL).\n\nThe QRL routes traffic."
+        let hit = NSRange(source.range(of: "QRL", options: .backwards)!, in: source)
+        let isolated = Passage(text: "QRL", context: "The QRL routes traffic.", language: "en", nearbyContext: source, nearbySelection: hit)
+        try expect(LocalTerminology.lookup(isolated) == nil)
+        let whole = french.wholeTitle
+        try expect(whole.text == "Du pain frais" && whole.context.isEmpty && whole.structure == .title && LookupPolicy(whole).automaticallyTranslatesContext)
+        let repeated = "🐾 模型输入的token与访问token含义不同。"
+        let last = NSRange(repeated.range(of: "token", options: .backwards)!, in: repeated)
+        let original = Passage(text: "token", context: repeated, selection: last, language: "zh-Hans", nearbyContext: repeated, nearbySelection: last)
+        let content = CardContextContent(original: original, expanded: false)
+        let link = try require(content.text.runs.compactMap(\.link).first)
+        let changed = try require(content.selection(for: link))
+        try expect(changed.selection == NSRange(repeated.range(of: "token")!, in: repeated))
+        try expect(changed.nearbySelection == changed.selection && LocalTerminology.lookup(changed)?.meaning.contains("词元") == true)
+        try expect(content.selection(for: URL(string: "waxterm://term/999/5")!) == nil)
+        var manual = CardContextTranslation()
+        manual.begin(original)
+        let cancelled = try require(manual.request)
+        manual.cancel()
+        try expect(manual.complete(cancelled, outcome: .success("过期")) == nil && !manual.visible)
+        manual.begin(original)
+        let current = try require(manual.request)
+        try expect(manual.complete(cancelled, outcome: .failure(CheckFailure(reason: "old"))) == nil && manual.error.isEmpty)
+        try expect(manual.complete(current, outcome: .failure(CheckFailure(reason: "missing pack"))) == nil && !manual.error.isEmpty && manual.request == nil)
+        manual.begin(original)
+        let retry = try require(manual.request)
+        try expect(manual.complete(retry, outcome: .success("Input token and access token differ.")) == "Input token and access token differ.")
+        try expect(manual.complete(retry, outcome: .success("duplicate")) == nil)
+        let suite = "WaxTranslate.Test.finish." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let book = Notebook(defaults: defaults)
+        _ = book.save(original, translation: "令牌", sentenceTranslation: "Input token and access token differ.", origin: "term")
+        let saved = try require(Notebook(defaults: defaults).entries.first)
+        try expect(saved.passage.selection == last && saved.context == repeated && saved.origin == "term" && saved.passage.headwordLanguage == "en")
+        let cache = LookupCache()
+        let plain = Passage(text: "pain", context: "Du pain frais", language: "fr")
+        cache.insert(LookupResult(meaning: "面包", origin: .sentence, sentenceTranslation: "新鲜面包"), for: plain)
+        try expect(cache.result(for: french) == nil)
+        print("Card acceptance: editor structure, comments, title scope, local evidence, INTEGER, speech routes, exact links, cancelled/retried context, saving and cache scope passed.")
     }
 
     static func testCardPolicy() throws {

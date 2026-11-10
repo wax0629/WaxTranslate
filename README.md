@@ -7,11 +7,13 @@
 | Windows 11 x64 | 轻按并松开左 Ctrl | 按住取词键，用鼠标左键拖选 |
 | macOS 15.2 及以上 | 轻按并松开 Option | 按 ⌥⇧R 后拖选 |
 
-## 试用状态（2026-11-09）
+## 试用状态（2026-11-10）
 
-当前为开发版有限试用，尚未完成全面验收。Mac build11 新反馈暴露中文语境中的英文词未释义、代码名称缺少组成词参考；本轮补回归与修正，详情见[试用准入复查](docs/verification/macos-sync/trial-readiness.md)。通用语境准确率、真实历史词本升级、读屏和完整物理交互仍有待验收项，不应据 CI 全绿宣称产品验收全部完成。
+Windows 语境卡片与视觉同步已进入主分支：最终便携包在 100%／150% 下各 107 项桌面检查通过，多语种 OCR 通过。[Windows 试用包与验收](https://github.com/wax0629/WaxTranslate/pull/87)。
 
-Windows 视觉同步 PR #82（`31e0c8d`）的独立桌面 100%/150% 各97项通过，可用于有限试用；尚未合并，不能把主分支旧包当成该版本。[已验证试用构建](https://github.com/wax0629/WaxTranslate/actions/runs/42579217313) · [待合并 PR #82](https://github.com/wax0629/WaxTranslate/pull/82)。Mac PR #80 同样保持待评审。
+Mac 0.3.0 build15 已完成本机规则、真实英中／日中、数据兼容与七类原生卡片布局检查，并同身份覆盖安装。卡片区分普通词、名称、中文多术语混排及未知代码；中文语境按需句译、原文术语可点击、注释不接相邻代码。[Mac 规则与界面验收](docs/verification/card-rules/README.md)。Mac #85 依赖 #80，尚未合入主分支。
+
+可以进入开发版试用；自动验收覆盖记录中的样本与流程。任意第三方应用的取词准确率、人工听感、屏幕阅读器和真实历史词本升级继续由[路线图 #3](https://github.com/wax0629/WaxTranslate/issues/3)跟踪。[当前试用边界](docs/verification/macos-sync/trial-readiness.md)。
 
 ## 当前开发进度
 

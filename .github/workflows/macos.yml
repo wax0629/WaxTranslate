@@ -62,5 +62,12 @@ jobs:
           xcrun --show-sdk-version
       - name: OCR, persistence, reading and glossary regressions
         run: ./scripts/check.sh
+      - name: Render native card layout fixtures without desktop input
+        run: ./scripts/check-card-layouts.sh card-layout-artifacts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: WaxTranslate-Mac-Card-Layouts
+          path: card-layout-artifacts
       - name: Build release
         run: swift build -c release -j 2

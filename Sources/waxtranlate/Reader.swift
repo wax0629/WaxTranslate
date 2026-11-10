@@ -34,7 +34,31 @@ struct Passage: Equatable {
         language ?? LanguageResolver.resolve(context.isEmpty ? text : context)
     }
 
-    var headwordLanguage: String { LocalTerminology.lookup(self) == nil ? sourceLanguage : "en" }
+    var headwordLanguage: String {
+        let source = sourceLanguage
+        let latin = text.range(of: #"^[A-Za-z][A-Za-z0-9 .+#_’'\-]*$"#, options: .regularExpression) != nil
+        return source.hasPrefix("zh") && latin ? "en" : source
+    }
+
+    // Same block evidence can explain a preceding definition; another paragraph
+    // or item cannot. Raw capture remains available in memory for diagnostics.
+    var semanticEvidence: (text: String, selection: NSRange?) {
+        if let nearbyContext, let nearbySelection,
+           let block = try? SentenceContext.evidence(in: nearbyContext, selection: nearbySelection) {
+            return (block.text, block.selection)
+        }
+        return (context, selection)
+    }
+
+    func selecting(_ range: NSRange) -> Passage? {
+        guard let selected = Range(range, in: context) else { return nil }
+        let evidence = semanticEvidence
+        let evidenceOffset = (evidence.selection?.location ?? selection?.location ?? 0) - (selection?.location ?? 0)
+        return Passage(text: String(context[selected]), context: context, selection: range, language: language,
+                       nearbyContext: evidence.text, nearbySelection: NSRange(location: range.location + evidenceOffset, length: range.length), structure: structure)
+    }
+
+    var wholeTitle: Passage { Passage(text: context, context: "", language: language, structure: .title) }
 
     func using(language: String?) -> Passage {
         Passage(text: text, context: context, selection: selection, anchor: anchor, language: language,
