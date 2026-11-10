@@ -538,6 +538,12 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         print("Long context →", longResult.meaning, "origin:", longResult.origin, "/", longResult.excerptTranslation ?? "")
         let api = try await LookupTranslation.translate(Passage(text: "API", context: "The API returns a response.", language: "en"), session: session, dictionary: [])
         try expect(api.origin == .term && api.meaning.contains("应用程序编程接口") && api.sentenceTranslation != nil)
+        let partialAPI = Passage(text: "API", context: "The API returns", language: "en", extent: .missingEnd)
+        let partialTerm = try await LookupTranslation.translate(partialAPI, session: session, dictionary: [])
+        let partialWord = try await LookupTranslation.translate(Passage(text: "sensor", context: "checked the sensor", language: "en", extent: .missingBoth), session: session, dictionary: [])
+        try expect(partialTerm.origin == .term && partialTerm.sentenceTranslation == nil && partialTerm.excerptTranslation == nil)
+        try expect(partialWord.isUsable && partialWord.origin == .standalone && partialWord.sentenceTranslation == nil)
+        print("Incomplete source → retained API explanation /", partialWord.meaning, "; no automatic sentence translation")
         for (word, context, meaning) in [("VoiceOver", "Enable VoiceOver in macOS accessibility settings.", "屏幕朗读"),
                                          ("Redis", "Deploy Redis as the application cache.", "内存") ] {
             let passage = Passage(text: word, context: context, language: "en")

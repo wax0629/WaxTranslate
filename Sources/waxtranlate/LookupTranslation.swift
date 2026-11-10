@@ -26,10 +26,11 @@ struct LookupResult {
     private struct Key: Hashable {
         let text: String, context: String, language: String
         let structure: Passage.Structure
+        let extent: ContextExtent
         let selection: NSRange?, anchor: NSRange?
         init(_ passage: Passage) {
             text = passage.text; context = passage.context; language = passage.sourceLanguage
-            selection = passage.selection; anchor = passage.anchor; structure = passage.structure
+            selection = passage.selection; anchor = passage.anchor; structure = passage.structure; extent = passage.extent
         }
     }
     private var entries: [Key: (LookupResult, Date)] = [:]
@@ -45,6 +46,7 @@ struct LookupResult {
     }
     func insert(_ result: LookupResult, for passage: Passage, now: Date = Date()) {
         guard result.isUsable, passage.text.count <= 1000, passage.context.count <= 4000 else { return }
+        guard passage.hasCompleteContext || result.origin != .sentence else { return }
         if SentenceExcerpt(passage).isTruncated && (result.sentenceTranslation == nil || result.excerptTranslation == nil) { return }
         let key = Key(passage)
         entries[key] = (result, now.addingTimeInterval(600))
@@ -221,6 +223,15 @@ enum LookupTranslation {
     }
 
     static func translate(_ passage: Passage, session: TranslationSession, dictionary: [String], trace: LookupTrace = LookupTrace()) async throws -> LookupResult {
+        // Enforce completeness at the provider boundary as well as in the card.
+        // Explicit fragment translation uses TranslationRunner with a labelled,
+        // user-selected source; automatic lookup only returns a word reference.
+        if !passage.hasCompleteContext && !passage.context.isEmpty {
+            if let term = LocalTerminology.lookup(passage) { return LookupResult(meaning: term.meaning, origin: .term) }
+            let reference = try await session.translate(passage.text).targetText
+            try Task.checkCancellation()
+            return makeResult(for: passage, meaning: reference, origin: .standalone)
+        }
         let excerpt = SentenceExcerpt(passage)
         var output: LookupResult
         if let term = LocalTerminology.lookup(passage), !passage.context.isEmpty, passage.context != passage.text {

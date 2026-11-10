@@ -1,0 +1,23 @@
+{
+  "baseCases" : 91,
+  "categories" : [
+    "code",
+    "comment",
+    "continuation",
+    "false-merge",
+    "hyphen",
+    "incomplete",
+    "list",
+    "multilingual",
+    "offset",
+    "quotes",
+    "segmentation",
+    "standalone",
+    "title"
+  ],
+  "checks" : 160,
+  "failures" : [
+
+  ],
+  "passed" : 160
+}

@@ -61,7 +61,15 @@ jobs:
           swift --version
           xcrun --show-sdk-version
       - name: OCR, persistence, reading and glossary regressions
+        env:
+          WAX_BOUNDARY_REPORT: boundary-artifacts/report.json
+          WAX_BOUNDARY_IMAGES: boundary-artifacts/vision
         run: ./scripts/check.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: WaxTranslate-Mac-Sentence-Boundaries
+          path: boundary-artifacts
       - name: Render native card layout fixtures without desktop input
         run: ./scripts/check-card-layouts.sh card-layout-artifacts
       - uses: actions/upload-artifact@v4
