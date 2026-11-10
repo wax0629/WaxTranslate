@@ -11,7 +11,7 @@
 
 Windows 语境卡片与视觉同步已进入主分支：最终便携包在 100%／150% 下各 107 项桌面检查通过，多语种 OCR 通过。[Windows 试用包与验收](https://github.com/wax0629/WaxTranslate/pull/87)。
 
-Mac 0.3.0 build15 已完成本机规则、真实英中／日中、数据兼容与七类原生卡片布局检查，并同身份覆盖安装。卡片区分普通词、名称、中文多术语混排及未知代码；中文语境按需句译、原文术语可点击、注释不接相邻代码。[Mac 规则与界面验收](docs/verification/card-rules/README.md)。Mac #85 依赖 #80，尚未合入主分支。
+Mac 0.3.0 build16 已完成本机规则、真实英中／日中、数据兼容与七类原生卡片布局检查，并同身份覆盖安装。卡片区分普通词、名称、中文多术语混排及未知代码；外语术语自动附原文对照、中文语境按需句译、原文术语可点击、注释不接相邻代码。[Mac 规则与界面验收](docs/verification/card-rules/README.md)。Mac #85 依赖 #80，尚未合入主分支。
 
 可以进入开发版试用；自动验收覆盖记录中的样本与流程。任意第三方应用的取词准确率、人工听感、屏幕阅读器和真实历史词本升级继续由[路线图 #3](https://github.com/wax0629/WaxTranslate/issues/3)跟踪。[当前试用边界](docs/verification/macos-sync/trial-readiness.md)。
 
@@ -57,3 +57,5 @@ open "$HOME/Applications/waxtranlate.app" --args --show
 ## 验证
 
 Windows 的离屏回归、独立桌面回归、多语 OCR 专项，以及 macOS 的 Vision 和 Apple 翻译检查，均有对应命令和运行条件。[复现验证](docs/development.md#复现验证)
+
+当前句译触发规则见 [翻译逻辑](docs/translation-logic.md)。

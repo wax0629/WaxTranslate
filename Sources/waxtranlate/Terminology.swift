@@ -265,12 +265,19 @@ struct LookupPolicy {
     var isChineseContext: Bool { passage.sourceLanguage.hasPrefix("zh") }
     var needsConfirmation: Bool { object == .uncertainName || object == .code }
     var defaultsToContext: Bool {
+        if automaticallyTranslatesContext && passage.context != passage.text { return true }
         if object == .word || needsConfirmation { return true }
         guard object == .term, isChineseContext, !["README", "VoiceOver"].contains(passage.text) else { return false }
         let regex = try! NSRegularExpression(pattern: "[A-Za-z][A-Za-z0-9+#]*")
         return regex.numberOfMatches(in: passage.context, range: NSRange(passage.context.startIndex..., in: passage.context)) > 1
     }
-    var automaticallyTranslatesContext: Bool { object == .region || (object == .word && !isChineseContext && passage.structure == .sentence) }
+    var automaticallyTranslatesContext: Bool {
+        if object == .region { return true }
+        guard !isChineseContext, passage.structure == .sentence || passage.structure == .list else { return false }
+        // The surrounding language controls bilingual context, not whether the
+        // selected object was found in the terminology or ordinary dictionary.
+        return object == .word || (object == .term && passage.context != passage.text)
+    }
     var headwordLanguage: String { passage.headwordLanguage }
     var caption: String {
         if passage.structure == .title { return "标题翻译" }

@@ -16,9 +16,12 @@ import SwiftUI
         let book = Notebook(defaults: defaults)
         let preferences = Preferences(defaults: defaults)
         let comment = "Explicit transport views avoid exposing future domain fields by accident."
+        let api = Passage(text: "API", context: "The API returns a response.", language: "en")
+        let apiMeaning = LocalTerminology.lookup(api)!.meaning
         let samples: [(String, Passage, LookupResult?)] = [
             ("word", Passage(text: "bank", context: "They sat on the river bank and watched the water.", language: "en"),
              LookupResult(meaning: "岸边", origin: .sentence, sentenceTranslation: "他们坐在河岸边，看着水流。")),
+            ("foreign-term", api, LookupResult(meaning: apiMeaning, origin: .term, sentenceTranslation: "该接口返回一个响应。")),
             ("name", Passage(text: "VoiceOver", context: "在macOS辅助功能中启用VoiceOver。", language: "zh-Hans"), nil),
             ("mixed", Passage(text: "Redis", context: "用Docker部署Redis，通过API访问缓存。", language: "zh-Hans"), nil),
             ("unknown", Passage(text: "UnknownSDK", context: "用Docker部署UnknownSDK。", language: "zh-Hans"), nil),

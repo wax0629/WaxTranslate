@@ -64,7 +64,7 @@ struct ResultCard: View {
             + (CompactGloss.mixedEnglishReference(for: passage).flatMap { $0.hasPrefix("名称组成词参考") ? nil : [$0] } ?? [])
         term = decision.term
         trace.record("lookup.dictionary_and_terms", since: began)
-        let cached = decision.object == .word || decision.object == .region ? LookupCache.shared.result(for: passage) : nil
+        let cached = !decision.needsConfirmation ? LookupCache.shared.result(for: passage) : nil
         cacheHit = cached != nil
         _phase = State(initialValue: cached == nil && term == nil && !decision.needsConfirmation ? .checking : .done)
         _result = State(initialValue: decision.needsConfirmation ? LookupResult(meaning: "", origin: .unresolved) : LookupResult.initial(term: term, cached: cached, dictionary: dictionary))

@@ -36,6 +36,7 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testContextExcerpt()
         try testCardPolicy()
         try testFinalCardRules()
+        try testAutomaticForeignTermContext()
         try testSavingAndReview(ruledOut)
         try testLanguageRouting()
         try testActivityAndCorruptData(ruledOut)
@@ -50,6 +51,34 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testLookupCache()
         try await testInstalledTranslation(ruledOut: ruledOut, ranOut: ranOut)
         print("Passed: capture geometry, cursor-free Retina configuration, small mixed text, OCR, packed typography, phrase selection, exact occurrences, vocabulary migration, review, language routing, dashboard persistence, corrupt-data preservation, reading cancellation, mixed-language terminology, unchanged-result boundaries, verified gloss boundaries, bounded bilingual context, reference boundaries, Option tap guards and Dock preferences.")
+    }
+
+    static func testAutomaticForeignTermContext() throws {
+        for (word, english, chinese) in [
+            ("API", "The API returns a response.", "这个API接口返回数据。"),
+            ("VoiceOver", "Enable VoiceOver in macOS accessibility settings.", "在macOS辅助功能中启用VoiceOver。"),
+            ("Redis", "Deploy Redis as the application cache.", "用Redis作为应用缓存。")
+        ] {
+            let foreign = Passage(text: word, context: english, language: "en")
+            let mixed = Passage(text: word, context: chinese, language: "zh-Hans")
+            let term = LookupPolicy(foreign).term
+            try expect(term != nil)
+            let immediate = LookupResult.initial(term: term, cached: nil, dictionary: [])
+            try expect(immediate?.isUsable == true && immediate?.origin == .term && immediate?.sentenceTranslation == nil)
+            try expect(LookupPolicy(foreign).automaticallyTranslatesContext && LookupPolicy(foreign).defaultsToContext)
+            try expect(!LookupPolicy(mixed).automaticallyTranslatesContext)
+        }
+        let standalone = Passage(text: "API", context: "API", language: "en")
+        try expect(!LookupPolicy(standalone).automaticallyTranslatesContext && !LookupPolicy(standalone).defaultsToContext)
+        let list = Passage(text: "API", context: "• The API returns a response.", language: "en", structure: .list)
+        try expect(LookupPolicy(list).automaticallyTranslatesContext && LookupPolicy(list).defaultsToContext)
+        for structure in [Passage.Structure.title, .path, .fragment] {
+            let scoped = Passage(text: "API", context: "The API returns a response.", language: "en", structure: structure)
+            try expect(!LookupPolicy(scoped).automaticallyTranslatesContext)
+        }
+        let unknown = Passage(text: "UnknownSDK", context: "The application uses UnknownSDK.", language: "en")
+        try expect(LookupPolicy(unknown).needsConfirmation && !LookupPolicy(unknown).automaticallyTranslatesContext)
+        print("Foreign context policy: known terms auto-display bilingual source; Chinese remains manual; standalone/safety boundaries passed.")
     }
 
     static func testFinalCardRules() throws {
@@ -509,6 +538,14 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         print("Long context →", longResult.meaning, "origin:", longResult.origin, "/", longResult.excerptTranslation ?? "")
         let api = try await LookupTranslation.translate(Passage(text: "API", context: "The API returns a response.", language: "en"), session: session, dictionary: [])
         try expect(api.origin == .term && api.meaning.contains("应用程序编程接口") && api.sentenceTranslation != nil)
+        for (word, context, meaning) in [("VoiceOver", "Enable VoiceOver in macOS accessibility settings.", "屏幕朗读"),
+                                         ("Redis", "Deploy Redis as the application cache.", "内存") ] {
+            let passage = Passage(text: word, context: context, language: "en")
+            let translated = try await LookupTranslation.translate(passage, session: session, dictionary: [])
+            try expect(LookupPolicy(passage).automaticallyTranslatesContext && translated.origin == .term && translated.meaning.contains(meaning))
+            try expect(translated.sentenceTranslation?.range(of: #"\p{Han}"#, options: .regularExpression) != nil)
+            print("Automatic foreign term →", word, translated.meaning, "/", translated.sentenceTranslation ?? "")
+        }
         for context in ["tulip", "A red tulip blooms in the garden."] {
             let passage = Passage(text: "tulip", context: context)
             try expect(passage.sourceLanguage == "en")
