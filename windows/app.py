@@ -431,6 +431,7 @@ class Window(QWidget):
 
     def open_reader(self):
         self.tabs.setCurrentWidget(self.reader_page)
+        self.open_home()
         self.workspace.input.setFocus()
 
     def open_gesture_settings(self):

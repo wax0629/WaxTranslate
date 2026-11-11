@@ -50,7 +50,6 @@ enum CaptureShortcut: String, CaseIterable, Identifiable {
     @Published var shortcut: CaptureShortcut { didSet { defaults.set(shortcut.rawValue, forKey: "capture.shortcut") } }
     @Published var showOnLaunch: Bool { didSet { defaults.set(showOnLaunch, forKey: "window.showOnLaunch") } }
     @Published var showInDock: Bool { didSet { defaults.set(showInDock, forKey: "window.showInDock") } }
-    @Published var onlineReferences: Bool { didSet { defaults.set(onlineReferences, forKey: "lookup.onlineReferences") } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -58,7 +57,6 @@ enum CaptureShortcut: String, CaseIterable, Identifiable {
         shortcut = CaptureShortcut(rawValue: defaults.string(forKey: "capture.shortcut") ?? "") ?? .option
         showOnLaunch = defaults.bool(forKey: "window.showOnLaunch")
         showInDock = defaults.bool(forKey: "window.showInDock")
-        onlineReferences = defaults.object(forKey: "lookup.onlineReferences") == nil || defaults.bool(forKey: "lookup.onlineReferences")
     }
 }
 

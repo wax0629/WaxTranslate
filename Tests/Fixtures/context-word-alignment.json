@@ -1,0 +1,152 @@
+{
+  "schema": 1,
+  "description": "Fixed local Apple outputs; empty expected means reject this recovery evidence, not failure of the original attributed path.",
+  "cases": [
+    {
+      "id": "river-formatting-lost",
+      "word": "bank",
+      "source": "After a very long walk through the quiet village and past the old houses where people were preparing for the evening, they sat on the river bank and watched the water flow slowly toward the distant mountains.",
+      "last": false,
+      "translation": "經過漫長的散步，穿過安靜的村莊，經過人們為晚上做準備的老房子，他們坐在河岸上，看著水慢慢流向遠處的山脈。",
+      "responses": [
+        "在穿过安静的村庄走了很长一段路，经过人们为晚上做准备的老房子后，他们坐在河上<b>岸</b>，看着水慢慢流向远处的山脉。",
+        "在穿过安静的村庄走了很长一段路，经过人们为晚上做准备的老房子后，他们坐在河上<i>岸</i>，看着水慢慢流向远处的山脉。",
+        "在宁静的村庄里走了很长一段路，经过人们为晚上做准备的老房子后，他们坐在河的“河岸”上，看着水慢慢流向远处的山脉。"
+      ],
+      "expected": [
+        "河岸"
+      ]
+    },
+    {
+      "id": "money-probe-reordered",
+      "word": "bank",
+      "source": "After a long meeting with her colleagues and several delays on the way through the crowded city, she deposited her paycheck at the bank before she drove home to make dinner.",
+      "last": false,
+      "translation": "在与同事长时间会面，在穿越拥挤的城市途中多次延误后，她在开车回家做晚饭之前将工资存入了银行。",
+      "responses": [
+        "在与同事进行了长时间的会面以及在穿越拥挤的城市的路上多次延误后，她把工资存入了<b>银行</b>，然后开车回家做晚饭。",
+        "在与同事长时间会面和在拥挤的城市途中多次延误后，她在开车回家做晚餐之前将工资存入了<i>银行</i>。",
+        "在与同事长时间会面，在穿越拥挤的城市途中多次延误后，她在开车回家做晚餐之前将工资存入了“银行”。"
+      ],
+      "expected": [
+        "银行"
+      ]
+    },
+    {
+      "id": "first-bank-probe-ambiguous",
+      "word": "bank",
+      "source": "After they had visited the bank to deposit their savings, they walked along the river bank before returning to the village for dinner.",
+      "last": false,
+      "translation": "去银行存钱后，他们沿着河岸走，然后回到村子吃晚饭。",
+      "responses": [
+        "在他们参观了<b>bank</b>存入积蓄后，他们沿着河岸散步，然后回到村庄吃晚饭。",
+        "在他们参观了<i>bank</i>存入积蓄后，他们沿着河岸散步，然后回到村庄吃晚饭。",
+        "在他们去“银行”存了存钱后，他们沿着河岸走，然后回到村子吃晚饭。"
+      ],
+      "expected": []
+    },
+    {
+      "id": "second-bank-copied-token",
+      "word": "bank",
+      "source": "After they had visited the bank to deposit their savings, they walked along the river bank before returning to the village for dinner.",
+      "last": true,
+      "translation": "去银行存钱后，他们沿着河岸走，然后回到村子吃晚饭。",
+      "responses": [
+        "在他们去银行存钱后，他们沿着河<b>bank</b>走，然后回到村庄吃晚饭。",
+        "在他们去银行存钱后，他们沿着河<i>bank</i>走，然后回到村庄吃晚饭。",
+        "在他们去银行存钱后，他们沿着河“岸”走来走去，然后回到村庄吃晚饭。"
+      ],
+      "expected": [
+        "河岸"
+      ]
+    },
+    {
+      "id": "negative-probe-conflict",
+      "word": "bank",
+      "source": "They did not visit the financial bank, but instead rested on the river bank while the children watched the water.",
+      "last": true,
+      "translation": "他们没有去银行，而是在河岸上休息，孩子们看着水。",
+      "responses": [
+        "他们没有参观金融银行，而是在河边<b>岸边休息</b>，而孩子们则看着水。",
+        "他们没有去银行，而是在河上休息<i>bank</i>，而孩子们看着水。",
+        "他们没有参观银行，而是在河“岸”上休息，而孩子们则看着水。"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tree-bark",
+      "word": "bark",
+      "source": "After walking through the forest for several hours, the botanist carefully examined the bark of the old tree before recording her observations.",
+      "last": false,
+      "translation": "在森林里走了几个小时后，植物学家仔细检查了这棵老树的树皮，然后记录了她的观察结果。",
+      "responses": [
+        "在森林里走了几个小时后，植物学家仔细检查了老树的<b>树皮</b>，然后记录了她的观察结果。",
+        "在森林里走了几个小时后，植物学家仔细检查了老树的<i>树皮</i>，然后记录了她的观察结果。",
+        "在森林里走了几个小时后，植物学家仔细检查了这棵老树的“树皮”，然后记录了她的观察结果。"
+      ],
+      "expected": [
+        "树皮"
+      ]
+    },
+    {
+      "id": "dog-bark-synonym",
+      "word": "bark",
+      "source": "Although the little dog had been quiet for most of the afternoon, its loud bark woke everyone who was sleeping in the house.",
+      "last": false,
+      "translation": "虽然小狗下午大部分时间都很安静，但它响亮的叫声唤醒了所有在房子里睡觉的人。",
+      "responses": [
+        "虽然小狗下午大部分时间都很安静，但它响亮的<b>吠声</b>吵醒了所有睡在房子里的人。",
+        "虽然小狗下午大部分时间都很安静，但它响亮的<i>吠声</i>吵醒了所有睡在房子里的人。",
+        "虽然小狗在下午的大部分时间里都很安静，但它响亮的“吠叫”唤醒了所有睡在家里的人。"
+      ],
+      "expected": [
+        "叫声"
+      ]
+    },
+    {
+      "id": "lifting-crane",
+      "word": "crane",
+      "source": "After inspecting the construction site and checking every safety cable, the operator used the crane to lift the heavy steel beam into position.",
+      "last": false,
+      "translation": "在检查了施工现场并检查了每条安全电缆后，操作员用起重机将重型钢梁抬到位。",
+      "responses": [
+        "在检查了施工现场并检查了每根安全电缆后，操作员使用<b>起重机</b>将重型钢梁抬到位。",
+        "在检查了施工现场并检查了每根安全电缆后，操作员使用<i>起重机</i>将重型钢梁抬到位。",
+        "在检查了施工现场并检查了每根安全电缆后，操作员使用“起重机”将重型钢梁抬到位。"
+      ],
+      "expected": [
+        "起重机"
+      ]
+    },
+    {
+      "id": "bird-crane-copied-token",
+      "word": "crane",
+      "source": "After walking through the wetland in the early morning, the photographer watched a crane spread its wings and fly over the water.",
+      "last": false,
+      "translation": "清晨穿过湿地后，摄影师看着一只鹤张开翅膀飞过水面。",
+      "responses": [
+        "清晨穿过湿地后，摄影师看着一只<b>crane</b>张开翅膀在水面上飞翔。",
+        "清晨穿过湿地后，摄影师看着一只<i>crane</i>张开翅膀在水面上飞翔。",
+        "清晨穿过湿地后，摄影师看着一只“crane”张开翅膀飞过水面。"
+      ],
+      "expected": [
+        "鹤"
+      ]
+    },
+    {
+      "id": "charge-object-excluded",
+      "word": "charge",
+      "source": "After checking the cable and cleaning the connector, she decided to charge the battery before leaving for the long journey.",
+      "last": false,
+      "translation": "在检查了电缆并清洁了连接器后，她决定在长途旅行前给电池充电。",
+      "responses": [
+        "在检查了电缆并清洁了连接器后，她决定在长途旅行前<b>充电</b>电池。",
+        "在检查了电缆并清洁了连接器后，她决定在出发进行长途旅行之前<i>给电池充电</i>。",
+        "在检查了电缆并清洁了连接器后，她决定在长途旅行之前“充电”电池。"
+      ],
+      "expected": [
+        "充电"
+      ]
+    }
+  ]
+}

@@ -10,7 +10,24 @@ def chinese_context(passage):
     if passage.selection:
         a, b = passage.selection
         surrounding = surrounding[:a] + surrounding[b:]
-    return bool(re.search(r"[\u3400-\u9fff]", surrounding)) and not re.search(r"[ぁ-ヺ\uac00-\ud7af]", surrounding)
+    if not re.search(r"[\u3400-\u9fff]", surrounding) or re.search(r"[ぁ-ヺ\uac00-\ud7af]", surrounding):
+        return False
+    if passage.source_code.startswith("zh"):
+        return True
+    # A Han proper name does not turn a foreign sentence into Chinese. The
+    # source code may also be the English headword's route in a Chinese sentence,
+    # so inspect the surrounding sentence using the existing offline detector.
+    from languages import UnsupportedLanguage, detect_source
+    try:
+        detected = detect_source(surrounding)
+    except UnsupportedLanguage as error:
+        return error.language in ("中文", "繁体中文")
+    if detected:
+        return False
+    # Short mixed contexts may be below the detector's confidence threshold.
+    han = len(re.findall(r"[\u3400-\u9fff]", surrounding))
+    words = len(re.findall(r"[A-Za-zÀ-ÖØ-öø-ɏ]+", surrounding))
+    return han >= max(1, words * 2)
 
 
 def needs_confirmation(passage):

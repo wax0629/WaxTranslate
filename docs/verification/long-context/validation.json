@@ -1,0 +1,180 @@
+{
+  "date": "2026-11-11",
+  "issue": 102,
+  "baseline_commit": "7b6897ff4714611833e2de692f15d8a39f1aa3fe",
+  "branch": "codex/102-public-trial-fixes",
+  "uncommitted": true,
+  "pushed": false,
+  "scope": "macOS contextual word alignment recovery; prior uncommitted trial fixes retained",
+  "environment": {
+    "host": "macOS 26.6.2 Intel",
+    "swift": "6.3.3",
+    "sdk": "26.5",
+    "apple_languages": [
+      "en/zh-Hans",
+      "ja/zh-Hans"
+    ]
+  },
+  "checks": [
+    {
+      "command": "./scripts/check-long-context.sh",
+      "result": "passed",
+      "note": "deterministic recovery, boundaries, cache/save/reload plus real Apple queries; final 16-query run is also in check.sh"
+    },
+    {
+      "command": "./scripts/check.sh",
+      "result": "passed",
+      "log": "dist/local-review-102-long/evidence/mac-final.log",
+      "live_queries": 16,
+      "live_plain_only_queries": 1,
+      "unresolved_accepted_as_success": false,
+      "recorded_outputs": {
+        "total": 10,
+        "recovered": 8,
+        "rejected": 2
+      },
+      "malformed_conflicting_output_families": 6,
+      "sentence_boundaries": "160/160",
+      "vision": "22/22 rendered synthetic fixtures",
+      "additional": [
+        "compound noun head versus modifier boundaries",
+        "exact repeated UTF-16 selection with emoji",
+        "incomplete/code/language/markup guards",
+        "service failure and cancellation",
+        "cache separation by occurrence",
+        "save/reload keeps original word, context and offset",
+        "native permission panels with injected preflight",
+        "mounted region/unconfirmed cards record zero activity",
+        "mounted recovered card records contextual meaning",
+        "manual reference requests using intercepted HTTP"
+      ]
+    },
+    {
+      "command": "./scripts/check-card-layouts.sh",
+      "result": "passed",
+      "layouts": "12/12",
+      "log": "dist/local-review-102-long/evidence/layouts.log"
+    },
+    {
+      "command": "swift build -c release -j 2",
+      "result": "passed",
+      "seconds": 119.11,
+      "log": "dist/local-review-102-long/evidence/release.log"
+    },
+    {
+      "command": "./scripts/capture-trial-fixes.sh",
+      "result": "passed",
+      "actual_meaning": "河岸",
+      "lookup_count": 1,
+      "saved_count": 0,
+      "log": "dist/local-review-102-long/evidence/preview.log"
+    },
+    {
+      "command": "./scripts/benchmark-macos.sh --reuse-session --long-context",
+      "result": "measured",
+      "optimized": true,
+      "same_translation_session": true,
+      "uses_result_cache": false,
+      "lookup_ms": [
+        2149.6,
+        1633.9,
+        1649.4
+      ],
+      "recovery_ms": [
+        719.3,
+        853.8,
+        795.7
+      ],
+      "includes": "prepare and translation pipeline only; excludes OCR and UI",
+      "log": "dist/local-review-102-long/evidence/benchmark.log"
+    }
+  ],
+  "regression_before_fix": {
+    "result": "failed as expected",
+    "case": "long-river",
+    "actual": "unresolved",
+    "log": "dist/local-review-102-long/evidence/before-long.log"
+  },
+  "preview": {
+    "path": "dist/local-review-102-long/WaxTranslate Preview.app",
+    "bundle_id": "local.luma.hovertranslate.preview102long",
+    "profile": "WaxTranslate.Test.preview102long",
+    "global_capture_default": "disabled",
+    "release_and_preview_uuid": "17CC8DEC-5584-30F8-937B-D89DD8E9844F",
+    "ad_hoc_signature": "strict/deep verification passed",
+    "log": "dist/local-review-102-long/evidence/preview-signature.log"
+  },
+  "windows": {
+    "implementation_changed_this_phase": false,
+    "prior_changed_files_sha256_match": true,
+    "tests_this_phase": "not rerun; previous phase results retained separately",
+    "prior_validation": "dist/local-review-102-long/evidence/validation-before-long.json"
+  },
+  "not_executed": [
+    "macOS 15.2 physical device",
+    "real permission denial/regrant and third-party physical gestures",
+    "native Windows candidate at 100%/150% and pinned runtime; unchanged from previous phase"
+  ],
+  "evidence_notes": [
+    "Real Apple results and simulated provider/HTTP/preflight checks are distinguished.",
+    "Final live query evidence is mac-final.log; long-tests.log contains the preceding 15-case run.",
+    "An earlier screenshot utility run failed on its outdated zero-activity assertion after writing a confirmed card; its artifact-only assertion was corrected and the capture passed. Product regression, layouts and Release had already passed."
+  ],
+  "changed_files_sha256": {
+    "Assets/Previews/public-trial/macos-lookup.png": "2b0021c6b484a6569263eb659ecce1c35fe509098fadfa0e2b83970bf69a69fd",
+    "Assets/Previews/public-trial/macos-reading.png": "8756b7d54644b40d3f75f9addb70e6f280be9d61d3f7eab10510aaaeec943ca1",
+    "Assets/Previews/public-trial/windows-home.png": "9301c2dce7bbcaaeeb077212cf3ba72d35a0c7b011eaf72ebe2d8d73b0e5c144",
+    "Assets/Previews/public-trial/windows-notebook.png": "96c8eef4cdff7835a17c30bd4a32d9845fb4d2a0efcbcc03aa6a745f4c4f39ab",
+    "README.md": "31a551b96dbc2c1b51b439093f12177395e97962e04919ef2af6f1046f1fb403",
+    "Sources/waxtranlate/App.swift": "c37e844725e70593e241a5d16874ec7ebd869c479c924afc1e141d81f668eb45",
+    "Sources/waxtranlate/ContextWordAlignment.swift": "62de1093bbeb8f8c867e3d2f21fc857b40521e336cf76bf599f1ed8856f90b1c",
+    "Sources/waxtranlate/LookupTranslation.swift": "d6743459a5587111268350b416c52ee001eac1aab44085bb61213931310ba3d6",
+    "Sources/waxtranlate/Notebook.swift": "5c32a41c8477c5cba3e9d7ba3223f7fcc7f1c2e6a5a71a7909d077adfea91303",
+    "Sources/waxtranlate/Panels.swift": "4cbb77727e8efef5e42bcd8b59091ae2d808ff00f27fbb9974ab221916355020",
+    "Sources/waxtranlate/Preferences.swift": "1b49488e2467afe38e2bb0bfd36bdc8133893224ab8a53d94aca76dad05a6056",
+    "Sources/waxtranlate/References.swift": "6175716bbb23ab8be9e537eb68831d44e02fe51beacb8d747f86314fffed928d",
+    "Sources/waxtranlate/ResultCard.swift": "360dd5f3ec2a9774a4fd96eef8cebd147c26a6823fc2af4ccdf7813d60d4b4e8",
+    "Sources/waxtranlate/SentenceContext.swift": "9b0b8c653681c7b4cf34008ebdc0cdbf8b321075a8aab47709c6c2ba56bd3714",
+    "Tests/Fixtures/context-word-alignment.json": "4d37386dd709ac54e78e64aeeff2f8d6fbe03d64b981c286f65996ad87f3fe90",
+    "Tests/Fixtures/windows-regression.json": "83dfd340f771d65829f6e0e617b8b7c15f34d3347ee4b6810238d7259f6d3839",
+    "Tests/Performance/TranslationProbe.swift": "d2f763564a786dd6213723d59e8642188b6c34c5ba5c09d443b889e2195f8313",
+    "Tests/waxtranlateTests/AppPermissions.swift": "203c08bcbe35beee216e2f20f84d5f0dfbea80e297db4e5133c8b63526e9b5e1",
+    "Tests/waxtranlateTests/CardLayouts.swift": "806339ca4d1d2d3ead05fcb8a188529267877e1200b1e95f0c3a28c4711573c0",
+    "Tests/waxtranlateTests/LongContextTests.swift": "ec62e2556ba894702dfff8304ce18c906697232efcc770ca4be8901731471620",
+    "Tests/waxtranlateTests/ReaderTests.swift": "cab256b6a6b355dd33bd5a356c36264a51dab565f9d229fa1f134f85d8516a74",
+    "Tests/waxtranlateTests/ReferenceTests.swift": "1be28df543aeebad69013ee9f5c9c375b4294b6e21a30970e835bd81e7c86832",
+    "Tests/waxtranlateTests/TrialPreview.swift": "49ef7136f4da05cbe523c42da541a0846f412267f66bec36f0f0c78007b1e292",
+    "docs/development.md": "6557b1d5ac457974afb2bb1c701f52c978b6a0007f31943c8aada790e0ffcbe7",
+    "docs/macos.md": "9152d3cbfd32e4e8d8f8b238fb52fde2625792a9c7f28fc88a07cdec6da04bb5",
+    "docs/verification/long-context/README.md": "0360df47c11070578e27b03221e26b1e686d7d209aa95ab46bd3429b938b1fa5",
+    "docs/verification/long-context/mac-long-bank.png": "fdea6d08f846b0b4265f4b7919174151f4b637c8ab1ae6e3b89e5a6397e84948",
+    "docs/verification/public-trial-2026-11-11.md": "2bcde41d1f3f42e3aed3cffb87796658d174f032fc3fe0094cd3846225f5c97c",
+    "docs/verification/public-trial-fixes/README.md": "2feb50f696316b9af5871d3bbd41a0fde197f542958b1dc78a7c6e826703514e",
+    "docs/verification/public-trial-fixes/mac-long-bank.png": "fdea6d08f846b0b4265f4b7919174151f4b637c8ab1ae6e3b89e5a6397e84948",
+    "docs/verification/public-trial-fixes/mac-region.png": "b09826716ff74ed10ab4f4216a6fc4942cd9df8d0e1e6f791f02301c70bb2dd4",
+    "docs/verification/windows-regression/README.md": "5eed8da6b44c543c9e27417e1ffd4c6581d366d16351e62bc831931fac073e80",
+    "docs/verification/windows-regression/cases.csv": "21eb408e77c2cdd60562cabcf89118925982c41cd4f4408c4ba6fc9f8db0cf65",
+    "docs/windows.md": "ad27f422f8bbb85a08ee91f2166c9fd85b731023678562955d0bb3e1e1a9f869",
+    "scripts/benchmark-macos.sh": "e1f474c699de47a1a79b4c0bfb89234a8bd6ce8e25e757515ad7cde466ace154",
+    "scripts/capture-trial-fixes.sh": "a52c0348117f2f980a8a4196d0d9161bf86d97f4d7fa2c33691a54e7827aade0",
+    "scripts/check-app-permissions.sh": "bb5b8bbbef539cd5a58a1db45ce95a1827d70c10c25b8dcc6bbbe98663cfcab9",
+    "scripts/check-card-layouts.sh": "7297665f4f7cde3ff17757c37c728b3b9852725989077055f3ef573adf97ece2",
+    "scripts/check-long-context.sh": "59a173e11ecfde3653b8d6a67fcf6c65160951b9d4d30bb8c5aae24b7c122a05",
+    "scripts/check-sentence-boundaries.sh": "65c7c676877bdebe33a48c0c8d07dba888442ed3587109da357fffa7ed47f47c",
+    "scripts/check.sh": "d0c805a5d117c6e4342e6033029b9bb8f20ffc48b4001bf12fdb76bda5e3d405",
+    "windows/app.py": "257d74f744365439aa2c706f3629e41ff2c5647c3f105660a81ed1a65faa52a4",
+    "windows/card_policy.py": "8389f15484c57a87d55323442cd227bdf331e82e8975a663427356282fb85ef1",
+    "windows/install_model.py": "f2b224c63217a40d5b3f09c3544ae824b3935145e01999d871fc34d8a25e25ac",
+    "windows/package.py": "edc266f3cc6c30c31fcf4491db2d24110a7481bd27733f971621100333d2ff08",
+    "windows/settings_page.py": "afe0eb0a4e79117cb7eaff8280433a3f6c6de7f49c584fcc43a05410bf1922b6",
+    "windows/test_card_policy.py": "f52828ae8e9af77eddc21d44b407b5be8209345d4589f6d33530dd6da18efe43",
+    "windows/test_card_rules.py": "cc118525dc7116807b7051ef0fd52395295257fd611672b63ac11f2fda23f224",
+    "windows/test_language_packs.py": "fb1b645345df74695c44c07559e6abd9bd3a0ecb8fab42b8ca5454c6813aa395",
+    "windows/test_model_integrity.py": "9974e9cd7a6db747e6abcec61835f1224a97a0be15226098ca51104f35bd84e9",
+    "windows/test_settings.py": "d2dcd7bdcac1d88bdaed08b7f0be2c6cd2daeb626c1fad95c6785527f6901e1c",
+    "windows/test_translation_resources.py": "c542d5858647d1536994e1936eec332d15373fc3ae214d714eb25a375c421b29",
+    "windows/translation.py": "76c26bff49a266d0ce0df39bf995501ed83461a8eff6bad1ab4d6bf15bde78b6"
+  },
+  "snapshot_phase": "precommit_local_review",
+  "publication_status": "uncommitted/pushed flags describe verification time; current branch, PR and CI are tracked in Issue #102"
+}

@@ -1708,6 +1708,93 @@
         "windows/test_launch_mode.py::LaunchModeTests.test_real_event_distinguishes_manual_and_quiet_activation",
         "windows/test_startup.py::LoginStartupTests.test_registration_roundtrip_and_relocation"
       ]
+    },
+    {
+      "id": "WT-WIN-009",
+      "group": "window",
+      "title": "从托盘唤回隐藏或最小化的对照翻译",
+      "priority": "P0",
+      "execution": "offscreen",
+      "data": {},
+      "preconditions": [
+        "隔离词本和配置，不启动全局键盘进程。"
+      ],
+      "steps": [
+        "分别在托盘初始、关闭到托盘和最小化状态触发实际菜单的「对照翻译」。"
+      ],
+      "expected": [
+        "主窗可见且不再最小化，阅读页被选中，输入框获得焦点，已有原文保留。"
+      ],
+      "automation": [
+        "windows/test_settings.py::SettingsTests.test_tray_reader_opens_hidden_and_minimized_window"
+      ]
+    },
+    {
+      "id": "WT-LOOK-009",
+      "group": "lookup",
+      "title": "外语句中的中文专名不改变自动句译和手动译向",
+      "priority": "P0",
+      "execution": "offscreen",
+      "data": {
+        "text": "The API returns a label named 北京.",
+        "target": "API",
+        "occurrence": 0
+      },
+      "preconditions": [
+        "使用明确英语与自动识别两种源语言；用真正中文和日/韩句作反例。"
+      ],
+      "steps": [
+        "用 Beijing、北京和上海替换同一英语句的地名。",
+        "调用实际卡片的手动句译处理函数，核对所选模型方向。"
+      ],
+      "expected": [
+        "三个英语句子均自动英译中，中文仍手动中译英，日/韩保持各自的外语方向。"
+      ],
+      "automation": [
+        "windows/test_card_policy.py::ContextLanguageTests.test_foreign_sentence_with_chinese_name_keeps_automatic_translation",
+        "windows/test_card_policy.py::ContextLanguageTests.test_chinese_sentences_keep_manual_translation_with_english_identifiers",
+        "windows/test_card_policy.py::ContextLanguageTests.test_japanese_and_korean_contexts_do_not_route_to_chinese",
+        "windows/test_card_rules.py::CardRuleTests.test_manual_context_routes_english_sentence_with_chinese_proper_name"
+      ]
+    },
+    {
+      "id": "WT-LANG-008",
+      "group": "language",
+      "title": "识别已装语言包损坏并安全修复",
+      "priority": "P0",
+      "execution": "offscreen",
+      "data": {},
+      "preconditions": [
+        "使用独立临时目录、小型已校验安装包和模拟下载，不更改用户模型。"
+      ],
+      "steps": [
+        "截短翻译文件、同尺寸改写翻译/OCR文件后检查就绪状态。",
+        "对已就绪包主动修复，并模拟校验失败、取消和发布失败。",
+        "修复损坏的只读便携副本时写入用户模型目录。"
+      ],
+      "expected": [
+        "破损文件不再就绪；修复会重新下载完整资源，成功后可用。",
+        "失败/取消不会删除已有模型；发布失败回滚，便携原文件不被覆盖。",
+        "设置在已安装时提供「修复语言包」并能完成重试。",
+        "修复后的下一次翻译重载模型，资源无效时不继续使用旧缓存。",
+        "真实旧包缺少完整性清单仍可由运行时加载，截短后不可用；旧包原文件不变。",
+        "反向「中文至英语」模型也有独立修复入口，修复不误下载外语OCR。"
+      ],
+      "automation": [
+        "windows/test_model_integrity.py::ModelIntegrityTests.test_nonempty_truncated_model_is_detected_and_reinstalled",
+        "windows/test_model_integrity.py::ModelIntegrityTests.test_same_size_corruption_invalidates_cached_translation_and_ocr_checks",
+        "windows/test_model_integrity.py::ModelIntegrityTests.test_ready_package_can_be_explicitly_repaired",
+        "windows/test_model_integrity.py::ModelIntegrityTests.test_failed_or_cancelled_repair_preserves_previous_installation",
+        "windows/test_model_integrity.py::ModelIntegrityTests.test_repair_overrides_damaged_read_only_portable_copy",
+        "windows/test_model_integrity.py::ModelIntegrityTests.test_legacy_nonempty_garbage_is_not_a_ready_model",
+        "windows/test_model_integrity.py::ModelIntegrityTests.test_failed_publish_restores_previous_model_directory",
+        "windows/test_language_packs.py::LanguagePackTests.test_settings_installs_retries_and_publishes_verified_resources",
+        "windows/test_translation_resources.py::TranslationResourceTests.test_repaired_files_reload_resident_engine_and_invalid_files_are_rejected",
+        "windows/test_model_integrity.py::ModelIntegrityTests.test_cancel_during_transfer_preserves_existing_resources",
+        "windows/test_model_integrity.py::ModelIntegrityTests.test_cancel_after_extraction_does_not_publish_partial_model",
+        "windows/test_translation_resources.py::TranslationResourceTests.test_verified_legacy_packages_remain_usable_without_manifest",
+        "windows/test_language_packs.py::LanguagePackTests.test_reverse_chinese_model_has_an_explicit_repair_entry"
+      ]
     }
   ]
 }

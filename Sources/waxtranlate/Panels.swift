@@ -272,8 +272,7 @@ struct SettingsPage: View {
                     Text("关闭后仍在菜单栏待命，可随时从菜单栏打开主窗口。").font(.caption).foregroundStyle(DeskTheme.muted)
                     Toggle("打开应用时显示主窗口", isOn: $preferences.showOnLaunch)
                     Toggle("登录后在菜单栏待命", isOn: Binding(get: { loginEnabled }, set: setLogin))
-                    Toggle("未收录的词自动补查百科参考", isOn: $preferences.onlineReferences)
-                    Text("百科查询只发送当前词语到 Wikidata，不发送原句或截图。结果单独标注为参考，可随时关闭自动查询。").font(.caption).foregroundStyle(DeskTheme.muted)
+                    Text("百科参考由你在取词卡中点击地球按钮后查询。只发送当前词语到 Wikidata，不发送原句或截图；结果单独标注为参考。").font(.caption).foregroundStyle(DeskTheme.muted)
                 }
                 BookRule()
                 HStack {

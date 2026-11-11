@@ -15,6 +15,34 @@ from settings_page import SettingsPage
 
 
 class LanguagePackTests(unittest.TestCase):
+    def test_reverse_chinese_model_has_an_explicit_repair_entry(self):
+        root = Path(self.enterContext(TemporaryDirectory()))
+        self.enterContext(patch.object(packs, "MODEL_DIR", root / "profile"))
+        self.enterContext(patch.object(packs, "BUNDLED_MODELS", root / "portable"))
+        archive = BytesIO()
+        with zipfile.ZipFile(archive, "w") as bundle:
+            bundle.writestr("test-zh/model.bin", b"reverse translation")
+        package = packs.ModelPackage("test-zh", hashlib.sha256(archive.getvalue()).hexdigest(), files=("model.bin",))
+        self.enterContext(patch.dict(packs.MODELS, zh=package))
+        transfer = self.enterContext(patch.object(packs, "download_resource", side_effect=lambda url, dest, cancel: dest.write_bytes(archive.getvalue())))
+        page = SettingsPage()
+        self.addCleanup(page.stop_downloads)
+        index = page.pack_choice.findData("zh")
+        self.assertGreaterEqual(index, 0)
+        page.pack_choice.setCurrentIndex(index)
+        self.assertIn("中文至英语", page.pack_choice.currentText())
+        for _ in range(2):
+            page.download.click()
+            deadline = time.monotonic() + 8
+            while page.pack_job is not None and time.monotonic() < deadline:
+                QApplication.processEvents()
+                time.sleep(0.01)
+            self.assertIsNone(page.pack_job)
+            self.assertTrue(packs.language_ready("zh"))
+            self.assertEqual(page.download.text(), "修复语言包")
+            self.assertTrue(page.download.isEnabled())
+        self.assertEqual(transfer.call_count, 2)
+
     def test_settings_installs_retries_and_publishes_verified_resources(self):
         root = Path(self.enterContext(TemporaryDirectory()))
         self.enterContext(patch.object(packs, "MODEL_DIR", root / "profile"))
@@ -65,10 +93,15 @@ class LanguagePackTests(unittest.TestCase):
         page.download.click()
         finish()
         self.assertTrue(packs.language_ready("fr"))
-        self.assertFalse(page.download.isEnabled())
+        self.assertTrue(page.download.isEnabled())
+        self.assertEqual(page.download.text(), "修复语言包")
         self.assertIn("已安装", page.pack_choice.currentText())
         self.assertEqual((packs.translation_dir("fr") / "model.bin").read_bytes(), b"translation")
         self.assertEqual(packs.ocr_file("fr").read_bytes(), ocr)
         self.assertEqual(transfer.call_count, 3)
         packs.install_language("fr")
         self.assertEqual(transfer.call_count, 3)
+        page.download.click()
+        finish()
+        self.assertTrue(packs.language_ready("fr"))
+        self.assertEqual(transfer.call_count, 5)

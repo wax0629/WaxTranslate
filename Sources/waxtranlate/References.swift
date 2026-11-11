@@ -19,9 +19,9 @@ enum WordReferences {
         return request
     }
 
-    static func search(_ word: String) async throws -> [WordReference] {
+    static func search(_ word: String, session: URLSession = .shared) async throws -> [WordReference] {
         guard let request = request(for: word) else { return [] }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse, response.statusCode == 200, data.count <= 256 * 1024 else {
             throw URLError(.badServerResponse)
         }

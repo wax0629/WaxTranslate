@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from types import SimpleNamespace
 import time
 import unittest
 from unittest.mock import patch
@@ -29,6 +30,36 @@ def wait_for(predicate):
 
 
 class CardRuleTests(unittest.TestCase):
+    def test_manual_context_routes_english_sentence_with_chinese_proper_name(self):
+        with TemporaryDirectory() as temp, patch.object(QProcess, "start"):
+            window = Window(Notebook(Path(temp) / "notebook.sqlite3"))
+            try:
+                for source, code, chinese in (("The API returns a label named 北京.", "en", False),
+                                               ("调用 API 查询北京。", "", True),
+                                               ("東京のAPIを利用します。", "ja", False),
+                                               ("漢字 API 설명입니다.", "ko", False)):
+                    passage = Passage(source, (source.index("API"), source.index("API") + 3), source_code=code)
+                    def submit(work):
+                        result = Future()
+                        result.set_result(work())
+                        return result
+                    with self.subTest(source=source), patch.object(window.pool, "submit", side_effect=submit), \
+                         patch("translation.translate", return_value=("选区译文", "译文", "")) as foreign, \
+                         patch("translation.translate_leg", return_value=SimpleNamespace(text="English context")) as zh:
+                        window.translate_card_context(("isolated-request", passage))
+                        if chinese:
+                            zh.assert_called_once()
+                            self.assertEqual(zh.call_args.args[1], "zh")
+                            foreign.assert_not_called()
+                        else:
+                            foreign.assert_called_once()
+                            self.assertEqual(foreign.call_args.args[0].source_code, code)
+                            zh.assert_not_called()
+            finally:
+                window.shutdown()
+                window.hide()
+                window.deleteLater()
+
     def test_known_foreign_terms_automatically_show_source_and_translation(self):
         for word, source, code, expected in (
             ('API', 'The API returns a response.', 'en', '应用程序编程接口'),

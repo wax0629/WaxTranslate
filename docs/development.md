@@ -52,7 +52,7 @@ Windows `c298418` 的[实际包CI42780828105](https://github.com/wax0629/WaxTran
 | macOS 正式包升级 | 开发版和旧数据格式已有验证，正式安装包仍需在带有真实历史词条的旧版上覆盖安装，并核对升级后的记录。[验收清单 #1](https://github.com/wax0629/WaxTranslate/issues/1) |
 | 双端一致性 | 待用同一组样文在两端对照取词、框选、取消和关闭，并核对默认与放大显示下的排版。语境准确性仍需人工对照多义词、术语、否定和跨行文本。[路线图 #3](https://github.com/wax0629/WaxTranslate/issues/3) |
 
-macOS 15.2 为最低运行版本。macOS 26.4 及以上可尝试从整句译文中对齐命中词，对齐失败时显示独立参考释义。OCR 只能拼接取景范围内可见的原句，遮挡、分栏和系统译词都会影响结果。已有验收记录提到 `emergent capabilities` 的术语误译，仍需结合语境复核。[主分支翻译实现](../Sources/waxtranlate/LookupTranslation.swift) · [验收目标](https://github.com/wax0629/WaxTranslate/issues/3)
+macOS 15.2 为最低运行版本。macOS 26.4 及以上可尝试从整句译文中对齐命中词，英语整句对齐失败时尝试保留确切位置的短语境，并用完整原句进行标记定位恢复；至少两种定位结果一致才采用原始译文里的词义。名词组合的中心词保留完整中文词边界，成功后可收藏与缓存；证据不足保留未确认。[长句点词回归与最新预览](verification/long-context/README.md)。OCR 只能拼接取景范围内可见的原句，遮挡、分栏和系统译词都会影响结果。已有验收记录提到 `emergent capabilities` 的术语误译，仍需结合语境复核。[主分支翻译实现](../Sources/waxtranlate/LookupTranslation.swift) · [验收目标](https://github.com/wax0629/WaxTranslate/issues/3)
 
 ## 复现验证
 
@@ -76,7 +76,7 @@ macOS 15.2 为最低运行版本。macOS 26.4 及以上可尝试从整句译文�
 
 ### macOS
 
-在装有 Swift 6 和 macOS 26.4 或更新 SDK 的 Mac 上，运行 `./scripts/check.sh` 和 `swift build -c release`。脚本覆盖 Vision 双栏跨行识字、屏幕边缘、重复词的命中位置、旧格式生词及复习记录。在系统支持并已安装英中翻译包时，还会检查 `bank` 在河边和存款两种语境中的真实译义。Mac 验收记录来自对应 Issue、PR 与本机真实服务检查。[检查脚本](../scripts/check.sh) · [测试样例](../Tests/waxtranlateTests/ReaderTests.swift)
+在装有 Swift 6 和 macOS 26.4 或更新 SDK 的 Mac 上，运行 `./scripts/check.sh` 和 `swift build -c release`。脚本覆盖 Vision 双栏跨行识字、屏幕边缘、重复词的命中位置、旧格式生词及复习记录，并执行缺权限的重复提示、原生卡片不自动查询百科、手动请求的断网重试和字段边界回归。在系统支持并已安装英中翻译包时，还会检查 `bank` 在河边和存款两种语境中的真实译义。Mac 验收记录来自对应 Issue、PR 与本机真实服务检查。[检查脚本](../scripts/check.sh) · [测试样例](../Tests/waxtranlateTests/ReaderTests.swift)
 
 
 2026-11-10：Mac build15 补齐 #83 的边界、朗读和任务状态回归；七类原生离屏布局、原先四类实机证据见 [卡片规则验收](verification/card-rules/README.md)。Windows #86 / #87 已独立验收合入 main。

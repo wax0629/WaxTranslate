@@ -115,7 +115,10 @@ private struct LookupActivity: Codable {
     }
 
     @discardableResult func recordLookup(_ passage: Passage, meaning: String, now: Date = Date()) -> UUID? {
-        guard readableActivity, !meaning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        // Empty context denotes an explicit region/title translation, not a
+        // word lookup. Only save that text when the reader presses Bookmark.
+        guard readableActivity, !passage.context.isEmpty,
+              !meaning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         var next = activity
         next.total += 1
         next.today = Calendar.current.isDate(next.day, inSameDayAs: now) ? next.today + 1 : 1
