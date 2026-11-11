@@ -37,7 +37,7 @@ struct ResultCard: View {
     @State private var referenceBusy = false
     @State private var referenceAttempt = 0
 
-    init(passage: Passage, notebook: Notebook, preferences: Preferences, trace: LookupTrace = LookupTrace(), close: @escaping () -> Void,
+    init(passage: Passage, notebook: Notebook, preferences: Preferences, trace: LookupTrace = LookupTrace(), initialResult: LookupResult? = nil, close: @escaping () -> Void,
          speak: @escaping (String, String) -> Void, focusForDownload: @escaping () -> Void,
          pin: @escaping (Bool) -> Void = { _ in }, resize: @escaping (CGSize) -> Void = { _ in }, query: @escaping (Passage) -> Void = { _ in }) {
         self.passage = passage
@@ -64,7 +64,7 @@ struct ResultCard: View {
             + (CompactGloss.mixedEnglishReference(for: passage).flatMap { $0.hasPrefix("名称组成词参考") ? nil : [$0] } ?? [])
         term = decision.term
         trace.record("lookup.dictionary_and_terms", since: began)
-        let cached = !decision.needsConfirmation ? LookupCache.shared.result(for: passage) : nil
+        let cached = !decision.needsConfirmation ? (initialResult ?? LookupCache.shared.result(for: passage)) : nil
         cacheHit = cached != nil
         _phase = State(initialValue: cached == nil && term == nil && !decision.needsConfirmation ? .checking : .done)
         _result = State(initialValue: decision.needsConfirmation ? LookupResult(meaning: "", origin: .unresolved) : LookupResult.initial(term: term, cached: cached, dictionary: dictionary))
@@ -81,10 +81,14 @@ struct ResultCard: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if let result {
-                        Text(result.isUsable ? result.meaning : policy.unresolvedMessage)
+                        Text(result.isUsable ? result.meaning : result.wordReference != nil ? "语境词义暂未确认" : policy.unresolvedMessage)
                             .font(isRegion || !result.isUsable ? .system(size: 16) : .system(size: 17, weight: .medium))
                             .fixedSize(horizontal: false, vertical: true)
                         originLabel(result)
+                        if let reference = result.wordReference {
+                            Text("单词参考（未确认当前义项）：" + reference)
+                                .font(.system(size: 12)).foregroundStyle(DeskTheme.muted)
+                        }
                     }
                     translationStatus
                     if !isRegion && !hasSentence && !passage.hasCompleteContext {
@@ -300,11 +304,11 @@ struct ResultCard: View {
     private var footer: some View {
         HStack(spacing: 14) {
             Button {
-                guard let result, result.isUsable else { return }
+                guard let result, result.canSave(for: passage) else { return }
                 notebook.save(passage, translation: result.meaning, sentenceTranslation: result.sentenceTranslation, origin: String(describing: result.origin))
             } label: {
                 Label(notebook.contains(passage) ? "已加入生词本" : "加入生词本", systemImage: notebook.contains(passage) ? "bookmark.fill" : "bookmark")
-            }.disabled(result?.isUsable != true || notebook.contains(passage) || (phase == .translating && term == nil))
+            }.disabled(result?.canSave(for: passage) != true || notebook.contains(passage) || (phase == .translating && term == nil))
             Spacer()
             Button {
                 guard let result, result.isUsable else { return }
@@ -338,7 +342,7 @@ struct ResultCard: View {
     }
 
     private func record(_ result: LookupResult) {
-        guard result.isUsable else { return }
+        guard result.canSave(for: passage) else { return }
         if let recordID { notebook.updateLookup(recordID, meaning: result.meaning) }
         else { recordID = notebook.recordLookup(passage, meaning: result.meaning) }
     }

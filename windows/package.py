@@ -11,7 +11,7 @@ import urllib.request
 import zipfile
 
 from install_model import (DEFAULT_LANGUAGES, LEXICON, MODELS, POS_ARCHIVE, install, install_lexicon,
-                           install_word_tags, ocr_file, translation_dir)
+                           install_word_tags, ocr_file, translation_dir, write_model_manifest)
 
 SRC = Path(__file__).resolve().parent
 PYTHON_ZIP = "python-3.12.10-embed-amd64.zip"
@@ -70,6 +70,7 @@ def build(output, archive=None):
                 dest = root / "models" / package.name / name
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(model / name, dest)
+            write_model_manifest(root / "models" / package.name, package)
         shutil.copy2(POS_ARCHIVE, root / "models" / POS_ARCHIVE.name)
         shutil.copy2(SRC / "licenses/english-pos.txt", root / "models/english-pos-LICENSE.txt")
         shutil.copy2(LEXICON, root / "models" / LEXICON.name)

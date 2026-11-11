@@ -42,7 +42,7 @@ import SwiftUI
         var manifest: [[String: Any]] = []
         for (name, passage, fixture) in samples {
             if let fixture { LookupCache.shared.insert(fixture, for: passage) }
-            let card = ResultCard(passage: passage, notebook: book, preferences: preferences, close: {}, speak: { _, _ in }, focusForDownload: {})
+            let card = ResultCard(passage: passage, notebook: book, preferences: preferences, initialResult: fixture, close: {}, speak: { _, _ in }, focusForDownload: {})
             let host = NSHostingView(rootView: card)
             let size = host.fittingSize
             host.frame = CGRect(origin: .zero, size: size)

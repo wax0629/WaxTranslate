@@ -13,9 +13,9 @@ struct SentenceExcerpt {
     let passage: Passage
     let isTruncated: Bool
 
-    init(_ original: Passage) {
+    init(_ original: Passage, limit requestedLimit: Int? = nil) {
         let text = original.context
-        let limit = original.sourceLanguage.hasPrefix("zh") ? 60 : 160
+        let limit = requestedLimit ?? (original.sourceLanguage.hasPrefix("zh") ? 60 : 160)
         guard text.count > limit, let selection = original.selection,
               let hit = Range(selection, in: text), text[hit] == original.text else {
             passage = original; isTruncated = false; return
@@ -49,6 +49,24 @@ struct SentenceExcerpt {
         let end = right + 1 == words.count ? text.endIndex : words[right].upperBound
         passage = Self.slice(original, bounds: start..<end)
         isTruncated = passage.context != text
+    }
+
+    static func alignmentRetry(_ original: Passage) -> Passage? {
+        guard original.hasCompleteContext, original.sourceLanguage == "en" else { return nil }
+        let shorter = SentenceExcerpt(original, limit: 64)
+        guard shorter.isTruncated, let hit = original.selection, let shifted = shorter.passage.selection else { return nil }
+        let start = hit.location - shifted.location
+        let source = original.context as NSString
+        let end = start + shorter.passage.context.utf16.count
+        guard start >= 0, end <= source.length else { return nil }
+        let omitted = source.substring(to: start) + " " + source.substring(from: end)
+        // Do not remove a negation, condition or correction to get an alignment.
+        guard omitted.range(of: #"\b(?:no|not|never|cannot|neither|nor|without|if|unless|until|whether|only|except|rather|instead)\b|n['’]t\b"#,
+                            options: [.regularExpression, .caseInsensitive]) == nil else { return nil }
+        for (open, close) in [("(", ")"), ("[", "]"), ("{", "}")] {
+            guard shorter.passage.context.filter({ String($0) == open }).count == shorter.passage.context.filter({ String($0) == close }).count else { return nil }
+        }
+        return shorter.passage
     }
 
     private static func slice(_ original: Passage, bounds: Range<String.Index>) -> Passage {

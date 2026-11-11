@@ -2,7 +2,10 @@ import SwiftUI
 import AVFoundation
 import Combine
 
-@main @MainActor final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
+#if !WAX_APP_TESTS
+@main
+#endif
+@MainActor final class App: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let notebook: Notebook
     private let preferences: Preferences
     private let testHover: Bool
@@ -16,7 +19,7 @@ import Combine
     private var job: Task<Void, Never>?
     private var shortcuts: Shortcuts!
     private var shortcutErrors: [String] = []
-    private var showedPermissionHint = false
+    private let captureAccess: () -> Bool
     private var requestedAccess = false
     private var settingsObserver: AnyCancellable?
     private var dockObserver: AnyCancellable?
@@ -24,10 +27,18 @@ import Combine
     private var pinned = false
     private var cardGeneration = UUID()
 
-    override init() {
+    override convenience init() {
+        self.init(defaults: nil, captureAccess: CGPreflightScreenCaptureAccess)
+    }
+
+    init(defaults testDefaults: UserDefaults?, captureAccess: @escaping () -> Bool) {
+        self.captureAccess = captureAccess
         let arguments = ProcessInfo.processInfo.arguments
         let defaults: UserDefaults
-        if let index = arguments.firstIndex(of: "--test-profile"), index + 1 < arguments.count,
+        if let testDefaults {
+            defaults = testDefaults
+            testHover = false
+        } else if let index = arguments.firstIndex(of: "--test-profile"), index + 1 < arguments.count,
            arguments[index + 1].hasPrefix("WaxTranslate.Test."), let suite = UserDefaults(suiteName: arguments[index + 1]) {
             defaults = suite
             testHover = arguments.contains("--test-hover")
@@ -262,16 +273,12 @@ import Combine
         window.makeFirstResponder(selector)
     }
 
-    private func readyToCapture() -> Bool {
-        if CGPreflightScreenCaptureAccess() {
-            showedPermissionHint = false
-            return true
-        }
-        if !showedPermissionHint {
-            showedPermissionHint = true
-            reset()
-            showError(ReaderError.permission, at: NSEvent.mouseLocation)
-        }
+    func readyToCapture() -> Bool {
+        if captureAccess() { return true }
+        // Replace the previous panel on each attempt. Closing a hint must not
+        // permanently silence later requests in the same process.
+        reset()
+        showError(ReaderError.permission, at: NSEvent.mouseLocation)
         return false
     }
 
@@ -288,7 +295,6 @@ import Combine
                 present(passage, at: point, focus: testHover, trace: trace)
             } catch {
                 guard !Task.isCancelled else { return }
-                if case ReaderError.permission = error { showedPermissionHint = true }
                 showError(error, at: point)
             }
         }
@@ -366,13 +372,21 @@ import Combine
         window.setFrameOrigin(CGPoint(x: x, y: y))
         panel = window
         window.delegate = self
+        #if WAX_APP_TESTS
+        window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+        #else
         if focus {
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             window.makeMain()
         } else if NSApp.isActive { window.makeKeyAndOrderFront(nil) }
         else { window.orderFrontRegardless() }
+        #endif
     }
+
+    #if WAX_APP_TESTS
+    var testPanel: NSPanel? { panel }
+    #endif
 }
 
 private final class LookupPanel: NSPanel {

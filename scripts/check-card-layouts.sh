@@ -4,6 +4,6 @@ cd "$(dirname "$0")/.."
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 swiftc -parse-as-library -target "$(uname -m)-apple-macosx15.2" \
-  Sources/waxtranlate/{Reader,SentenceContext,ContextBoundary,CardPresentation,ResultCard,LookupTranslation,LookupTrace,Notebook,Preferences,References,Reading,DeskTheme,Terminology}.swift \
+  Sources/waxtranlate/{Reader,SentenceContext,ContextBoundary,CardPresentation,ResultCard,LookupTranslation,ContextWordAlignment,LookupTrace,Notebook,Preferences,References,Reading,DeskTheme,Terminology}.swift \
   Tests/waxtranlateTests/CardLayouts.swift -o "$out/layouts"
 "$out/layouts" "${1:-$out/images}"

@@ -5,9 +5,11 @@ from concurrent.futures import CancelledError, ThreadPoolExecutor
 from contextlib import closing
 import csv
 from dataclasses import dataclass
+from functools import lru_cache
 import hashlib
 from http.client import IncompleteRead
 import os
+import json
 from pathlib import Path
 import re
 import shutil
@@ -65,23 +67,77 @@ OCR_MODELS = {
 }
 
 
+MODEL_MANIFEST = "wax-integrity.json"
+
+
+def file_identity(path):
+    stat = path.stat()
+    return str(path), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_ino
+
+
+@lru_cache(maxsize=128)
+def checked_digest(path, size, modified, changed, inode):
+    # The file identity invalidates this cache even for same-size overwrites.
+    # Do not rehash hundreds of MB on every lookup/settings refresh.
+    with open(path, "rb") as source:
+        return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+@lru_cache(maxsize=32)
+def legacy_model_valid(directory, identities):
+    """Old portable packages lack manifests; validate them with the real readers."""
+    try:
+        import ctranslate2
+        import sentencepiece
+        root = Path(directory)
+        sentencepiece.SentencePieceProcessor(model_proto=(root / "sentencepiece.model").read_bytes())
+        ctranslate2.Translator(str(root / "model"), device="cpu", compute_type="int8",
+                              inter_threads=1, intra_threads=1)
+        return True
+    except (ImportError, OSError, RuntimeError, ValueError):
+        return False
+
+
+def write_model_manifest(directory, package):
+    contents = {name: checked_digest(*file_identity(directory / name)) for name in package.files}
+    (directory / MODEL_MANIFEST).write_text(json.dumps({"version": 1, "archive": package.digest,
+                                                       "files": contents}), encoding="utf-8")
+
+
 def complete_model(directory, package):
-    return all((directory / name).is_file() and (directory / name).stat().st_size for name in package.files)
+    try:
+        identities = tuple(file_identity(directory / name) for name in package.files)
+        if not all(item[1] for item in identities):
+            return False
+        manifest_path = directory / MODEL_MANIFEST
+        if not manifest_path.exists():
+            return legacy_model_valid(str(directory), identities)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        return (manifest.get("version") == 1 and manifest.get("archive") == package.digest
+                and isinstance(manifest.get("files"), dict) and set(manifest["files"]) == set(package.files)
+                and all(checked_digest(*identity) == manifest["files"][name]
+                        for name, identity in zip(package.files, identities)))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
 
 
 def translation_dir(code):
     package = MODELS[code]
-    return next((base / package.name for base in (BUNDLED_MODELS, MODEL_DIR)
+    return next((base / package.name for base in (MODEL_DIR, BUNDLED_MODELS)
                  if complete_model(base / package.name, package)), None)
 
 
 def ocr_file(code):
     if code == "zh": return None
-    lang, size, _ = OCR_MODELS[code]
-    for base in (BUNDLED_MODELS, MODEL_DIR):
+    lang, size, digest = OCR_MODELS[code]
+    for base in (MODEL_DIR, BUNDLED_MODELS):
         path = base / "tessdata" / f"{lang}.traineddata"
-        if path.is_file() and path.stat().st_size == size:
-            return path
+        try:
+            identity = file_identity(path)
+            if identity[1] == size and checked_digest(*identity) == digest:
+                return path
+        except OSError:
+            pass
     return None
 
 
@@ -220,10 +276,12 @@ def download_resource(url, destination, cancel):
             output.write(chunk)
 
 
-def install_model(package, archive=None, cancel=None):
+def install_model(package, archive=None, cancel=None, *, repair=False):
     model = MODEL_DIR / package.name
-    if complete_model(model, package):
+    if not repair and complete_model(model, package):
         return
+    if cancel is not None and cancel.is_set():
+        raise CancelledError()
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=MODEL_DIR) as stage:
         if archive is None:
@@ -251,21 +309,26 @@ def install_model(package, archive=None, cancel=None):
                 path.parent.mkdir(exist_ok=True, parents=True)
                 with bundle.open(f"{package.archive_root or package.name}/{name}") as source, path.open("wb") as output:
                     shutil.copyfileobj(source, output)
+        write_model_manifest(extracted, package)
+        if cancel is not None and cancel.is_set():
+            raise CancelledError()
+        # Publish only the entire verified model. A failed replacement must
+        # restore the previous directory, including its nonempty files.
+        previous = Path(stage) / "previous"
+        if model.exists():
+            model.rename(previous)
         try:
             extracted.rename(model)
         except OSError:
-            if not model.is_dir():
-                raise
-            # Repair a partial older installation with files from the verified archive.
-            for name in package.files:
-                dest = model / name
-                if not dest.is_file() or dest.stat().st_size == 0:
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    os.replace(extracted / name, dest)
+            if previous.exists():
+                previous.rename(model)
+            raise
 
 
-def install_language(code, archive=None, *, cancel=None):
-    if code != "zh" and not ocr_file(code):
+def install_language(code, archive=None, *, cancel=None, repair=False):
+    if cancel is not None and cancel.is_set():
+        raise CancelledError()
+    if code != "zh" and (repair or not ocr_file(code)):
         lang, _, digest = OCR_MODELS[code]
         dest = MODEL_DIR / "tessdata" / f"{lang}.traineddata"
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -276,9 +339,11 @@ def install_language(code, archive=None, *, cancel=None):
             with pending.open("rb") as data:
                 if hashlib.file_digest(data, "sha256").hexdigest() != digest:
                     raise ValueError("OCR model checksum mismatch.")
+            if cancel is not None and cancel.is_set():
+                raise CancelledError()
             os.replace(pending, dest)
-    if not translation_dir(code):
-        install_model(MODELS[code], archive, cancel)
+    if repair or not translation_dir(code):
+        install_model(MODELS[code], archive, cancel, repair=repair)
 
 
 def install(archive=None, codes=DEFAULT_LANGUAGES):

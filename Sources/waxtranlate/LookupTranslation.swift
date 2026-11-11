@@ -9,7 +9,17 @@ struct LookupResult {
     let origin: Origin
     var sentenceTranslation: String? = nil
     var excerptTranslation: String? = nil
+    var wordReference: String? = nil
     var isUsable: Bool { origin != .unresolved && !meaning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    func canSave(for passage: Passage) -> Bool {
+        guard isUsable else { return false }
+        if passage.sourceLanguage == "en", passage.context != passage.text,
+           LookupPolicy(passage).automaticallyTranslatesContext, !passage.context.isEmpty {
+            return origin == .sentence || origin == .term
+        }
+        return true
+    }
 
     static func initial(term: TermMeaning?, cached: LookupResult?, dictionary: [String]) -> LookupResult? {
         if let term {
@@ -45,7 +55,7 @@ struct LookupResult {
         return value
     }
     func insert(_ result: LookupResult, for passage: Passage, now: Date = Date()) {
-        guard result.isUsable, passage.text.count <= 1000, passage.context.count <= 4000 else { return }
+        guard result.canSave(for: passage), passage.text.count <= 1000, passage.context.count <= 4000 else { return }
         guard passage.hasCompleteContext || result.origin != .sentence else { return }
         if SentenceExcerpt(passage).isTruncated && (result.sentenceTranslation == nil || result.excerptTranslation == nil) { return }
         let key = Key(passage)
@@ -145,6 +155,15 @@ private extension String {
 }
 
 enum LookupTranslation {
+    struct Response {
+        let text: String
+        let attributed: AttributedString?
+    }
+    struct Provider {
+        let plain: (String) async throws -> String
+        let marked: ((AttributedString) async throws -> Response)?
+    }
+
     static func makeResult(for passage: Passage, meaning: String, origin: LookupResult.Origin, sentence: String? = nil) -> LookupResult {
         let target = LookupPolicy(passage).headwordLanguage.hasPrefix("zh") ? "en" : "zh-Hans"
         let trim = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
@@ -171,7 +190,7 @@ enum LookupTranslation {
         return AttributedString(passage.context[..<range.lowerBound]) + mark + AttributedString(passage.context[range.upperBound...])
     }
 
-    static func alignedMeaning(in output: AttributedString, isPhrase: Bool = false) -> String? {
+    static func alignedMeaning(in output: AttributedString, isPhrase: Bool = false, passage: Passage? = nil) -> String? {
         // Accept only one contiguous translated span. Some language pairs may
         // drop the emphasis or apply it to the whole sentence.
         var span: Range<AttributedString.Index>?
@@ -181,8 +200,13 @@ enum LookupTranslation {
         }
         guard let span else { return nil }
         let trim = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
-        let gloss = String(output[span].characters).trimmingCharacters(in: trim)
-        let sentence = String(output.characters).trimmingCharacters(in: trim)
+        let plain = String(output.characters)
+        let prefix = String(output[..<span.lowerBound].characters).utf16.count
+        let range = NSRange(location: prefix, length: String(output[span].characters).utf16.count)
+        let completed = ContextWordAlignment.completeTargetWord(range, in: plain, compoundHead: passage.map(ContextWordAlignment.isCompoundNounHead) ?? false)
+        guard let selected = Range(completed, in: plain) else { return nil }
+        let gloss = String(plain[selected]).trimmingCharacters(in: trim)
+        let sentence = plain.trimmingCharacters(in: trim)
         guard !gloss.isEmpty, gloss.count <= 40, gloss != sentence else { return nil }
         // For the supported verb phrases these fragments omit the verb itself.
         if isPhrase && ["了", "的", "着", "过", "一下"].contains(gloss) { return nil }
@@ -223,12 +247,24 @@ enum LookupTranslation {
     }
 
     static func translate(_ passage: Passage, session: TranslationSession, dictionary: [String], trace: LookupTrace = LookupTrace()) async throws -> LookupResult {
+        let marked: ((AttributedString) async throws -> Response)?
+        if #available(macOS 26.4, *) {
+            marked = { value in
+                let response = try await session.translate(value)
+                return Response(text: response.targetText, attributed: response.attributedTargetText)
+            }
+        } else { marked = nil }
+        return try await translate(passage, provider: Provider(plain: { try await session.translate($0).targetText }, marked: marked), dictionary: dictionary, trace: trace)
+    }
+
+    static func translate(_ passage: Passage, provider: Provider, dictionary: [String], trace: LookupTrace = LookupTrace()) async throws -> LookupResult {
+        try Task.checkCancellation()
         // Enforce completeness at the provider boundary as well as in the card.
         // Explicit fragment translation uses TranslationRunner with a labelled,
         // user-selected source; automatic lookup only returns a word reference.
         if !passage.hasCompleteContext && !passage.context.isEmpty {
             if let term = LocalTerminology.lookup(passage) { return LookupResult(meaning: term.meaning, origin: .term) }
-            let reference = try await session.translate(passage.text).targetText
+            let reference = try await provider.plain(passage.text)
             try Task.checkCancellation()
             return makeResult(for: passage, meaning: reference, origin: .standalone)
         }
@@ -236,12 +272,12 @@ enum LookupTranslation {
         var output: LookupResult
         if let term = LocalTerminology.lookup(passage), !passage.context.isEmpty, passage.context != passage.text {
             let began = LookupTrace.now
-            let sentence = try await session.translate(excerpt.passage.context).targetText
+            let sentence = try await provider.plain(excerpt.passage.context)
             trace.record("translation.term_sentence", since: began)
             output = LookupResult(meaning: TranslationOutput.normalize(term.meaning), origin: .term,
                                   sentenceTranslation: TranslationOutput.normalize(sentence, target: passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans"))
         } else {
-            output = try await translateMeaning(excerpt.passage, session: session, dictionary: dictionary, trace: trace)
+            output = try await translateMeaning(excerpt.passage, retry: SentenceExcerpt.alignmentRetry(passage), provider: provider, dictionary: dictionary, trace: trace)
         }
         try Task.checkCancellation()
         if excerpt.isTruncated {
@@ -249,22 +285,39 @@ enum LookupTranslation {
             output.sentenceTranslation = nil
             let began = LookupTrace.now
             do {
-                let translated = try await session.translate(passage.context).targetText
+                let translated = try await provider.plain(passage.context)
                 output.sentenceTranslation = TranslationOutput.normalize(translated, target: passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans")
             } catch { try Task.checkCancellation() } // An optional full sentence must not erase the usable excerpt.
             try Task.checkCancellation()
             trace.record("translation.full_context", since: began)
         }
+        // Recovery uses the whole original passage, retaining conditions and
+        // the exact occurrence even when the card shows a shorter excerpt.
+        if output.origin == .unresolved, let sentence = output.sentenceTranslation,
+           let alignment = ContextWordAlignment(passage, translation: sentence, focus: .nounHead) {
+            let began = LookupTrace.now
+            if let recovered = try await alignment.recover(using: provider.plain) {
+                let references = dictionary + [output.wordReference].compactMap { $0 }
+                let gloss = needsBoundaryVerification(recovered) && !passage.isPhrase
+                    ? verifiedBoundaryMeaning(recovered, references: references) : recovered
+                if let gloss, !passage.isPhrase || !["了", "的", "着", "过", "一下"].contains(gloss) {
+                    output = LookupResult(meaning: gloss, origin: .sentence, sentenceTranslation: sentence,
+                                          excerptTranslation: output.excerptTranslation)
+                }
+            }
+            try Task.checkCancellation()
+            trace.record("translation.context_word_recovery", since: began)
+        }
         return output
     }
 
-    private static func translateMeaning(_ passage: Passage, session: TranslationSession, dictionary: [String], trace: LookupTrace) async throws -> LookupResult {
+    private static func translateMeaning(_ passage: Passage, retry: Passage?, provider: Provider, dictionary: [String], trace: LookupTrace) async throws -> LookupResult {
         func result(_ meaning: String, _ origin: LookupResult.Origin, _ sentence: String? = nil) -> LookupResult {
             makeResult(for: passage, meaning: meaning, origin: origin, sentence: sentence)
         }
         guard !passage.context.isEmpty, passage.context != passage.text else {
             let began = LookupTrace.now
-            let text = try await session.translate(passage.text).targetText
+            let text = try await provider.plain(passage.text)
             trace.record("translation.word_or_region", since: began)
             return result(text, passage.context.isEmpty ? .region : .standalone)
         }
@@ -272,14 +325,15 @@ enum LookupTranslation {
         let sentence: String
         var alignedGloss: String?
         let sentenceBegan = LookupTrace.now
-        if #available(macOS 26.4, *), let marked = markedSentence(passage),
-           let response = try? await session.translate(marked) {
-            sentence = response.targetText
+        if let translateMarked = provider.marked, let marked = markedSentence(passage),
+           let response = try? await translateMarked(marked) {
+            try Task.checkCancellation()
+            sentence = response.text
             trace.record("translation.aligned_sentence", since: sentenceBegan)
-            alignedGloss = response.attributedTargetText.flatMap { alignedMeaning(in: $0, isPhrase: passage.isPhrase) }
+            alignedGloss = response.attributed.flatMap { alignedMeaning(in: $0, isPhrase: passage.isPhrase, passage: passage) }
         } else {
             try Task.checkCancellation()
-            sentence = try await session.translate(passage.context).targetText
+            sentence = try await provider.plain(passage.context)
             trace.record("translation.plain_sentence", since: sentenceBegan)
         }
 
@@ -288,20 +342,45 @@ enum LookupTranslation {
             if let verified = verifiedBoundaryMeaning(gloss, references: dictionary) { return result(verified, .sentence, sentence) }
         }
 
+        // One bounded retry, retaining the exact occurrence and the original
+        // sentence translation. Never accept a dictionary substring elsewhere
+        // in the translation as evidence for the selected word.
+        if let retry, retry.context != passage.context, let marked = markedSentence(retry), let translateMarked = provider.marked {
+            let began = LookupTrace.now
+            if let response = try? await translateMarked(marked), let attributed = response.attributed,
+               let gloss = alignedMeaning(in: attributed, isPhrase: passage.isPhrase, passage: retry) {
+                try Task.checkCancellation()
+                if passage.isPhrase || !needsBoundaryVerification(gloss) { return result(gloss, .sentence, sentence) }
+                if let verified = verifiedBoundaryMeaning(gloss, references: dictionary) { return result(verified, .sentence, sentence) }
+                alignedGloss = gloss
+            }
+            try Task.checkCancellation()
+            trace.record("translation.alignment_retry", since: began)
+        }
+
+        func referenceResult(_ meaning: String, origin: LookupResult.Origin) -> LookupResult {
+            let reference = result(meaning, origin, sentence)
+            guard passage.sourceLanguage == "en", passage.hasCompleteContext, reference.isUsable else { return reference }
+            // A successful sentence translation does not confirm the standalone
+            // word's sense. Keep it as a secondary reference, out of saves/cache.
+            return LookupResult(meaning: "", origin: .unresolved, sentenceTranslation: reference.sentenceTranslation,
+                                wordReference: reference.meaning)
+        }
+
         // A dictionary gloss elsewhere in the sentence may translate a different word.
         do {
             try Task.checkCancellation()
             let wordBegan = LookupTrace.now
-            let reference = try await session.translate(passage.text).targetText
+            let reference = try await provider.plain(passage.text)
             trace.record("translation.fallback_word", since: wordBegan)
             if let alignedGloss, let verified = verifiedBoundaryMeaning(alignedGloss, references: [reference]) {
                 return result(verified, .sentence, sentence)
             }
-            return result(reference, .standalone, sentence)
+            return referenceResult(reference, origin: .standalone)
         } catch {
             try Task.checkCancellation()
             guard let reference = dictionary.first else { throw error }
-            return result(reference, .dictionary, sentence)
+            return referenceResult(reference, origin: .dictionary)
         }
     }
 }

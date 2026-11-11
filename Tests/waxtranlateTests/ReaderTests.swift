@@ -40,6 +40,7 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testSavingAndReview(ruledOut)
         try testLanguageRouting()
         try testActivityAndCorruptData(ruledOut)
+        try testRegionIsOnlySavedExplicitly()
         try testReadingCancellation()
         try testReferenceBoundary()
         try testTerminology()
@@ -49,6 +50,8 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testShortcutAndDockPreferences()
         try testSimplifiedOutput()
         try testLookupCache()
+        try await testContextAlignmentFailures()
+        try await LongContextTests.run()
         try await testInstalledTranslation(ruledOut: ruledOut, ranOut: ranOut)
         print("Passed: capture geometry, cursor-free Retina configuration, small mixed text, OCR, packed typography, phrase selection, exact occurrences, vocabulary migration, review, language routing, dashboard persistence, corrupt-data preservation, reading cancellation, mixed-language terminology, unchanged-result boundaries, verified gloss boundaries, bounded bilingual context, reference boundaries, Option tap guards and Dock preferences.")
     }
@@ -516,6 +519,73 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try expect(!SentenceExcerpt(invalid).isTruncated)
     }
 
+    static func testContextAlignmentFailures() async throws {
+        let text = "After a very long walk through the quiet village and past the old houses where people were preparing for the evening, they sat on the river bank and watched the water flow slowly toward the distant mountains."
+        let passage = Passage(text: "bank", context: text, language: "en")
+        let initialReference = LookupResult(meaning: "银行", origin: .dictionary)
+        try expect(!initialReference.canSave(for: passage))
+        var markedCalls = 0
+        let noAlignment = LookupTranslation.Provider(plain: { source in source == "bank" ? "银行" : "他们坐在河岸上，看着水流。" }, marked: { marked in
+            markedCalls += 1
+            try expect(String(marked.characters).contains("river bank"))
+            return LookupTranslation.Response(text: "他们坐在河岸上，看着水流。", attributed: nil)
+        })
+        let unconfirmed = try await LookupTranslation.translate(passage, provider: noAlignment, dictionary: ["银行", "岸"])
+        try expect(markedCalls == 2 && !unconfirmed.isUsable && unconfirmed.meaning.isEmpty && unconfirmed.wordReference == "银行")
+        try expect(unconfirmed.sentenceTranslation?.contains("岸") == true && unconfirmed.excerptTranslation?.contains("岸") == true)
+        let cache = LookupCache()
+        cache.insert(unconfirmed, for: passage)
+        try expect(cache.result(for: passage) == nil)
+        cache.insert(initialReference, for: passage)
+        try expect(cache.result(for: passage) == nil)
+
+        markedCalls = 0
+        let retried = LookupTranslation.Provider(plain: noAlignment.plain, marked: { marked in
+            markedCalls += 1
+            guard markedCalls > 1 else { return LookupTranslation.Response(text: "他们坐在河岸上，看着水流。", attributed: nil) }
+            let emphasized = marked.runs.filter { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true }
+            try expect(emphasized.count == 1 && String(marked[emphasized[0].range].characters) == "bank")
+            var gloss = AttributedString("岸边")
+            gloss.inlinePresentationIntent = .stronglyEmphasized
+            return LookupTranslation.Response(text: "他们坐在岸边。", attributed: AttributedString("他们坐在") + gloss + AttributedString("。"))
+        })
+        let confirmed = try await LookupTranslation.translate(passage, provider: retried, dictionary: [])
+        try expect(markedCalls == 2 && confirmed.origin == .sentence && confirmed.meaning == "岸边" && confirmed.wordReference == nil)
+        try expect(confirmed.excerptTranslation == unconfirmed.excerptTranslation && confirmed.sentenceTranslation == unconfirmed.sentenceTranslation)
+
+        // The second occurrence must not be replaced with the first bank.
+        let repeated = "After visiting the bank in the village, they sat on the river bank and watched the water flow slowly toward the distant mountains."
+        let last = Passage(text: "bank", context: repeated, selection: (repeated as NSString).range(of: "bank", options: .backwards), language: "en")
+        let retry = try require(SentenceExcerpt.alignmentRetry(last))
+        let before = (retry.context as NSString).substring(to: retry.selection!.location)
+        try expect(before.hasSuffix("river ") && LookupTranslation.markedSentence(retry) != nil)
+        let invalid = Passage(text: "bank", context: repeated, selection: NSRange(location: 0, length: 3), language: "en")
+        try expect(SentenceExcerpt.alignmentRetry(invalid) == nil)
+        let conditional = Passage(text: "bank", context: "If the distant road is closed during the severe storm, they will wait beside the river bank and watch the rising water.", language: "en")
+        try expect(SentenceExcerpt.alignmentRetry(conditional) == nil)
+        let partial = Passage(text: "bank", context: repeated, language: "en", extent: .missingStart)
+        try expect(SentenceExcerpt.alignmentRetry(partial) == nil)
+        let longConditional = Passage(text: "bank", context: "If the road beyond the quiet village is closed during the severe storm and the distant houses are no longer safe to enter, they will wait beside the river bank and watch the rising water flow toward the distant mountains.", language: "en")
+        markedCalls = 0
+        _ = try await LookupTranslation.translate(longConditional, provider: noAlignment, dictionary: [])
+        try expect(markedCalls == 1) // The first UI excerpt must not hide the condition from the retry guard.
+
+        // Simulate the pre-26.4 provider: no attributed API is available.
+        let plainOnly = LookupTranslation.Provider(plain: noAlignment.plain, marked: nil)
+        let oldSystem = try await LookupTranslation.translate(Passage(text: "bank", context: "They sat on the river bank.", language: "en"), provider: plainOnly, dictionary: [])
+        try expect(oldSystem.origin == .unresolved && oldSystem.wordReference == "银行" && oldSystem.sentenceTranslation?.contains("岸") == true)
+        let cancelled = Task {
+            let provider = LookupTranslation.Provider(plain: { _ in throw CheckFailure(reason: "Cancelled request reached fallback") }, marked: { _ in
+                withUnsafeCurrentTask { $0?.cancel() }
+                throw CancellationError()
+            })
+            return try await LookupTranslation.translate(passage, provider: provider, dictionary: [])
+        }
+        do { _ = try await cancelled.value; throw CheckFailure(reason: "Cancellation was swallowed") }
+        catch is CancellationError { }
+        print("Alignment regressions: one bounded retry, exact second occurrence, conditional/fragment guards, secondary unconfirmed reference, old API, cancellation and cache passed.")
+    }
+
     static func testInstalledTranslation(ruledOut: Passage, ranOut: Passage) async throws {
         let source = Locale.Language(identifier: "en")
         let target = Locale.Language(identifier: "zh-Hans")
@@ -531,10 +601,9 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         }
         let long = Passage(text: "bank", context: "After a very long walk through the quiet village and past the old houses where people were preparing for the evening, they sat on the river bank and watched the water flow slowly toward the distant mountains.", language: "en")
         let longResult = try await LookupTranslation.translate(long, session: session, dictionary: [])
-        // The service may drop word emphasis in this long sample. Its independent
-        // word reference stays explicitly labeled; both context translations must
-        // describe the actual river-bank sentence rather than the isolated word.
-        try expect(longResult.isUsable && longResult.sentenceTranslation?.contains("岸") == true && longResult.excerptTranslation?.contains("岸") == true)
+        try expect(longResult.origin == .sentence && longResult.meaning.contains("岸"))
+        try expect(longResult.meaning != "银行")
+        try expect(longResult.sentenceTranslation?.contains("岸") == true && longResult.excerptTranslation?.contains("岸") == true)
         print("Long context →", longResult.meaning, "origin:", longResult.origin, "/", longResult.excerptTranslation ?? "")
         let api = try await LookupTranslation.translate(Passage(text: "API", context: "The API returns a response.", language: "en"), session: session, dictionary: [])
         try expect(api.origin == .term && api.meaning.contains("应用程序编程接口") && api.sentenceTranslation != nil)
@@ -597,7 +666,7 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         let unaligned = Passage(text: "memory", context: ranOut.context, selection: NSRange(location: 0, length: 3))
         let reference = try await LookupTranslation.translate(unaligned, session: session, dictionary: ["结束"])
         print("Unaligned memory →", reference.meaning, "/", reference.sentenceTranslation ?? "")
-        try expect(reference.origin == .standalone && reference.meaning != "结束" && reference.sentenceTranslation != nil)
+        try expect(reference.origin == .unresolved && reference.meaning.isEmpty && reference.wordReference != "结束" && reference.sentenceTranslation != nil)
         let chinese = Locale.Language(identifier: "zh-Hans")
         if await LanguageAvailability().status(from: chinese, to: source) == .installed {
             let mixedSession = TranslationSession(installedSource: chinese, target: source)
@@ -684,7 +753,7 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try expect(book.totalLookups == 1 && book.recent.first?.meaning == "排除感染")
         book.recordLookup(phrase, meaning: "排除", now: now.addingTimeInterval(1))
         try expect(book.totalLookups == 2 && book.recent.count == 1 && book.recent.first?.passage.value.isPhrase == true)
-        for index in 0..<8 { book.recordLookup(Passage(text: "word\(index)", context: "", language: "en"), meaning: "释义", now: now) }
+        for index in 0..<8 { book.recordLookup(Passage(text: "word\(index)", context: "word\(index)", language: "en"), meaning: "释义", now: now) }
         try expect(book.recent.count == 6 && book.totalLookups == 10 && book.todayLookups(now: now) == 10)
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now)!
         try expect(book.todayLookups(now: tomorrow) == 0)
@@ -706,6 +775,27 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         defaults.set(broken, forKey: "notebook.activity.v1")
         try expect(Notebook(defaults: defaults).recordLookup(phrase, meaning: "排除") == nil)
         try expect(defaults.data(forKey: "notebook.activity.v1") == broken)
+    }
+
+    static func testRegionIsOnlySavedExplicitly() throws {
+        let suite = "WaxTranslate.Test.region." + UUID().uuidString
+        let defaults = try require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let region = Passage(text: "The sample contains a green triangle.", context: "", language: "en")
+        let book = Notebook(defaults: defaults)
+        try expect(book.recordLookup(region, meaning: "样本包含一个绿色的三角形。") == nil)
+        try expect(book.totalLookups == 0 && book.recent.isEmpty && book.entries.isEmpty)
+        try expect(defaults.data(forKey: "notebook.activity.v1") == nil)
+        let word = Passage(text: "triangle", context: region.text, language: "en")
+        try expect(book.recordLookup(word, meaning: "三角形") != nil)
+        let activity = defaults.data(forKey: "notebook.activity.v1")
+        try expect(book.recordLookup(region, meaning: "样本包含一个绿色的三角形。") == nil)
+        try expect(defaults.data(forKey: "notebook.activity.v1") == activity)
+        try expect(book.save(region, translation: "样本包含一个绿色的三角形。", origin: "region"))
+        let loaded = Notebook(defaults: defaults)
+        try expect(loaded.totalLookups == 1 && loaded.recent.map(\.word) == ["triangle"])
+        try expect(loaded.entries.count == 1 && loaded.entries[0].source == region.text && loaded.entries[0].origin == "region")
+        try expect(!loaded.save(region, translation: "重复收藏"))
     }
 
     static func testReadingCancellation() throws {

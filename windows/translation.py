@@ -8,7 +8,7 @@ from threading import Lock
 import ctranslate2
 import sentencepiece
 
-from install_model import translation_dir
+from install_model import MODELS, file_identity, translation_dir
 from languages import HANGUL, NAMES, SHORT_CYRILLIC, SUPPORTED, detect_source
 from lexicon import lookup_entry
 from reader import Passage, context_excerpt, japanese_tokenizer, korean_morphemes, word_spans
@@ -20,15 +20,17 @@ _engine_lock = Lock()
 def engine(code):
     # lru_cache alone allows two initializations on concurrent cold requests.
     with _engine_lock:
-        return _load_engine(code)
+        model = translation_dir(code)
+        if model is None:
+            raise ValueError(f"请在「设置 → 语言包」下载或修复{NAMES.get(code, '中文至英语')}，安装后重新翻译。")
+        # Repaired/replaced files must not reuse the previous resident engine.
+        revision = tuple(file_identity(model / name) for name in MODELS[code].files)
+        return _load_engine(code, model, revision)
 
 
 # Keep the Chinese leg and the two most recently used source models resident.
 @lru_cache(maxsize=3)
-def _load_engine(code):
-    model = translation_dir(code)
-    if model is None:
-        raise ValueError(f"请在「设置 → 语言包」下载{NAMES.get(code, "中文至英语")}，安装后重新翻译。")
+def _load_engine(code, model, revision):
     # SentencePiece's Windows file API cannot open some non-ASCII paths.
     tokenizer = sentencepiece.SentencePieceProcessor(model_proto=(model / "sentencepiece.model").read_bytes())
     translator = ctranslate2.Translator(str(model / "model"), device="cpu", compute_type="int8",

@@ -71,6 +71,31 @@ class SettingsTests(unittest.TestCase):
         self.assertFalse(reopened.auto_online.isChecked())
         self.login.set_enabled.assert_not_called()
 
+    def test_tray_reader_opens_hidden_and_minimized_window(self):
+        self.enterContext(patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True))
+        window = self.window()
+        window.workspace.input.setPlainText("Keep this reading passage.")
+        action = next(a for a in window.tray.contextMenu().actions() if a.text() == "对照翻译")
+        for state in ("tray-launch", "close-to-tray", "minimized"):
+            with self.subTest(state=state):
+                window.tabs.setCurrentWidget(window.home)
+                if state == "minimized":
+                    window.show()
+                    window.showMinimized()
+                elif state == "close-to-tray":
+                    window.show()
+                    window.close()
+                else:
+                    window.hide()
+                QApplication.processEvents()
+                action.trigger()
+                QApplication.processEvents()
+                self.assertTrue(window.isVisible())
+                self.assertFalse(window.isMinimized())
+                self.assertIs(window.tabs.currentWidget(), window.reader_page)
+                self.assertIs(window.focusWidget(), window.workspace.input)
+                self.assertEqual(window.workspace.input.toPlainText(), "Keep this reading passage.")
+
     def test_taskbar_visibility_is_live_and_persistent(self):
         with patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True):
             window = self.window()
