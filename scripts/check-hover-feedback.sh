@@ -2,6 +2,35 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+if [[ "${1:-}" != --desktop ]]; then
+  compile() {
+    local source="$1" output="$2"
+    shift 2
+    swiftc -O -whole-module-optimization -parse-as-library -D WAX_APP_TESTS "$@" -target "$(uname -m)-apple-macosx15.2" \
+      "$source"/Sources/waxtranlate/*.swift Tests/Performance/OffscreenHover.swift -o "$output"
+  }
+  if [[ "${1:-}" == --compare && $# == 2 ]]; then
+    baseline="$(git rev-parse --verify "$2^{commit}")"
+    mkdir "$work/base"
+    git archive "$baseline" Sources | tar -x -C "$work/base"
+    compile "$work/base" "$work/baseline" -D WAX_HOVER_BASELINE
+    compile . "$work/current"
+    for version in baseline current current baseline baseline current; do
+      echo "version=$version"
+      "$work/$version"
+    done
+  elif [[ $# == 0 ]]; then
+    compile . "$work/current"
+    "$work/current"
+  else
+    echo "Usage: $0 [--compare <previous-commit> | --desktop [image-directory]]" >&2
+    exit 2
+  fi
+  exit
+fi
+shift
 profile="WaxTranslate.Test.Hover.$(uuidgen)"
 cleanup() {
   defaults delete "$profile" >/dev/null 2>&1 || true

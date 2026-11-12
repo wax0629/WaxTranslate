@@ -3,6 +3,7 @@ import NaturalLanguage
 import ScreenCaptureKit
 import Vision
 import CoreText
+import CryptoKit
 
 struct Passage: Equatable {
     let text: String
@@ -108,54 +109,138 @@ enum Reader {
         return CGRect(x: left, y: bottom, width: width, height: height)
     }
 
-    @MainActor static func capture(point: CGPoint, region: CGRect?, language: String? = nil,
-                                   readableWindows: Set<CGWindowID>, trace: LookupTrace = LookupTrace()) async throws -> Passage {
+    struct Display {
+        let id: CGDirectDisplayID
+        let frame: CGRect
+        let scale: CGFloat
+
+        @MainActor init?(at point: CGPoint) {
+            guard let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }),
+                  let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return nil }
+            self.id = id
+            frame = screen.frame
+            scale = screen.backingScaleFactor
+        }
+    }
+
+    static func capture(point: CGPoint, region: CGRect?, display: Display?, language: String?, readableWindows: Set<CGWindowID>,
+                        hoverCache: HoverCache, trace: LookupTrace) async throws -> Passage {
         try Task.checkCancellation()
-        guard CGPreflightScreenCaptureAccess() else {
-            throw ReaderError.permission
-        }
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }),
-              let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
-            throw ReaderError.noScreen
-        }
-        let bounds = region?.intersection(screen.frame) ?? hoverRect(at: point, on: screen.frame)
+        guard CGPreflightScreenCaptureAccess() else { throw ReaderError.permission }
+        guard let display else { throw ReaderError.noScreen }
         let enumerateBegan = LookupTrace.now
-        let available = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        trace.record("capture.enumerate", since: enumerateBegan)
-        guard let display = available.displays.first(where: { $0.displayID == displayID }) else { throw ReaderError.noScreen }
-        // Exclude transient UI even while WindowServer is still compositing a dismissed panel.
         let pid = ProcessInfo.processInfo.processIdentifier
+        var available = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        // Our first panel may still be laying out during enumeration. If our app
+        // is absent, wait for that main-thread update before refreshing its windows.
+        if region == nil, !available.applications.contains(where: { $0.processID == pid }),
+           await MainActor.run(body: { NSApp.windows.contains { $0 is NSPanel && $0.isVisible } }) {
+            try Task.checkCancellation()
+            available = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        }
+        trace.record("capture.enumerate", since: enumerateBegan)
+        guard let source = available.displays.first(where: { $0.displayID == display.id }) else { throw ReaderError.noScreen }
+        // Exclude transient UI even while WindowServer is still compositing a dismissed panel.
         let filter: SCContentFilter
         if let app = available.applications.first(where: { $0.processID == pid }) {
             let visible = available.windows.filter { $0.owningApplication?.processID == pid && readableWindows.contains($0.windowID) }
-            filter = SCContentFilter(display: display, excludingApplications: [app], exceptingWindows: visible)
+            filter = SCContentFilter(display: source, excludingApplications: [app], exceptingWindows: visible)
         } else {
-            filter = SCContentFilter(display: display, excludingWindows: [])
+            filter = SCContentFilter(display: source, excludingWindows: [])
         }
-        func read(_ area: CGRect) async throws -> Passage {
+        func image(in area: CGRect) async throws -> CGImage {
             try Task.checkCancellation()
-            let configuration = screenshotConfiguration(bounds: area, screen: screen.frame, scale: screen.backingScaleFactor)
-            let captureBegan = LookupTrace.now
-            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-            trace.record("capture.image", since: captureBegan)
-            try Task.checkCancellation()
-            let target = region == nil ? CGPoint(x: (point.x - area.minX) / area.width,
-                                                y: (point.y - area.minY) / area.height) : nil
-            let ocrBegan = LookupTrace.now
-            let worker = Task.detached(priority: .userInitiated) {
-                defer { trace.record("capture.ocr", since: ocrBegan) }
-                return try await recognizeCancellable(image: image, target: target, language: language, isCrop: region == nil)
-            }
-            return try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
-        }
-        let first = try await read(bounds)
-        guard region == nil else { return first }
-        return try await ContextCapture.complete(first) {
-            let expanded = expandedHoverRect(at: point, on: screen.frame)
-            guard expanded != bounds else { return first }
+            let configuration = screenshotConfiguration(bounds: area, screen: display.frame, scale: display.scale)
             let began = LookupTrace.now
-            defer { trace.record("capture.expand", since: began) }
-            return try await read(expanded)
+            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+            trace.record("capture.image", since: began)
+            try Task.checkCancellation()
+            return image
+        }
+        if let region {
+            let regionImage = try await image(in: region.intersection(display.frame))
+            let began = LookupTrace.now
+            defer { trace.record("capture.ocr", since: began) }
+            return try await recognizeCancellable(image: regionImage, target: nil, language: language, isCrop: false)
+        }
+        return try await hoverCache.passage(at: point, on: display.frame, displayID: display.id, language: language, trace: trace, image: image)
+    }
+
+    // A neighboring word can use the previous accurate observations only after a new
+    // screenshot confirms the pixels. Keep one crop in memory, including its geometry.
+    actor HoverCache {
+        private struct Entry {
+            let area: CGRect
+            let displayID: CGDirectDisplayID
+            let language: String?
+            let size: CGSize
+            let digest: SHA256.Digest
+            let lines: [VNRecognizedText]
+        }
+        private var last: Entry?
+
+        func passage(at point: CGPoint, on screen: CGRect, displayID: CGDirectDisplayID, language: String?, trace: LookupTrace,
+                     image: (CGRect) async throws -> CGImage) async throws -> Passage {
+            try Task.checkCancellation()
+            let bounds = Reader.hoverRect(at: point, on: screen)
+            let previous = last
+            func target(in area: CGRect) -> CGPoint {
+                CGPoint(x: (point.x - area.minX) / area.width, y: (point.y - area.minY) / area.height)
+            }
+            func read(_ area: CGRect) async throws -> Passage {
+                let current = try await image(area)
+                let began = LookupTrace.now
+                let size = CGSize(width: current.width, height: current.height)
+                let fingerprint = Self.digest(current)
+                try Task.checkCancellation()
+                let lines: [VNRecognizedText]
+                if let previous, previous.displayID == displayID, previous.area == area, previous.size == size,
+                   previous.language == language, previous.digest == fingerprint {
+                    lines = previous.lines
+                    trace.record("capture.ocr_reused", since: began)
+                } else {
+                    lines = try await Reader.linesCancellable(in: current, language: language)
+                    if let fingerprint {
+                        try Task.checkCancellation()
+                        last = Entry(area: area, displayID: displayID, language: language, size: size, digest: fingerprint, lines: lines)
+                    }
+                    trace.record("capture.ocr", since: began)
+                }
+                return try Reader.passage(in: lines, size: size, target: target(in: area), language: language, isCrop: true)
+            }
+            // For nearby words, first sample the same area again. Changed pixels run
+            // fresh OCR on that screenshot. Recenter on a miss or an incomplete crop.
+            if let previous, previous.displayID == displayID, previous.language == language,
+               previous.area != bounds, previous.area.size == bounds.size, screen.contains(previous.area),
+               previous.area.insetBy(dx: bounds.width / 4, dy: bounds.height / 4).contains(point) {
+                do {
+                    let nearby = try await read(previous.area)
+                    if nearby.hasCompleteContext { return nearby }
+                } catch ReaderError.noText { /* Retry with the normal centered crop. */ }
+                try Task.checkCancellation()
+            }
+            let first = try await read(bounds)
+            return try await ContextCapture.complete(first) {
+                let expanded = Reader.expandedHoverRect(at: point, on: screen)
+                guard expanded != bounds else { return first }
+                let began = LookupTrace.now
+                defer { trace.record("capture.expand", since: began) }
+                return try await Reader.recognizeCancellable(image: image(expanded), target: target(in: expanded),
+                                                             language: language, isCrop: true)
+            }
+        }
+
+        // A CGImage can be a slice backed by its parent's provider. Hash the drawn
+        // pixels in a fixed color space, independent of provider padding and origin.
+        private static func digest(_ image: CGImage) -> SHA256.Digest? {
+            let rowBytes = image.width * 4
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+                  let canvas = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                                         bytesPerRow: rowBytes, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+                  let bytes = canvas.data else { return nil }
+            canvas.setBlendMode(.copy)
+            canvas.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            return SHA256.hash(data: UnsafeRawBufferPointer(start: bytes, count: rowBytes * image.height))
         }
     }
 
@@ -181,29 +266,41 @@ enum Reader {
     }
 
     private static func recognizeCancellable(image: CGImage, target: CGPoint?, language: String?, isCrop: Bool) async throws -> Passage {
+        let lines = try await linesCancellable(in: image, language: language)
+        return try passage(in: lines, size: CGSize(width: image.width, height: image.height), target: target, language: language, isCrop: isCrop)
+    }
+
+    private static func linesCancellable(in image: CGImage, language: String?) async throws -> [VNRecognizedText] {
         let request = VNRecognizeTextRequest()
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
-            let value = try recognize(image: image, target: target, language: language, isCrop: isCrop, request: request)
+            let lines = try recognizedLines(in: image, language: language, request: request)
             try Task.checkCancellation()
-            return value
+            return lines
         } onCancel: { request.cancel() }
     }
 
-    static func recognize(image: CGImage, target: CGPoint?, language: String? = nil, isCrop: Bool = false,
-                          request: VNRecognizeTextRequest = VNRecognizeTextRequest()) throws -> Passage {
+    static func recognize(image: CGImage, target: CGPoint?, language: String? = nil, isCrop: Bool = false) throws -> Passage {
+        let lines = try recognizedLines(in: image, language: language, request: VNRecognizeTextRequest())
+        return try passage(in: lines, size: CGSize(width: image.width, height: image.height), target: target, language: language, isCrop: isCrop)
+    }
+
+    private static func recognizedLines(in image: CGImage, language: String?, request: VNRecognizeTextRequest) throws -> [VNRecognizedText] {
         request.recognitionLevel = .accurate
         request.automaticallyDetectsLanguage = language == nil || language == ""
         let requested = language.flatMap { $0.isEmpty ? nil : $0 }
         request.recognitionLanguages = requested.map { [$0] } ?? ["en-US", "zh-Hans", "fr-FR", "de-DE", "es-ES", "it-IT", "ja-JP", "ko-KR", "pt-BR", "ru-RU"]
         try VNImageRequestHandler(cgImage: image).perform([request])
-        let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first }
+        return (request.results ?? []).compactMap { $0.topCandidates(1).first }
+    }
+
+    private static func passage(in lines: [VNRecognizedText], size: CGSize, target: CGPoint?, language: String?, isCrop: Bool) throws -> Passage {
+        let requested = language.flatMap { $0.isEmpty ? nil : $0 }
         guard let target else {
             let text = lines.map(\.string).joined(separator: "\n")
             guard !text.isEmpty else { throw ReaderError.noText }
             return Passage(text: text, context: "", language: requested)
         }
-        let size = CGSize(width: image.width, height: image.height)
         let point = CGPoint(x: target.x * size.width, y: target.y * size.height)
         return try SentenceContext.passage(in: lines.flatMap { fragments(of: $0, imageSize: size, point: point) }, language: requested,
                                            captureBounds: isCrop ? CGRect(origin: .zero, size: size) : nil)

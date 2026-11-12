@@ -17,6 +17,7 @@ import Combine
     private(set) var panel: NSPanel?
     private var overlay: SelectionPanel?
     private(set) var job: Task<Void, Never>?
+    private let hoverCache = Reader.HoverCache()
     private var ocrWarmup: Task<Void, Never>?
     private var shortcuts: Shortcuts!
     private var shortcutErrors: [String] = []
@@ -298,10 +299,7 @@ import Combine
         let trace = LookupTrace()
         guard readyToCapture() else { return }
         reset()
-        let began = LookupTrace.now
-        let pending = show(PendingLookupCard(close: { [weak self] in self?.reset() }), at: point, focus: testHover)
-        trace.record("lookup.pending_shown", since: began)
-        translate(at: point, region: nil, trace: trace, pending: pending)
+        translate(at: point, region: nil, trace: trace)
     }
 
     @objc private func chooseArea() {
@@ -338,18 +336,28 @@ import Combine
         return false
     }
 
-    private func translate(at point: CGPoint, region: CGRect?, trace: LookupTrace = LookupTrace(), pending: NSPanel? = nil) {
+    private func translate(at point: CGPoint, region: CGRect?, trace: LookupTrace = LookupTrace()) {
         ocrWarmup?.cancel()
         ocrWarmup = nil
+        // Capture can start while the main thread lays out the waiting card.
+        let windows = NSApp.windows.compactMap { window -> CGWindowID? in
+            guard window.isVisible, !(window is LookupPanel), !(window is SelectionPanel) else { return nil }
+            return CGWindowID(exactly: window.windowNumber)
+        }
+        let display = Reader.Display(at: point), language = preferences.language.rawValue
+        let capture = Task.detached(priority: .userInitiated) { [hoverCache] in
+            try await Reader.capture(point: point, region: region, display: display, language: language, readableWindows: Set(windows),
+                                     hoverCache: hoverCache, trace: trace)
+        }
+        let pending: NSPanel?
+        if region == nil {
+            let began = LookupTrace.now
+            pending = show(PendingLookupCard(close: { [weak self] in self?.reset() }), at: point, focus: testHover)
+            trace.record("lookup.pending_shown", since: began)
+        } else { pending = nil }
         job = Task {
             do {
-                // Keep normal windows (including our reading page) available for lookup.
-                let readableWindows = NSApp.windows.compactMap { window -> CGWindowID? in
-                    guard window.isVisible, !(window is LookupPanel), !(window is SelectionPanel) else { return nil }
-                    return CGWindowID(exactly: window.windowNumber)
-                }
-                let passage = try await Reader.capture(point: point, region: region, language: preferences.language.rawValue,
-                                                       readableWindows: Set(readableWindows), trace: trace)
+                let passage = try await withTaskCancellationHandler { try await capture.value } onCancel: { capture.cancel() }
                 try Task.checkCancellation()
                 guard pending == nil || panel === pending else { return }
                 present(passage, at: point, focus: testHover, trace: trace, pending: pending)
