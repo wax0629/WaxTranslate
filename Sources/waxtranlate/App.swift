@@ -101,7 +101,7 @@ import Combine
             present(recent.passage.value, at: CGPoint(x: NSScreen.main?.visibleFrame.midX ?? 400, y: NSScreen.main?.visibleFrame.midY ?? 400), focus: true)
         }
         else if preferences.showOnLaunch || ProcessInfo.processInfo.arguments.contains("--show") { showLibrary() }
-        if !testHover { TranslationWarmup.start() }
+        if !testHover || ProcessInfo.processInfo.arguments.contains("--test-hover-series") { TranslationWarmup.start() }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -118,18 +118,40 @@ import Combine
 
     private func runCaptureFixture() {
         guard readyToCapture(), let screen = NSScreen.main else { return }
-        let view = CaptureFixtureView(frame: NSRect(x: 0, y: 0, width: screen.visibleFrame.width - 40, height: 240))
+        let view = CaptureFixtureView(frame: NSRect(x: 0, y: 0, width: min(1200, screen.visibleFrame.width - 40), height: 240))
         let fixture = NSWindow(contentRect: view.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
         fixture.title = "WaxTranslate · 隔离屏幕取词测试"
+        fixture.level = .floating
+        fixture.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         fixture.contentView = view
-        fixture.center()
+        let available = screen.visibleFrame
+        fixture.setFrameOrigin(NSPoint(x: available.midX - fixture.frame.width / 2,
+                                       y: available.minY + max(0, available.height - fixture.frame.height) / 5))
         fixture.isReleasedWhenClosed = false
         captureFixture = fixture
         NSApp.activate(ignoringOtherApps: true)
         fixture.makeKeyAndOrderFront(nil)
         view.displayIfNeeded()
-        let point = fixture.convertPoint(toScreen: view.convert(view.samplePoint, to: nil))
-        translate(at: point, region: nil)
+        func lookup(_ word: String) {
+            let point = fixture.convertPoint(toScreen: view.convert(view.samplePoint(for: word), to: nil))
+            hover(at: point)
+        }
+        guard ProcessInfo.processInfo.arguments.contains("--test-hover-series") else { lookup("out"); return }
+        Task {
+            // A menu bar app is usually already resident when the reader looks up the first word.
+            try await Task.sleep(nanoseconds: 6_000_000_000)
+            for word in ["out", "results", "out", "results", "out"] {
+                lookup(word)
+                await job?.value
+                let shown = (panel?.contentView as? NSHostingView<ResultCard>)?.rootView.passage
+                guard shown?.text == (word == "out" ? "rule out" : word), shown?.context == view.sentence else {
+                    FileHandle.standardError.write(Data("Hover fixture failed to show the expected word and sentence.\n".utf8))
+                    exit(1)
+                }
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            NSApp.terminate(nil)
+        }
     }
 
     private func setDockVisible(_ visible: Bool) {
@@ -242,10 +264,11 @@ import Combine
         if let window = notification.object as? NSWindow, window === panel { reset() }
     }
 
-    private func hover() {
+    private func hover(at point: CGPoint = NSEvent.mouseLocation) {
+        let trace = LookupTrace()
         guard readyToCapture() else { return }
         reset()
-        translate(at: NSEvent.mouseLocation, region: nil)
+        translate(at: point, region: nil, trace: trace)
     }
 
     @objc private func chooseArea() {
@@ -282,8 +305,7 @@ import Combine
         return false
     }
 
-    private func translate(at point: CGPoint, region: CGRect?) {
-        let trace = LookupTrace()
+    private func translate(at point: CGPoint, region: CGRect?, trace: LookupTrace = LookupTrace()) {
         job = Task {
             do {
                 let began = LookupTrace.now
@@ -316,6 +338,7 @@ import Combine
     }
 
     private func present(_ passage: Passage, at point: CGPoint, focus: Bool = false, trace: LookupTrace = LookupTrace()) {
+        let began = LookupTrace.now
         let generation = UUID()
         cardGeneration = generation
         let card = ResultCard(passage: passage, notebook: notebook, preferences: preferences, trace: trace, close: { [weak self] in self?.reset() },
@@ -333,6 +356,7 @@ import Combine
                                          y: max(area.minY, min(top - panel.frame.height, area.maxY - panel.frame.height))))
         }, query: { [weak self] next in self?.present(next, at: point, focus: true) })
         show(card, at: point, focus: focus)
+        trace.record("lookup.card_shown", since: began)
     }
 
     private func speak(_ text: String, language: String) {
@@ -395,15 +419,19 @@ private final class LookupPanel: NSPanel {
 }
 
 private final class CaptureFixtureView: NSView {
-    private let sentence = "These results do not rule out infection."
+    let sentence = "These results do not rule out infection."
     private let font = NSFont.systemFont(ofSize: 24)
-    var samplePoint: CGPoint {
-        let prefix = "These results do not rule " as NSString
-        return CGPoint(x: 40 + prefix.size(withAttributes: [.font: font]).width + ("out" as NSString).size(withAttributes: [.font: font]).width / 2,
-                       y: 110 + font.ascender * 0.55)
+    private var textOrigin: CGPoint {
+        let width = (sentence as NSString).size(withAttributes: [.font: font]).width
+        return CGPoint(x: max(0, (bounds.width - width) / 2), y: 110)
+    }
+    func samplePoint(for word: String) -> CGPoint {
+        let prefix = sentence.components(separatedBy: word)[0] as NSString
+        return CGPoint(x: textOrigin.x + prefix.size(withAttributes: [.font: font]).width + (word as NSString).size(withAttributes: [.font: font]).width / 2,
+                       y: textOrigin.y + font.ascender * 0.55)
     }
     override func draw(_ dirtyRect: NSRect) {
         NSColor.white.setFill(); bounds.fill()
-        (sentence as NSString).draw(at: NSPoint(x: 40, y: 110), withAttributes: [.font: font, .foregroundColor: NSColor.black])
+        (sentence as NSString).draw(at: textOrigin, withAttributes: [.font: font, .foregroundColor: NSColor.black])
     }
 }
