@@ -15,7 +15,7 @@ struct ResultCard: View {
     let query: (Passage) -> Void
     private let source: Locale.Language
     private let target: Locale.Language
-    private let dictionary: [String]
+    @State private var dictionary: [String] = []
     private let term: TermMeaning?
     private let cacheHit: Bool
     private let policy: LookupPolicy
@@ -50,24 +50,20 @@ struct ResultCard: View {
         self.pin = pin
         self.resize = resize
         self.query = query
-        policy = LookupPolicy(passage)
-        _contextVisible = State(initialValue: LookupPolicy(passage).defaultsToContext)
+        let decision = LookupPolicy(passage)
+        policy = decision
+        _contextVisible = State(initialValue: decision.defaultsToContext)
         excerpt = SentenceExcerpt(passage)
         let languageBegan = LookupTrace.now
         let language = passage.sourceLanguage
         trace.record("lookup.language", since: languageBegan)
         source = Locale.Language(identifier: language)
         target = Locale.Language(identifier: language.hasPrefix("zh") ? "en" : "zh-Hans")
-        let began = LookupTrace.now
-        let decision = LookupPolicy(passage)
-        dictionary = decision.needsConfirmation ? [] : CompactGloss.candidates(for: passage, language: language)
-            + (CompactGloss.mixedEnglishReference(for: passage).flatMap { $0.hasPrefix("名称组成词参考") ? nil : [$0] } ?? [])
         term = decision.term
-        trace.record("lookup.dictionary_and_terms", since: began)
         let cached = !decision.needsConfirmation ? (initialResult ?? LookupCache.shared.result(for: passage)) : nil
         cacheHit = cached != nil
         _phase = State(initialValue: cached == nil && term == nil && !decision.needsConfirmation ? .checking : .done)
-        _result = State(initialValue: decision.needsConfirmation ? LookupResult(meaning: "", origin: .unresolved) : LookupResult.initial(term: term, cached: cached, dictionary: dictionary))
+        _result = State(initialValue: decision.needsConfirmation ? LookupResult(meaning: "", origin: .unresolved) : LookupResult.initial(term: term, cached: cached, dictionary: []))
     }
 
     private var hasSentence: Bool { !passage.context.isEmpty && passage.context != passage.text }
@@ -118,6 +114,19 @@ struct ResultCard: View {
         .onPreferenceChange(CardSizeKey.self, perform: resize)
         .task {
             let began = LookupTrace.now
+            if result == nil && !isRegion {
+                let references = await CompactGloss.references(for: passage)
+                guard !Task.isCancelled else { return }
+                dictionary = references
+                if let meaning = references.first, result?.isUsable != true {
+                    var reference = LookupResult(meaning: meaning, origin: .dictionary)
+                    reference.sentenceTranslation = result?.sentenceTranslation
+                    reference.excerptTranslation = result?.excerptTranslation
+                    result = reference
+                }
+                trace.record("lookup.dictionary", since: began)
+            }
+            guard !Task.isCancelled else { return }
             if let result { record(result); trace.record("lookup.first_reference", since: began) }
             if policy.needsConfirmation { phase = .done; return }
             if !policy.automaticallyTranslatesContext {

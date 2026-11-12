@@ -80,6 +80,17 @@ struct LookupResult {
 }
 
 enum CompactGloss {
+    // Dictionary Services may load its data on the first word. Keep this work off the card's UI actor.
+    static func references(for passage: Passage) async -> [String] {
+        guard !Task.isCancelled else { return [] }
+        var references = candidates(for: passage, language: passage.sourceLanguage)
+        guard !Task.isCancelled else { return [] }
+        if let independent = mixedEnglishReference(for: passage), !independent.hasPrefix("名称组成词参考") {
+            references.append(independent)
+        }
+        return references
+    }
+
     static func candidates(for passage: Passage, language: String) -> [String] {
         // Dictionary Services can return an entry for just one word of a phrase.
         guard language == "en", !passage.isPhrase, let selection = passage.selection,

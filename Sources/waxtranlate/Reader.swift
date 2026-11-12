@@ -108,7 +108,9 @@ enum Reader {
         return CGRect(x: left, y: bottom, width: width, height: height)
     }
 
-    @MainActor static func capture(point: CGPoint, region: CGRect?, language: String? = nil, trace: LookupTrace = LookupTrace()) async throws -> Passage {
+    @MainActor static func capture(point: CGPoint, region: CGRect?, language: String? = nil,
+                                   readableWindows: Set<CGWindowID>, trace: LookupTrace = LookupTrace()) async throws -> Passage {
+        try Task.checkCancellation()
         guard CGPreflightScreenCaptureAccess() else {
             throw ReaderError.permission
         }
@@ -121,7 +123,15 @@ enum Reader {
         let available = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         trace.record("capture.enumerate", since: enumerateBegan)
         guard let display = available.displays.first(where: { $0.displayID == displayID }) else { throw ReaderError.noScreen }
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        // Exclude transient UI even while WindowServer is still compositing a dismissed panel.
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let filter: SCContentFilter
+        if let app = available.applications.first(where: { $0.processID == pid }) {
+            let visible = available.windows.filter { $0.owningApplication?.processID == pid && readableWindows.contains($0.windowID) }
+            filter = SCContentFilter(display: display, excludingApplications: [app], exceptingWindows: visible)
+        } else {
+            filter = SCContentFilter(display: display, excludingWindows: [])
+        }
         func read(_ area: CGRect) async throws -> Passage {
             try Task.checkCancellation()
             let configuration = screenshotConfiguration(bounds: area, screen: screen.frame, scale: screen.backingScaleFactor)
@@ -134,10 +144,7 @@ enum Reader {
             let ocrBegan = LookupTrace.now
             let worker = Task.detached(priority: .userInitiated) {
                 defer { trace.record("capture.ocr", since: ocrBegan) }
-                try Task.checkCancellation()
-                let value = try recognize(image: image, target: target, language: language, isCrop: region == nil)
-                try Task.checkCancellation()
-                return value
+                return try await recognizeCancellable(image: image, target: target, language: language, isCrop: region == nil)
             }
             return try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
         }
@@ -158,8 +165,33 @@ enum Reader {
                       y: min(max(point.y - height / 2, screen.minY), screen.maxY - height), width: width, height: height)
     }
 
-    static func recognize(image: CGImage, target: CGPoint?, language: String? = nil, isCrop: Bool = false) throws -> Passage {
+    // Load the accurate text recognizer once, using a known word without accessing the screen.
+    static func warmUp(language: String?) async {
+        guard !Task.isCancelled,
+              let canvas = CGContext(data: nil, width: 160, height: 48, bitsPerComponent: 8, bytesPerRow: 160,
+                                     space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return }
+        canvas.setFillColor(gray: 1, alpha: 1)
+        canvas.fill(CGRect(x: 0, y: 0, width: canvas.width, height: canvas.height))
+        canvas.setFillColor(gray: 0, alpha: 1)
+        canvas.textPosition = CGPoint(x: 8, y: 12)
+        let word = NSAttributedString(string: "Read", attributes: [.font: CTFontCreateWithName("Helvetica" as CFString, 26, nil)])
+        CTLineDraw(CTLineCreateWithAttributedString(word), canvas)
+        guard let image = canvas.makeImage() else { return }
+        _ = try? await recognizeCancellable(image: image, target: nil, language: language, isCrop: false)
+    }
+
+    private static func recognizeCancellable(image: CGImage, target: CGPoint?, language: String?, isCrop: Bool) async throws -> Passage {
         let request = VNRecognizeTextRequest()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            let value = try recognize(image: image, target: target, language: language, isCrop: isCrop, request: request)
+            try Task.checkCancellation()
+            return value
+        } onCancel: { request.cancel() }
+    }
+
+    static func recognize(image: CGImage, target: CGPoint?, language: String? = nil, isCrop: Bool = false,
+                          request: VNRecognizeTextRequest = VNRecognizeTextRequest()) throws -> Passage {
         request.recognitionLevel = .accurate
         request.automaticallyDetectsLanguage = language == nil || language == ""
         let requested = language.flatMap { $0.isEmpty ? nil : $0 }
