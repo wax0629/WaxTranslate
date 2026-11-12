@@ -37,6 +37,16 @@ enum LocalTerminology {
     static func lookup(_ passage: Passage) -> TermMeaning? {
         if let selected = passage.selection, let range = Range(selected, in: passage.context), passage.context[range] == passage.text {
             let context = passage.context
+            if passage.text.caseInsensitiveCompare("Option") == .orderedSame {
+                let before = String(context[..<range.lowerBound].suffix(32))
+                let after = String(context[range.upperBound...].prefix(24))
+                let keyName = matches(#"^\s*(?:[键鍵](?![值名])|key\b|[（(]?⌥)"#, in: after)
+                let press = matches(#"(?:按(?:下|住|一下)?|松开|鬆開|\b(?:press|tap|release|hold(?: down)?)(?: the)?)\s*$"#, in: before)
+                let choice = after.range(of: #"^\s*(?:按钮|按鈕|菜单|菜單|(?i:button|menu)\b)|^\s+[A-Z0-9]\b"#, options: .regularExpression) != nil
+                if keyName || passage.text == "Option" && press && !choice {
+                    return TermMeaning(label: "语境术语参考", meaning: "Mac 键盘上的 Option（⌥）修饰键。", kind: "键名")
+                }
+            }
             if passage.text == "INTEGER", context.range(of: #"字段|数据类型|整数|编程|数据库|\b(?:column|type|SQL)\b"#, options: [.regularExpression, .caseInsensitive]) != nil {
                 return TermMeaning(label: "术语参考", meaning: "整数类型，用于存储没有小数部分的数值。", kind: "数据类型")
             }
