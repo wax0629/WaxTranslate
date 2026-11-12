@@ -70,6 +70,8 @@ jobs:
         with:
           name: WaxTranslate-Mac-Sentence-Boundaries
           path: boundary-artifacts
+      - name: Verify contextual lookups on offscreen images
+        run: ./scripts/check-hover-feedback.sh
       - name: Render native card layout fixtures without desktop input
         run: ./scripts/check-card-layouts.sh card-layout-artifacts
       - uses: actions/upload-artifact@v4

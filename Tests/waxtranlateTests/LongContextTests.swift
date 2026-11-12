@@ -26,6 +26,7 @@ import Translation
         try await recordedOutputs()
         try await failureBoundaries()
         try await providerAndPersistence()
+        try await progressiveMeaning()
         try await installed()
     }
 
@@ -154,6 +155,29 @@ import Translation
         try check(loaded.entries.count == 1 && loaded.entries[0].source == "bank" && loaded.entries[0].target == "河岸" && loaded.entries[0].passage.selection == passage.selection && loaded.entries[0].context == text, "reloaded word lost original context or exact occurrence")
         try check(loaded.entries[0].sentenceTranslation == sentence && loaded.totalLookups == 1, "reloaded translation/count changed")
         print("Plain-provider recovery: UTF-16 occurrence, 2-probe budget, original translation, cache isolation, save and reload passed.")
+    }
+
+    private static func progressiveMeaning() async throws {
+        let passage = Passage(text: "bank", context: river, language: "en")
+        try check(SentenceExcerpt(passage).isTruncated, "fixture requires a separate full translation")
+        var events: [String] = []
+        func dictionary() -> [String] { events.append("dictionary"); return ["银行"] }
+        let provider = LookupTranslation.Provider(plain: { text in
+            try check(text == river, "unexpected extra model request")
+            events.append("full")
+            return "他们坐在河岸上看水。"
+        }, marked: { _ in
+            var gloss = AttributedString("河岸")
+            gloss.inlinePresentationIntent = .stronglyEmphasized
+            return .init(text: "他们坐在河岸。", attributed: AttributedString("他们坐在") + gloss + AttributedString("。"))
+        })
+        let result = try await LookupTranslation.translate(passage, provider: provider, dictionary: dictionary()) { excerpt in
+            events.append(excerpt.meaning)
+            if excerpt.sentenceTranslation != nil || excerpt.excerptTranslation == nil { events.append("wrong excerpt") }
+        }
+        try check(events == ["河岸", "full"] && result.sentenceTranslation == "他们坐在河岸上看水。",
+                  "confirmed sense must precede full translation and avoid waiting for the dictionary")
+        print("Confirmed excerpt appeared before the full sentence; unambiguous alignment bypassed dictionary waiting.")
     }
 
     private static func installed() async throws {

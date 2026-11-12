@@ -14,9 +14,11 @@ import Combine
     private var status: NSStatusItem!
     private var library: NSWindow?
     private var captureFixture: NSWindow?
-    private var panel: NSPanel?
+    private(set) var panel: NSPanel?
     private var overlay: SelectionPanel?
-    private var job: Task<Void, Never>?
+    private(set) var job: Task<Void, Never>?
+    private let hoverCache = Reader.HoverCache()
+    private var ocrWarmup: Task<Void, Never>?
     private var shortcuts: Shortcuts!
     private var shortcutErrors: [String] = []
     private let captureAccess: () -> Bool
@@ -101,7 +103,13 @@ import Combine
             present(recent.passage.value, at: CGPoint(x: NSScreen.main?.visibleFrame.midX ?? 400, y: NSScreen.main?.visibleFrame.midY ?? 400), focus: true)
         }
         else if preferences.showOnLaunch || ProcessInfo.processInfo.arguments.contains("--show") { showLibrary() }
-        if !testHover { TranslationWarmup.start() }
+        if !testHover || ProcessInfo.processInfo.arguments.contains("--test-hover-series") {
+            TranslationWarmup.start()
+            if preferences.shortcut != .disabled, captureAccess() {
+                let language = preferences.language.rawValue
+                ocrWarmup = Task.detached(priority: .utility) { await Reader.warmUp(language: language) }
+            }
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -117,19 +125,64 @@ import Combine
     @objc private func quit() { NSApp.terminate(nil) }
 
     private func runCaptureFixture() {
-        guard readyToCapture(), let screen = NSScreen.main else { return }
-        let view = CaptureFixtureView(frame: NSRect(x: 0, y: 0, width: screen.visibleFrame.width - 40, height: 240))
+        guard readyToCapture(), let screen = NSScreen.main else {
+            if ProcessInfo.processInfo.arguments.contains("--test-hover-series") || ProcessInfo.processInfo.arguments.contains("--test-hover-checks") {
+                FileHandle.standardError.write(Data("Hover fixture requires a display and existing screen capture permission.\n".utf8))
+                exit(1)
+            }
+            return
+        }
+        let view = CaptureFixtureView(frame: NSRect(x: 0, y: 0, width: min(1200, screen.visibleFrame.width - 40), height: 240))
         let fixture = NSWindow(contentRect: view.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
         fixture.title = "WaxTranslate · 隔离屏幕取词测试"
+        fixture.level = .floating
+        fixture.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         fixture.contentView = view
-        fixture.center()
+        let available = screen.visibleFrame
+        fixture.setFrameOrigin(NSPoint(x: available.midX - fixture.frame.width / 2,
+                                       y: available.minY + max(0, available.height - fixture.frame.height) / 5))
         fixture.isReleasedWhenClosed = false
         captureFixture = fixture
         NSApp.activate(ignoringOtherApps: true)
         fixture.makeKeyAndOrderFront(nil)
         view.displayIfNeeded()
-        let point = fixture.convertPoint(toScreen: view.convert(view.samplePoint, to: nil))
-        translate(at: point, region: nil)
+        func sample(_ word: String) -> CGPoint {
+            fixture.convertPoint(toScreen: view.convert(view.samplePoint(for: word), to: nil))
+        }
+        #if WAX_HOVER_CHECKS
+        if ProcessInfo.processInfo.arguments.contains("--test-hover-checks") {
+            Task {
+                do {
+                    try await checkHoverFeedback(sample: sample, sentence: view.sentence, notebook: notebook) { rect in
+                        self.chooseArea()
+                        (self.overlay?.contentView as? SelectionView)?.finish(rect)
+                    }
+                    FileHandle.standardError.write(Data("Passed: pending, same-window result, occlusion, replacement, close, region and empty capture.\n".utf8))
+                    NSApp.terminate(nil)
+                } catch {
+                    FileHandle.standardError.write(Data("Hover feedback check failed: \(error)\n".utf8))
+                    exit(1)
+                }
+            }
+            return
+        }
+        #endif
+        guard ProcessInfo.processInfo.arguments.contains("--test-hover-series") else { hover(at: sample("out")); return }
+        Task {
+            // A menu bar app is usually already resident when the reader looks up the first word.
+            try await Task.sleep(nanoseconds: 6_000_000_000)
+            for word in ["out", "results", "out", "results", "out"] {
+                hover(at: sample(word))
+                await job?.value
+                let shown = (panel?.contentView as? NSHostingView<ResultCard>)?.rootView.passage
+                guard shown?.text == (word == "out" ? "rule out" : word), shown?.context == view.sentence else {
+                    FileHandle.standardError.write(Data("Hover fixture failed to show the expected word and sentence.\n".utf8))
+                    exit(1)
+                }
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            NSApp.terminate(nil)
+        }
     }
 
     private func setDockVisible(_ visible: Bool) {
@@ -242,10 +295,11 @@ import Combine
         if let window = notification.object as? NSWindow, window === panel { reset() }
     }
 
-    private func hover() {
+    func hover(at point: CGPoint = NSEvent.mouseLocation) {
+        let trace = LookupTrace()
         guard readyToCapture() else { return }
         reset()
-        translate(at: NSEvent.mouseLocation, region: nil)
+        translate(at: point, region: nil, trace: trace)
     }
 
     @objc private func chooseArea() {
@@ -282,25 +336,39 @@ import Combine
         return false
     }
 
-    private func translate(at point: CGPoint, region: CGRect?) {
-        let trace = LookupTrace()
+    private func translate(at point: CGPoint, region: CGRect?, trace: LookupTrace = LookupTrace()) {
+        ocrWarmup?.cancel()
+        ocrWarmup = nil
+        // Capture can start while the main thread lays out the waiting card.
+        let windows = NSApp.windows.compactMap { window -> CGWindowID? in
+            guard window.isVisible, !(window is LookupPanel), !(window is SelectionPanel) else { return nil }
+            return CGWindowID(exactly: window.windowNumber)
+        }
+        let display = Reader.Display(at: point), language = preferences.language.rawValue
+        let capture = Task.detached(priority: .userInitiated) { [hoverCache] in
+            try await Reader.capture(point: point, region: region, display: display, language: language, readableWindows: Set(windows),
+                                     hoverCache: hoverCache, trace: trace)
+        }
+        let pending: NSPanel?
+        if region == nil {
+            let began = LookupTrace.now
+            pending = show(PendingLookupCard(close: { [weak self] in self?.reset() }), at: point, focus: testHover)
+            trace.record("lookup.pending_shown", since: began)
+        } else { pending = nil }
         job = Task {
             do {
-                let began = LookupTrace.now
-                // Let the window server remove our previous panel or selection overlay.
-                try await Task.sleep(nanoseconds: 110_000_000)
-                trace.record("capture.dismiss_wait", since: began)
-                let passage = try await Reader.capture(point: point, region: region, language: preferences.language.rawValue, trace: trace)
+                let passage = try await withTaskCancellationHandler { try await capture.value } onCancel: { capture.cancel() }
                 try Task.checkCancellation()
-                present(passage, at: point, focus: testHover, trace: trace)
+                guard pending == nil || panel === pending else { return }
+                present(passage, at: point, focus: testHover, trace: trace, pending: pending)
             } catch {
-                guard !Task.isCancelled else { return }
-                showError(error, at: point)
+                guard !Task.isCancelled, pending == nil || panel === pending else { return }
+                showError(error, at: point, pending: pending)
             }
         }
     }
 
-    private func showError(_ error: Error, at point: CGPoint) {
+    private func showError(_ error: Error, at point: CGPoint, pending: NSPanel? = nil) {
         let message = VStack(alignment: .leading, spacing: 12) {
             Text(error.localizedDescription).fixedSize(horizontal: false, vertical: true)
             HStack {
@@ -312,10 +380,11 @@ import Combine
             }
         }.padding().frame(width: 330)
             .foregroundStyle(DeskTheme.ink).tint(DeskTheme.accent).background(DeskTheme.sheet)
-        show(message, at: point, focus: testHover)
+        show(message, at: point, focus: testHover, updating: pending)
     }
 
-    private func present(_ passage: Passage, at point: CGPoint, focus: Bool = false, trace: LookupTrace = LookupTrace()) {
+    private func present(_ passage: Passage, at point: CGPoint, focus: Bool = false, trace: LookupTrace = LookupTrace(), pending: NSPanel? = nil) {
+        let began = LookupTrace.now
         let generation = UUID()
         cardGeneration = generation
         let card = ResultCard(passage: passage, notebook: notebook, preferences: preferences, trace: trace, close: { [weak self] in self?.reset() },
@@ -332,7 +401,8 @@ import Combine
             panel.setFrameOrigin(CGPoint(x: min(max(area.minX, panel.frame.minX), area.maxX - panel.frame.width),
                                          y: max(area.minY, min(top - panel.frame.height, area.maxY - panel.frame.height))))
         }, query: { [weak self] next in self?.present(next, at: point, focus: true) })
-        show(card, at: point, focus: focus)
+        show(card, at: point, focus: focus, updating: pending)
+        trace.record("lookup.card_shown", since: began)
     }
 
     private func speak(_ text: String, language: String) {
@@ -343,12 +413,8 @@ import Combine
         voice.speak(utterance)
     }
 
-    private func show<V: View>(_ content: V, at point: CGPoint, focus: Bool = false) {
-        dismissPanel()
-        let host = NSHostingView(rootView: content)
-        let size = host.fittingSize
-        let window = LookupPanel(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
-                             backing: .buffered, defer: false)
+    private func makePanel() -> LookupPanel {
+        let window = LookupPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         window.title = "取词结果"
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
@@ -360,10 +426,20 @@ import Combine
         window.isFloatingPanel = true
         window.hidesOnDeactivate = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        window.contentView = host
+        window.delegate = self
+        return window
+    }
+
+    @discardableResult
+    private func show<V: View>(_ content: V, at point: CGPoint, focus: Bool = false, updating: NSPanel? = nil) -> NSPanel {
+        if updating == nil { dismissPanel() }
+        let window = updating ?? makePanel()
+        let host = NSHostingView(rootView: content)
+        let size = host.fittingSize
         host.wantsLayer = true
         host.layer?.cornerRadius = 12
         host.layer?.masksToBounds = true
+        window.contentView = host
         window.setContentSize(size)
         let area = (NSScreen.screens.first(where: { $0.frame.contains(point) }) ?? NSScreen.main)?.visibleFrame ?? .zero
         let x = min(max(area.minX, point.x + 14), area.maxX - window.frame.width)
@@ -371,10 +447,10 @@ import Combine
         let y = below >= area.minY ? below : min(point.y + 14, area.maxY - window.frame.height)
         window.setFrameOrigin(CGPoint(x: x, y: y))
         panel = window
-        window.delegate = self
         #if WAX_APP_TESTS
         window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
         #else
+        if updating != nil { return window }
         if focus {
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
@@ -382,11 +458,28 @@ import Combine
         } else if NSApp.isActive { window.makeKeyAndOrderFront(nil) }
         else { window.orderFrontRegardless() }
         #endif
+        return window
     }
 
     #if WAX_APP_TESTS
     var testPanel: NSPanel? { panel }
     #endif
+}
+
+struct PendingLookupCard: View {
+    let close: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "text.magnifyingglass").foregroundStyle(DeskTheme.muted).accessibilityHidden(true)
+            Text("正在取词…").font(.callout)
+            Spacer()
+            Button(action: close) { Image(systemName: "xmark") }
+                .buttonStyle(.plain).help("关闭").accessibilityLabel("关闭取词卡").keyboardShortcut(.cancelAction)
+        }
+        .padding(19).frame(width: 365)
+        .foregroundStyle(DeskTheme.ink).background(DeskTheme.sheet)
+    }
 }
 
 private final class LookupPanel: NSPanel {
@@ -395,15 +488,19 @@ private final class LookupPanel: NSPanel {
 }
 
 private final class CaptureFixtureView: NSView {
-    private let sentence = "These results do not rule out infection."
+    let sentence = "These results do not rule out infection."
     private let font = NSFont.systemFont(ofSize: 24)
-    var samplePoint: CGPoint {
-        let prefix = "These results do not rule " as NSString
-        return CGPoint(x: 40 + prefix.size(withAttributes: [.font: font]).width + ("out" as NSString).size(withAttributes: [.font: font]).width / 2,
-                       y: 110 + font.ascender * 0.55)
+    private var textOrigin: CGPoint {
+        let width = (sentence as NSString).size(withAttributes: [.font: font]).width
+        return CGPoint(x: max(0, (bounds.width - width) / 2), y: 110)
+    }
+    func samplePoint(for word: String) -> CGPoint {
+        let prefix = sentence.components(separatedBy: word)[0] as NSString
+        return CGPoint(x: textOrigin.x + prefix.size(withAttributes: [.font: font]).width + (word as NSString).size(withAttributes: [.font: font]).width / 2,
+                       y: textOrigin.y + font.ascender * 0.55)
     }
     override func draw(_ dirtyRect: NSRect) {
         NSColor.white.setFill(); bounds.fill()
-        (sentence as NSString).draw(at: NSPoint(x: 40, y: 110), withAttributes: [.font: font, .foregroundColor: NSColor.black])
+        (sentence as NSString).draw(at: textOrigin, withAttributes: [.font: font, .foregroundColor: NSColor.black])
     }
 }

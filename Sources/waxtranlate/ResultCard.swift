@@ -15,7 +15,7 @@ struct ResultCard: View {
     let query: (Passage) -> Void
     private let source: Locale.Language
     private let target: Locale.Language
-    private let dictionary: [String]
+    @State private var dictionaryTask: Task<[String], Never>?
     private let term: TermMeaning?
     private let cacheHit: Bool
     private let policy: LookupPolicy
@@ -40,6 +40,11 @@ struct ResultCard: View {
     init(passage: Passage, notebook: Notebook, preferences: Preferences, trace: LookupTrace = LookupTrace(), initialResult: LookupResult? = nil, close: @escaping () -> Void,
          speak: @escaping (String, String) -> Void, focusForDownload: @escaping () -> Void,
          pin: @escaping (Bool) -> Void = { _ in }, resize: @escaping (CGSize) -> Void = { _ in }, query: @escaping (Passage) -> Void = { _ in }) {
+        // A card asks for its language during policy, layout, translation and saving.
+        let languageBegan = LookupTrace.now
+        let language = passage.sourceLanguage
+        let passage = passage.using(language: language)
+        trace.record("lookup.language", since: languageBegan)
         self.passage = passage
         self.notebook = notebook
         self.preferences = preferences
@@ -50,24 +55,17 @@ struct ResultCard: View {
         self.pin = pin
         self.resize = resize
         self.query = query
-        policy = LookupPolicy(passage)
-        _contextVisible = State(initialValue: LookupPolicy(passage).defaultsToContext)
+        let decision = LookupPolicy(passage)
+        policy = decision
+        _contextVisible = State(initialValue: decision.defaultsToContext)
         excerpt = SentenceExcerpt(passage)
-        let languageBegan = LookupTrace.now
-        let language = passage.sourceLanguage
-        trace.record("lookup.language", since: languageBegan)
         source = Locale.Language(identifier: language)
         target = Locale.Language(identifier: language.hasPrefix("zh") ? "en" : "zh-Hans")
-        let began = LookupTrace.now
-        let decision = LookupPolicy(passage)
-        dictionary = decision.needsConfirmation ? [] : CompactGloss.candidates(for: passage, language: language)
-            + (CompactGloss.mixedEnglishReference(for: passage).flatMap { $0.hasPrefix("名称组成词参考") ? nil : [$0] } ?? [])
         term = decision.term
-        trace.record("lookup.dictionary_and_terms", since: began)
         let cached = !decision.needsConfirmation ? (initialResult ?? LookupCache.shared.result(for: passage)) : nil
         cacheHit = cached != nil
         _phase = State(initialValue: cached == nil && term == nil && !decision.needsConfirmation ? .checking : .done)
-        _result = State(initialValue: decision.needsConfirmation ? LookupResult(meaning: "", origin: .unresolved) : LookupResult.initial(term: term, cached: cached, dictionary: dictionary))
+        _result = State(initialValue: decision.needsConfirmation ? LookupResult(meaning: "", origin: .unresolved) : LookupResult.initial(term: term, cached: cached, dictionary: []))
     }
 
     private var hasSentence: Bool { !passage.context.isEmpty && passage.context != passage.text }
@@ -120,23 +118,42 @@ struct ResultCard: View {
             let began = LookupTrace.now
             if let result { record(result); trace.record("lookup.first_reference", since: began) }
             if policy.needsConfirmation { phase = .done; return }
+            if cacheHit { trace.record("lookup.cache_hit", since: began); return }
+            let lookup = result == nil && !isRegion ? Task { await CompactGloss.references(for: passage) } : nil
+            dictionaryTask = lookup
+            // Start the model while the independent dictionary reference loads.
+            // Only ambiguous alignment needs the dictionary before it can finish.
+            async let preparation: Void = prepareAutomaticTranslation()
+            if let lookup {
+                let references = await withTaskCancellationHandler { await lookup.value } onCancel: { lookup.cancel() }
+                guard !Task.isCancelled else { return }
+                if let meaning = references.first, result == nil {
+                    let reference = LookupResult(meaning: meaning, origin: .dictionary)
+                    result = reference
+                    record(reference)
+                    trace.record("lookup.first_reference", since: began)
+                }
+                trace.record("lookup.dictionary", since: began)
+            }
+            guard !Task.isCancelled else { return }
             if !policy.automaticallyTranslatesContext {
                 if result == nil { result = LookupResult(meaning: "", origin: .unresolved) }
                 phase = .done
                 if policy.object == .word && result?.isUsable != true { requestWordTranslation() }
-                // A mixed-language word needs an independent English reference,
-                // never a Chinese→English sentence call to explain its headword.
-                return
             }
-            if cacheHit { trace.record("lookup.cache_hit", since: began); return }
-            await prepare()
+            await preparation
         }
         .translationTask(configuration) { session in
             do {
                 let began = LookupTrace.now
                 try await session.prepareTranslation()
                 trace.record("translation.prepare", since: began)
-                let displayed = try await LookupTranslation.translate(passage, session: session, dictionary: dictionary, trace: trace)
+                let lookup = dictionaryTask
+                let displayed = try await LookupTranslation.translate(passage, session: session, dictionary: await lookup?.value ?? [], trace: trace) { excerpt in
+                    guard !Task.isCancelled else { return }
+                    result = excerpt
+                    trace.record("lookup.excerpt_meaning", since: began)
+                }
                 try Task.checkCancellation()
                 result = displayed
                 LookupCache.shared.insert(displayed, for: passage)
@@ -346,7 +363,8 @@ struct ResultCard: View {
         if let recordID { notebook.updateLookup(recordID, meaning: result.meaning) }
         else { recordID = notebook.recordLookup(passage, meaning: result.meaning) }
     }
-    private func prepare() async {
+    private func prepareAutomaticTranslation() async {
+        guard policy.automaticallyTranslatesContext else { return }
         let began = LookupTrace.now
         let availability = await LanguageAvailability().status(from: source, to: target)
         trace.record("translation.availability", since: began)
