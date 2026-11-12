@@ -61,9 +61,23 @@ enum CaptureShortcut: String, CaseIterable, Identifiable {
 }
 
 enum LanguageResolver {
-    static func resolve(_ text: String, englishDictionaryEvidence: Bool? = nil) -> String {
+    static func resolve(_ text: String, englishDictionaryEvidence: Bool? = nil, headword: NSRange? = nil) -> String {
         let recognizer = NLLanguageRecognizer()
-        recognizer.processString(text)
+        var sample = text
+        // In a short instruction such as “按 Option 键。”, the embedded name
+        // can outweigh the surrounding language. Identify that language from its own words.
+        if let headword, headword.length < text.utf16.count, text.utf8.contains(where: { $0 >= 128 }),
+           let range = Range(headword, in: text), text[range].first.map({ $0.isASCII && $0.isLetter }) == true,
+           text[range].allSatisfy(\.isASCII) {
+            let word = NSRegularExpression.escapedPattern(for: String(text[range]))
+            let surrounding = text.replacingOccurrences(of: "(?<![A-Za-z0-9_])" + word + "(?![A-Za-z0-9_])",
+                                                        with: " ", options: .regularExpression)
+            if surrounding.range(of: #"\p{Latin}"#, options: .regularExpression) == nil,
+               surrounding.range(of: #"[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]"#, options: .regularExpression) != nil {
+                sample = surrounding
+            }
+        }
+        recognizer.processString(sample)
         let detected = recognizer.dominantLanguage?.rawValue ?? "en"
         // A single Latin word has little language evidence. Prefer dictionary
         // evidence for isolated words; real sentences keep their language.

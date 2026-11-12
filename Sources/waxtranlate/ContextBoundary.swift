@@ -50,11 +50,11 @@ enum ContextBoundary {
         let content: String
         let contentOffset: Int
     }
+    private enum Edge { case boundary, uncertain, clipped }
     private struct Block {
         let lines: [Line]
         let joins: [Join]
-        let uncertainStart: Bool
-        let uncertainEnd: Bool
+        let start, end: Edge
     }
     private struct Normalized {
         var text = ""
@@ -129,7 +129,8 @@ enum ContextBoundary {
                  content: body.text, contentOffset: body.offset)
         }
         guard let anchor = lines.firstIndex(where: { $0.hit != nil }) else { throw ReaderError.noText }
-        let block = logicalBlock(lines, anchor: anchor, source: source)
+        let bounds = captureBounds.map { CGRect(x: $0.minX, y: -$0.maxY, width: $0.width, height: $0.height) }
+        let block = logicalBlock(lines, anchor: anchor, source: source, bounds: bounds)
         let blockLanguage = language ?? LanguageResolver.resolve(block.lines.map(\.content).joined(separator: "\n"))
         var normalized = normalize(block.lines, language: blockLanguage)
         guard normalized.hit.length > 0, Range(normalized.hit, in: normalized.text) != nil else { throw ReaderError.noText }
@@ -157,11 +158,13 @@ enum ContextBoundary {
         }
         var structure: Passage.Structure = blockKind == .list ? .list : blockKind == .title ? .title : blockKind == .path ? .path : blockKind == .code ? .code : .sentence
         if structure == .sentence && (startsEllipsis(context) || endsEllipsis(context)) { structure = .fragment }
-        let bounds = captureBounds.map { CGRect(x: $0.minX, y: -$0.maxY, width: $0.width, height: $0.height) }
+        var start = unit.location == 0 ? block.start : .boundary
+        if unit.location == 0, start == .boundary, source == .ocr, let first = block.lines.first,
+           first.kind != .comment, !matches(commentVariant, in: first.text).isEmpty { start = .uncertain }
+        let end: Edge = NSMaxRange(unit) < normalized.text.utf16.count ? .boundary : block.end
         let extent = completeness(context, structure: structure, unit: unit, blockLength: normalized.text.utf16.count,
                                   sources: sourceSpans, bounds: bounds,
-                                  standalone: hit.location == 0 && hit.length == context.utf16.count,
-                                  uncertainBoundary: (unit.location == 0 && (block.uncertainStart || source == .ocr && block.lines.first.map { $0.kind != .comment && !matches(commentVariant, in: $0.text).isEmpty } == true)) || (NSMaxRange(unit) == normalized.text.utf16.count && block.uncertainEnd))
+                                  standalone: hit.location == 0 && hit.length == context.utf16.count, start: start, end: end)
         return Analysis(context: context, hit: hit, pointerHit: NSRange(location: pointerHit.location - unit.location, length: pointerHit.length), block: normalized.text, blockHit: normalized.hit,
                         structure: structure, extent: extent, sources: sourceSpans, joins: block.joins)
     }
@@ -183,10 +186,10 @@ enum ContextBoundary {
         return (analysis.block, analysis.blockHit)
     }
 
-    private static func logicalBlock(_ lines: [Line], anchor: Int, source: Source) -> Block {
-        guard ![.empty, .title, .path, .code].contains(lines[anchor].kind) else { return Block(lines: [lines[anchor]], joins: [], uncertainStart: false, uncertainEnd: false) }
+    private static func logicalBlock(_ lines: [Line], anchor: Int, source: Source, bounds: CGRect?) -> Block {
+        guard ![.empty, .title, .path, .code].contains(lines[anchor].kind) else { return Block(lines: [lines[anchor]], joins: [], start: .boundary, end: .boundary) }
         var before: [Int] = [], after: [Int] = [], decisions: [Join] = []
-        var uncertainStart = false, uncertainEnd = false
+        var start = Edge.boundary, end = Edge.boundary
         func neighbor(_ index: Int, direction: Int) -> Int? {
             if source == .editor { return lines.indices.contains(index + direction) ? index + direction : nil }
             let current = lines[index].frame
@@ -202,14 +205,33 @@ enum ContextBoundary {
                        abs(rb.midY - current.midY) + 0.15 * abs(rb.minX - current.minX)
             }
         }
+        func hasParagraphSpacing(after left: Int, before right: Int) -> Bool {
+            let a = lines[left], b = lines[right], height = max(a.frame.height, b.frame.height)
+            let spacing = b.frame.midY - a.frame.midY
+            guard source == .ocr, spacing > 1.5 * height, terminal(a.content, followedBy: b.content),
+                  let previous = neighbor(left, direction: -1) else { return false }
+            let prior = lines[previous].frame
+            // Compare the gap after a short final row with the preceding body-line pitch.
+            return abs(prior.minX - a.frame.minX) <= height && prior.maxX - a.frame.maxX > 2 * height &&
+                spacing > (a.frame.midY - prior.midY) + 0.5 * height
+        }
         for direction in [-1, 1] {
             var current = anchor
             while let next = neighbor(current, direction: direction) {
                 let left = direction < 0 ? next : current, right = direction < 0 ? current : next
                 guard let reason = joinReason(lines[left], lines[right], source: source) else {
                     if !hardBoundary(lines[left], lines[right], source: source) {
-                        if direction < 0 { uncertainStart = true } else { uncertainEnd = true }
+                        if direction < 0 { start = .uncertain } else { end = .uncertain }
                     }
+                    break
+                }
+                if hasParagraphSpacing(after: left, before: right) { break }
+                // A cropped end of one row and the beginning of the next are not
+                // contiguous text. Keep the side containing the actual pointer.
+                if let bounds, (bounds.maxX - lines[left].frame.maxX <= lines[left].frame.height * 0.45 ||
+                                lines[right].frame.minX - bounds.minX <= lines[right].frame.height * 0.45),
+                   !terminal(lines[left].content, followedBy: lines[right].content) {
+                    if direction < 0 { start = .clipped } else { end = .clipped }
                     break
                 }
                 decisions.append(Join(from: lines[left].original, to: lines[right].original, reason: reason))
@@ -218,7 +240,7 @@ enum ContextBoundary {
             }
         }
         return Block(lines: (before.reversed() + [anchor] + after).map { lines[$0] }, joins: decisions,
-                     uncertainStart: uncertainStart, uncertainEnd: uncertainEnd)
+                     start: start, end: end)
     }
 
     private static func hardBoundary(_ left: Line, _ right: Line, source: Source) -> Bool {
@@ -363,9 +385,9 @@ enum ContextBoundary {
     }
 
     private static func completeness(_ text: String, structure: Passage.Structure, unit: NSRange, blockLength: Int,
-                                     sources: [SourceSpan], bounds: CGRect?, standalone: Bool, uncertainBoundary: Bool) -> ContextExtent {
+                                     sources: [SourceSpan], bounds: CGRect?, standalone: Bool, start: Edge, end: Edge) -> ContextExtent {
         if [.title, .path, .code].contains(structure) { return .complete }
-        var missingStart = startsEllipsis(text), missingEnd = endsEllipsis(text)
+        var missingStart = start == .clipped || startsEllipsis(text), missingEnd = end == .clipped || endsEllipsis(text)
         if let bounds, let first = sources.first, let last = sources.last {
             if unit.location == 0 {
                 missingStart = missingStart || first.frame.minY - bounds.minY <= first.frame.height * 1.2 || first.frame.minX - bounds.minX <= first.frame.height * 0.45
@@ -378,6 +400,7 @@ enum ContextBoundary {
         if missingStart && missingEnd { return .missingBoth }
         if missingStart { return .missingStart }
         if missingEnd { return .missingEnd }
+        let uncertainBoundary = start == .uncertain || end == .uncertain
         if standalone && !uncertainBoundary { return .complete }
         if uncertainBoundary || !terminal(text) || (unit.location == 0 && startsLowercase(text)) { return .uncertain }
         return .complete

@@ -99,6 +99,7 @@ import AppKit
         #if !BOUNDARY_BASELINE
         try await checkCaptureAndStorage()
         try checkVision()
+        try await MixedWrapTests.run()
         #endif
         if let report = ProcessInfo.processInfo.environment["WAX_BOUNDARY_REPORT"] {
             try FileManager.default.createDirectory(at: URL(fileURLWithPath: report).deletingLastPathComponent(), withIntermediateDirectories: true)

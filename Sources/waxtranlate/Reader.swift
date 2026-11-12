@@ -34,7 +34,7 @@ struct Passage: Equatable {
     }
 
     var sourceLanguage: String {
-        language ?? LanguageResolver.resolve(context.isEmpty ? text : context)
+        language ?? LanguageResolver.resolve(context.isEmpty ? text : context, headword: selection)
     }
 
     var headwordLanguage: String {
@@ -314,7 +314,13 @@ enum Reader {
         tokenizer.string = text
         typealias Word = (range: Range<String.Index>, frame: CGRect)
         var groups: [[Word]] = []
-        for range in tokenizer.tokens(for: text.startIndex..<text.endIndex) {
+        // Batch tokenization can omit adjacent Han words in mixed-script labels.
+        // Ask at each boundary so a printed word cannot look like a column gutter.
+        var cursor = text.startIndex
+        while cursor < text.endIndex {
+            let range = tokenizer.tokenRange(at: cursor)
+            guard range.contains(cursor) else { cursor = text.index(after: cursor); continue }
+            cursor = range.upperBound
             guard let box = try? line.boundingBox(for: range) else { continue }
             let rect = box.boundingBox.applying(CGAffineTransform(scaleX: imageSize.width, y: imageSize.height))
             if let previous = groups.last?.last,
