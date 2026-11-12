@@ -67,15 +67,19 @@ import Translation
         let infection = Sample("These results do not rule out infection.")
         let river = Sample("They sat on the river bank and watched the water.")
         let loan = Sample("The bank approved the loan.")
-        let cases = [("first", infection, "out", "rule out", "排除"),
-                     ("neighbor", infection, "results", "results", "结果"),
-                     ("changed", river, "bank", "bank", "岸"),
-                     ("other-sense", loan, "bank", "bank", "银行"),
-                     ("repeat", loan, "bank", "bank", "银行")]
+        var cases: [(String, Sample, String, String, String, LookupResult.Origin)] = [
+            ("first", infection, "out", "rule out", "排除", .sentence),
+            ("neighbor", infection, "results", "results", "结果", .sentence),
+            ("changed", river, "bank", "bank", "岸", .sentence),
+            ("other-sense", loan, "bank", "bank", "银行", .sentence),
+            ("repeat", loan, "bank", "bank", "银行", .sentence)
+        ]
         #if !WAX_HOVER_BASELINE
+        cases.append(("shift-key", Sample("Hold down Shift to select text."), "Shift", "Shift", "换挡键", .term))
+        cases.append(("work-shift", Sample("Her shift starts at noon."), "shift", "shift", "班", .sentence))
         let cache = Reader.HoverCache()
         #endif
-        for (name, sample, token, word, meaning) in cases {
+        for (name, sample, token, word, meaning, origin) in cases {
             window.contentView = nil
             let point = sample.point(token)
             let trace = LookupTrace(), began = LookupTrace.now
@@ -95,6 +99,10 @@ import Translation
                   passage.anchor == (sample.text as NSString).range(of: token, options: .backwards), passage.hasCompleteContext else {
                 throw failure("Wrong occurrence or context for \(name): \(passage)")
             }
+            let term = LookupPolicy(passage).term
+            guard origin == .term ? term?.meaning.contains(meaning) == true : term == nil else {
+                throw failure("Wrong terminology decision for \(name)")
+            }
             let cacheKey = passage.using(language: "en")
             let card = ResultCard(passage: passage, notebook: notebook, preferences: preferences, trace: trace, close: {},
                                   speak: { _, _ in }, focusForDownload: {})
@@ -109,8 +117,9 @@ import Translation
                 while LookupCache.shared.result(for: cacheKey) == nil && LookupTrace.now < deadline {
                     try await Task.sleep(nanoseconds: 5_000_000)
                 }
-                guard let result = LookupCache.shared.result(for: cacheKey), result.origin == .sentence,
-                      result.meaning.contains(meaning), let sentence = result.sentenceTranslation, sentence.contains(meaning) else {
+                guard let result = LookupCache.shared.result(for: cacheKey), result.origin == origin,
+                      result.meaning.contains(meaning), let sentence = result.sentenceTranslation, !sentence.isEmpty,
+                      origin == .term || sentence.contains(meaning) else {
                     throw failure("Missing expected contextual translation for \(name)")
                 }
                 meaningTime = String(format: "%.1f", (LookupTrace.now - began) * 1000)
@@ -123,7 +132,7 @@ import Translation
         try await checkChangedPixelsAndCancellation()
         #endif
         if !canTranslate { print("Skipped live contextual meanings: requires macOS 26.4+ and installed EN/ZH models.") }
-        print("Passed: five accurate offscreen lookups, including the same word in different contexts.")
+        print("Passed: \(cases.count) accurate offscreen lookups, including the same word in different contexts.")
     }
 
     #if !WAX_HOVER_BASELINE

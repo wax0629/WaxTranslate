@@ -9,8 +9,9 @@ import AppKit
     static func run() async throws {
         try clippedRows()
         try keySenses()
+        try contextualTerms()
         try await vision()
-        print("Passed: mixed-script OCR, clipped wrap, bounded recovery, exact positions and contextual Option key.")
+        print("Passed: mixed-script OCR, clipped wrap, bounded recovery, keyboard context, local definitions and occurrence-specific senses.")
     }
 
     private static func clippedRows() throws {
@@ -44,10 +45,11 @@ import AppKit
         try require(full.context == "版本已经在后台重启，现在可以直接按 Option 使用。" && full.hasCompleteContext, "Lost a fully visible soft wrap")
     }
 
+    private static func query(_ text: String, _ word: String = "Option", last: Bool = false) throws -> Passage {
+        try SentenceContext.passage(in: text, selection: (text as NSString).range(of: word, options: last ? .backwards : []))
+    }
+
     private static func keySenses() throws {
-        func query(_ text: String, _ word: String = "Option", last: Bool = false) throws -> Passage {
-            try SentenceContext.passage(in: text, selection: (text as NSString).range(of: word, options: last ? .backwards : []))
-        }
         let repeated = "先按 Option，然后再查看另一个 Option。"
         for text in ["按 Option 键。", "松开 Option。", repeated] {
             let p = try query(text)
@@ -67,6 +69,54 @@ import AppKit
         }
         let japanese = try query("Option を押してください。")
         try require(japanese.sourceLanguage == "ja", "Japanese instruction was routed to Chinese")
+    }
+
+    private static func contextualTerms() throws {
+        for (text, word) in [
+            ("按住 Shift 再点击。", "Shift"), ("按 Return 提交。", "Return"), ("Press Esc to cancel.", "Esc"),
+            ("press tab to indent.", "tab"), ("Ctrl+C", "Ctrl"), ("ctrl+C", "C"), ("Command + Shift + P", "Shift"),
+            ("Use ⌘K to open search.", "K"), ("按 F12 键继续。", "F12"), ("Option 是 Mac 上的修饰键。", "Option"),
+            ("Control is a modifier key.", "Control")
+        ] {
+            let passage = try query(text, word)
+            try require(LookupPolicy(passage).term?.kind == "键名", "Missing keyboard evidence for \(word) in \(text)")
+        }
+        for (text, word) in [
+            ("Her shift starts at noon.", "shift"), ("Submit the tax return.", "return"), ("Click the Tab button.", "Tab"),
+            ("Choose Option + Warranty.", "Option"), ("Your command was received.", "command"), ("A key difference is timing.", "A"),
+            ("The access key expires tomorrow.", "key"), ("Press Option B to choose the second plan.", "Option"),
+            ("Press Return Policy to see the terms.", "Return"), ("模型需要读取 Tab 键值。", "Tab"),
+            ("额外的 Option 在 Mac 菜单里。", "Option")
+        ] {
+            let passage = try query(text, word)
+            try require(LookupPolicy(passage).term == nil, "Ordinary label marked as contextual term for \(word) in \(text)")
+        }
+        let keys = "按住 Shift，再交接下一个 Shift。"
+        let firstKey = try query(keys, "Shift"), otherShift = try query(keys, "Shift", last: true)
+        try require(LookupPolicy(firstKey).term?.kind == "键名" && LookupPolicy(otherShift).term == nil, "Key sense leaked to next Shift")
+
+        let domains = "🐾 变电站的 transformer 与模型中的 transformer 用途不同。"
+        let physical = try query(domains, "transformer"), network = try query(domains, "transformer", last: true)
+        try require(LookupPolicy(physical).term?.meaning.contains("变压器") == true && LookupPolicy(network).term?.kind == "模型架构",
+                    "The same spelling borrowed the other occurrence's domain cues")
+        for text in ["这里提到了 transformer。", "我们同时讨论模型和电压中的 transformer。"] {
+            let passage = try query(text, "transformer")
+            try require(LookupPolicy(passage).term == nil, "Unsupported or conflicting domain evidence: \(text)")
+        }
+        let authors = "这里的“Canary”指的是少量试用实例，这里的 Canary 表示候补分组。"
+        for (last, meaning) in [(false, "少量试用实例"), (true, "候补分组")] {
+            let passage = try query(authors, "Canary", last: last)
+            let term = LookupPolicy(passage).term
+            try require(term?.label == "文中定义" && term?.meaning == meaning, "Did not use the selected written definition")
+        }
+        let custom = try query("Shift 在本文中表示夜间轮班。", "Shift")
+        try require(LookupPolicy(custom).term?.meaning == "夜间轮班", "Definition of a known spelling was overridden")
+        let truncated = Passage(text: "Canary", context: "这里的 Canary 是指少量试用", extent: .missingEnd)
+        let question = try query("这里的 Canary 指的是哪一组？", "Canary")
+        let pointer = try query("这里的 Canary 指向下一个文件。", "Canary")
+        for passage in [truncated, question, pointer] {
+            try require(LookupPolicy(passage).term == nil, "A fragment, question or action was taken as a definition")
+        }
     }
 
     private static func vision() async throws {

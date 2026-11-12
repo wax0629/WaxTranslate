@@ -37,14 +37,18 @@ enum LocalTerminology {
     static func lookup(_ passage: Passage) -> TermMeaning? {
         if let selected = passage.selection, let range = Range(selected, in: passage.context), passage.context[range] == passage.text {
             let context = passage.context
-            if passage.text.caseInsensitiveCompare("Option") == .orderedSame {
-                let before = String(context[..<range.lowerBound].suffix(32))
-                let after = String(context[range.upperBound...].prefix(24))
-                let keyName = matches(#"^\s*(?:[键鍵](?![值名])|key\b|[（(]?⌥)"#, in: after)
-                let press = matches(#"(?:按(?:下|住|一下)?|松开|鬆開|\b(?:press|tap|release|hold(?: down)?)(?: the)?)\s*$"#, in: before)
-                let choice = after.range(of: #"^\s*(?:按钮|按鈕|菜单|菜單|(?i:button|menu)\b)|^\s+[A-Z0-9]\b"#, options: .regularExpression) != nil
-                if keyName || passage.text == "Option" && press && !choice {
-                    return TermMeaning(label: "语境术语参考", meaning: "Mac 键盘上的 Option（⌥）修饰键。", kind: "键名")
+            if let definition = chineseDefinition(passage, at: range) {
+                return TermMeaning(label: "文中定义", meaning: definition, kind: "文中用语")
+            }
+            let word = passage.text.lowercased()
+            if let key = KeyboardKey(word), key.isUsedAsKey(in: context, at: range) {
+                return TermMeaning(label: "语境术语参考", meaning: key.meaning, kind: "键名")
+            }
+            if let senses = domainSenses[word] {
+                let clause = localClause(passage)
+                let supported = senses.filter { matches($0.cues, in: clause) }
+                if supported.count == 1, let sense = supported.first {
+                    return TermMeaning(label: "语境术语参考", meaning: sense.meaning, kind: sense.kind)
                 }
             }
             if passage.text == "INTEGER", context.range(of: #"字段|数据类型|整数|编程|数据库|\b(?:column|type|SQL)\b"#, options: [.regularExpression, .caseInsensitive]) != nil {
@@ -58,23 +62,6 @@ enum LocalTerminology {
             }
             if passage.text == "Redis", context.range(of: "缓存|数据库|内存|部署|cache|database|deploy", options: [.regularExpression, .caseInsensitive]) != nil {
                 return TermMeaning(label: "名称参考", meaning: "一种内存数据存储系统，常用于缓存。", kind: "技术名称")
-            }
-            if passage.text.lowercased() == "transformer" {
-                if context.range(of: "变电|电压|电力|电路|power|voltage", options: [.regularExpression, .caseInsensitive]) != nil {
-                    return TermMeaning(label: "语境术语参考", meaning: "变压器，用于改变交流电压。", kind: "技术词")
-                }
-                if context.range(of: "模型|神经网络|注意力|OCR|attention|neural", options: [.regularExpression, .caseInsensitive]) != nil {
-                    return TermMeaning(label: "语境术语参考", meaning: "基于注意力机制的神经网络架构。", kind: "模型架构")
-                }
-            }
-            if passage.text.lowercased() == "token", let hit = passage.selection, let selected = Range(hit, in: context) {
-                let before = String(context[..<selected.lowerBound].suffix(18))
-                if before.range(of: "(?:数据库|验证|认证|身份|访问|access|auth)[^与，。；]*$", options: [.regularExpression, .caseInsensitive]) != nil {
-                    return TermMeaning(label: "语境术语参考", meaning: "令牌，用于表示身份、权限或访问凭据。", kind: "技术词")
-                }
-                if before.range(of: "(?:模型|输入|分词|文本|language model)[^与，。；]*$", options: [.regularExpression, .caseInsensitive]) != nil {
-                    return TermMeaning(label: "语境术语参考", meaning: "词元，模型处理文本时使用的基本单位。", kind: "技术词")
-                }
             }
             if passage.text.lowercased() == "attention mask" {
                 return TermMeaning(label: "术语参考", meaning: "注意力掩码，用来控制模型可以关注哪些位置。", kind: "英语术语")
@@ -137,6 +124,37 @@ enum LocalTerminology {
         return word
     }
 
+    private static let domainSenses: [String: [(cues: String, meaning: String, kind: String)]] = [
+        "transformer": [
+            (#"变电|變電|电压|電壓|电力|電力|电路|電路|\b(?:power|voltage|substation|circuit)\b"#, "变压器，用于改变交流电压。", "技术词"),
+            (#"模型|神经网络|神經網絡|注意力|(?<![A-Za-z0-9_])(?:OCR|attention|neural)(?![A-Za-z0-9_])"#, "基于注意力机制的神经网络架构。", "模型架构")
+        ],
+        "token": [
+            (#"数据库|資料庫|验证|驗證|认证|認證|身份|访问|存取|憑證|\b(?:access|auth|authentication|credentials?)\b"#, "令牌，用于表示身份、权限或访问凭据。", "技术词"),
+            (#"模型|分词|分詞|文本|输入|輸入|\b(?:language model|tokenization|tokenizer)\b"#, "词元，模型处理文本时使用的基本单位。", "技术词")
+        ]
+    ]
+
+    private static let chineseDefinitionPattern = try! NSRegularExpression(pattern:
+        #"^\s*[”’」』"']?\s*(在(?:这里|這裡|此处|此處|本文|文中)(?:中)?)?\s*(指的是|是指|特指|意为|意為|指代|表示|指(?!向|出|定|导|導|针|針|令|标|標))\s*[：:]?\s*([^，,。；;！？!?\n…]{1,80})(?=[，,。；;！!]|\z)"#)
+
+    private static func chineseDefinition(_ passage: Passage, at selection: Range<String.Index>) -> String? {
+        let context = passage.context
+        guard passage.text.first?.isASCII == true, passage.text.first?.isLetter == true,
+              let match = chineseDefinitionPattern.firstMatch(in: context, options: .anchored,
+                  range: NSRange(selection.upperBound..<context.endIndex, in: context)),
+              let verb = Range(match.range(at: 2), in: context), let value = Range(match.range(at: 3), in: context),
+              value.upperBound < context.endIndex || passage.hasCompleteContext else { return nil }
+        // Bare 指 or 表示 can describe an action. Require an explicit scope such as 本文 in that case.
+        if ["指", "表示"].contains(context[verb]), match.range(at: 1).location == NSNotFound {
+            let before = String(context[..<selection.lowerBound].suffix(22))
+            guard matches(#"(?:这里|這裡|此处|此處|本文|文中)(?:中)?(?:的)?[\s，,“‘「『"']*$"#, in: before) else { return nil }
+        }
+        let definition = context[value].trimmingCharacters(in: CharacterSet.whitespaces.union(CharacterSet(charactersIn: "“”‘’「」『』\"'")))
+        guard definition.range(of: #"\p{Han}"#, options: .regularExpression) != nil else { return nil }
+        return definition
+    }
+
     private static let chineseLowercaseCues = [
         "ram": "内存|记忆体|DDR[345]", "rag": "检索增强|向量数据库|大语言模型|大模型",
         "ide": "编辑器|调试器|集成开发|代码补全", "rest": "接口|端点|网络服务"
@@ -173,12 +191,16 @@ enum LocalTerminology {
 
     private static func localClause(_ passage: Passage) -> String {
         guard let selection = passage.selection, let range = Range(selection, in: passage.context) else { return passage.context.lowercased() }
-        let pattern = "[,;!?，；。！？]|\\b(?:whereas|while|but)\\b|(?<![A-Za-z0-9_])" +
-            NSRegularExpression.escapedPattern(for: passage.text) + "(?![A-Za-z0-9_])"
+        let otherOccurrence = "(?<![A-Za-z0-9_])" + NSRegularExpression.escapedPattern(for: passage.text) + "(?![A-Za-z0-9_])"
+        let boundaryPattern = "[,;!?，；。！？]|\\b(?:whereas|while|but)\\b|" + otherOccurrence
         let before = String(passage.context[..<range.lowerBound])
         let after = String(passage.context[range.upperBound...])
-        let left = before.components(separatedByRegex: pattern).last ?? ""
-        let right = after.components(separatedByRegex: pattern).first ?? ""
+        let betweenCopies = #"|以及|[与與和]|\b(?:and|or|versus)\b"#
+        func separators(on side: String) -> String {
+            side.localizedCaseInsensitiveContains(passage.text) ? boundaryPattern + betweenCopies : boundaryPattern
+        }
+        let left = before.components(separatedByRegex: separators(on: before)).last ?? ""
+        let right = after.components(separatedByRegex: separators(on: after)).first ?? ""
         return (String(left.suffix(110)) + passage.text + String(right.prefix(110))).lowercased()
     }
 
@@ -245,6 +267,82 @@ enum LocalTerminology {
 
     private static func matches(_ pattern: String, in text: String) -> Bool {
         text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+}
+
+private struct KeyboardKey {
+    let meaning: String
+    private let symbol: String
+    private let isModifier: Bool
+    private let isLetter: Bool
+
+    private static let names: [String: (symbol: String, meaning: String)] = [
+        "option": ("⌥", "Mac 键盘上的 Option（⌥）修饰键。"),
+        "command": ("⌘", "Mac 键盘上的 Command（⌘）修饰键。"),
+        "shift": ("⇧", "Shift（⇧）换挡键，常用于输入大写字母或组合快捷键。"),
+        "control": ("⌃", "Control（Ctrl）修饰键，用于组合快捷键。"),
+        "alt": ("", "Alt 修饰键，用于组合快捷键。"),
+        "fn": ("", "Fn 功能修饰键。"),
+        "return": ("↩", "Return（↩）回车键。"), "enter": ("⌤", "Enter 回车键。"),
+        "escape": ("⎋", "Esc（⎋）退出键，常用于取消当前操作。"), "tab": ("⇥", "Tab（⇥）制表键，常用于缩进或切换焦点。"),
+        "space": ("␣", "空格键，用于输入空格。"), "delete": ("⌫", "Delete 删除键。"), "backspace": ("", "Backspace 退格键。")
+    ]
+    private static let aliases = ["cmd": "command", "ctrl": "control", "esc": "escape", "opt": "option", "spacebar": "space", "del": "delete"]
+    private static let modifiers: Set<String> = ["option", "command", "shift", "control", "alt", "fn"]
+    private static func partnerPattern(modifiersOnly: Bool) -> String {
+        let labels = Set(names.keys).union(aliases.keys).filter { !modifiersOnly || modifiers.contains(aliases[$0] ?? $0) }
+        let named = labels.sorted().joined(separator: "|")
+        let other = modifiersOnly ? "" : "|f(?:20|1[0-9]|[1-9])|[a-z0-9]"
+        return "(?<![a-z0-9_])(?:" + named + other + ")(?![a-z0-9_])|[⌘⌥⇧⌃]"
+    }
+    private static let namedPartner = partnerPattern(modifiersOnly: false)
+    private static let modifierPartner = partnerPattern(modifiersOnly: true)
+
+    init?(_ word: String) {
+        let name = Self.aliases[word] ?? word
+        isModifier = Self.modifiers.contains(name)
+        isLetter = name.utf8.count == 1 && name.first?.isLetter == true
+        if let entry = Self.names[name] {
+            (symbol, meaning) = entry
+        } else if isLetter {
+            symbol = ""
+            meaning = "键盘上的字母 \(name.uppercased()) 键。"
+        } else if name.first == "f", name.count <= 3, let number = Int(name.dropFirst()), (1...20).contains(number), name == "f\(number)" {
+            symbol = ""
+            meaning = "F\(number) 功能键。"
+        } else { return nil }
+    }
+
+    func isUsedAsKey(in context: String, at range: Range<String.Index>) -> Bool {
+        let before = String(context[..<range.lowerBound].suffix(40))
+        let after = String(context[range.upperBound...].prefix(32))
+        func contains(_ text: String, _ pattern: String) -> Bool {
+            text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+        }
+        if contains(after, #"^\s*(?:按钮|按鈕|菜单|菜單|选项|選項|图标|圖標|链接|連結|(?:button|menu|item|icon|link|checkbox|labelled|labeled)\b)"#) { return false }
+        if !symbol.isEmpty, contains(after, #"^\s*[（(]?\s*"# + symbol) { return true }
+        let partner = isModifier ? Self.namedPartner : Self.modifierPartner
+        if contains(before, "(?:" + partner + #")\s*[+＋]\s*$|[⌘⌥⇧⌃]$"#) ||
+            contains(after, #"^\s*[+＋]\s*(?:"# + partner + ")") { return true }
+        let uppercase = context[range].first?.isUppercase == true
+        if isLetter && !uppercase { return false }
+        if contains(after, #"^\s*[键鍵](?![值名盘盤入])"#) { return true }
+        // The article in “A key difference” also looks like a key name.
+        if !isLetter || contains(before, #"\bthe\s+$"#) {
+            if contains(after, #"^\s*key\b(?!\s+(?:value|factor|role|point)\b)"#) { return true }
+        }
+        if contains(after, #"^\s*(?:是|为|為)(?:一[个個颗顆枚]|Mac|macOS|苹果|蘋果|键盘|鍵盤|上|的|\s)*(?:修饰键|修飾鍵|功能[键鍵]|按[键鍵])|^\s+is (?:a |the )?(?:modifier|keyboard|function) key\b"#) { return true }
+        // An adjacent letter can be a choice label ("Press Option A").
+        if after.range(of: #"^\s+[A-Z0-9](?![A-Za-z0-9])"#, options: .regularExpression) != nil { return false }
+        let action = #"(?:按(?:下|住|一下)?|松开|鬆開|\b(?:press|tap|release|hold(?: down)?)(?: the)?)\s*$"#
+        guard contains(before, action) else { return false }
+        // A name followed by another English noun can be part of a longer label (“Return Policy”).
+        if contains(after, #"^\s+[a-z]"#),
+           !contains(after, #"^\s+(?:(?:to|while|until|when|and|then|again|twice|once|first|briefly|before|after|on|with)\b|for\s+(?:\d|a (?:second|moment)))"#) {
+            return false
+        }
+        return uppercase || contains(before, #"(?:按住|松开|鬆開|\bhold(?: down)?(?: the)?)\s*$"#) ||
+            (contains(before, #"\b(?:press|tap)\s+$"#) && contains(after, #"^\s+to\b"#))
     }
 }
 
