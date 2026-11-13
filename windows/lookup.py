@@ -6,7 +6,7 @@ from lexicon import lookup_details
 from reader import Passage
 from terminology import resolve_term, selected_phrase
 from languages import NAMES, SHORT_CYRILLIC, UnsupportedLanguage, detect_source
-from translation import translate, translate_lookup
+from translation import translate, translate_leg, translate_lookup
 from word_details import part_of_speech
 
 
@@ -31,6 +31,21 @@ def sentence_translation(text):
         return ""
 
 
+def phrase_context_translation(part, phrase):
+    """Substitute a glossary term only at the exact, independently verified target span."""
+    target = translate_leg(part, "en")
+    if not target.selection or target.word == phrase["translation"]:
+        return target.text
+    try:
+        isolated = translate_leg(Passage(part.word, source_code="en"), "en").text.strip(" 。.!！?？")
+    except (ValueError, RuntimeError, OSError):
+        return target.text
+    if target.word != isolated or not isolated:
+        return target.text
+    start, end = target.selection
+    return target.text[:start] + phrase["translation"] + target.text[end:]
+
+
 def term_context_translation(passage):
     """Return full and compact translations with the exact source of each.
 
@@ -44,8 +59,11 @@ def term_context_translation(passage):
         except UnsupportedLanguage:
             return "", None
 
+    phrase = selected_phrase(passage) if passage.source_code == "en" else None
     def translated(part):
         try:
+            if phrase:
+                return phrase_context_translation(part, phrase)
             return translate(Passage(part.text, source_code=passage.source_code))[1]
         except (ValueError, RuntimeError, OSError):
             return ""

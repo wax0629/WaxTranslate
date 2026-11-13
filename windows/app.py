@@ -782,6 +782,11 @@ class Window(QWidget):
             from translation import translate_leg, translate
             if chinese_context(passage):
                 return translate_leg(Passage(passage.text), 'zh').text
+            from terminology import selected_phrase
+            from lookup import phrase_context_translation
+            phrase = selected_phrase(passage)
+            if phrase and passage.source_code in ("", "en"):
+                return phrase_context_translation(passage, phrase)
             return translate(Passage(passage.text, source_code=passage.source_code))[1]
         future = self.pool.submit(translate_context)
         future.add_done_callback(lambda job: self.context_finished.emit(ticket,request_id,job) if not job.cancelled() else None)

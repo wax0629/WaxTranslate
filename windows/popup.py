@@ -418,7 +418,8 @@ class Card(QWidget):
                                 fragment=not passage.has_complete_context)
         details = ' · '.join(filter(None,(pos, '英语词条 · 中文语境' if mixed and passage.word.isascii() else '中文语境' if mixed else language)))
         content = f"<p class='details'>{plain(details)}</p><p class='gloss'>{plain(gloss)}</p><p class='details'>{plain(origin)}</p>"
-        if origin == "术语参考" and (phrase := selected_phrase(passage)):
+        phrase = selected_phrase(passage) if origin == "术语参考" else None
+        if phrase:
             content = (f"<p class='details'>英语术语 · 本机词表</p><p class='termTitle'>{plain(phrase['translation'])}</p>"
                        f"<p class='termDetail'>{plain(phrase['detail'])}</p>")
         part, offset = (passage,0) if self.rule_expanded else bounded_context(passage)
@@ -442,7 +443,10 @@ class Card(QWidget):
             if offset: body = '…'+body
             if offset+len(part.text)<len(passage.text): body += '…'
             content += f"<hr><p class='details'>{label}</p><p class='source'>{body}</p>"
-            if self.rule_translation: content += f"<p class='translation'>{plain(self.rule_translation)}</p>"
+            if self.rule_translation:
+                if phrase and not mixed and phrase["translation"] not in self.rule_translation:
+                    content += "<p class='details'>本机句译 · 术语用词待核对</p>"
+                content += f"<p class='translation'>{plain(self.rule_translation)}</p>"
             if part.text != passage.text or self.rule_expanded:
                 content += '<p><a href="waxcard://expand">'+('收起' if self.rule_expanded else '展开可见片段' if not passage.has_complete_context else '展开当前项' if passage.structure=='list' else '展开当前句')+'</a></p>'
             if passage.structure not in ('path','code') and (not self.rule_automatic or not self.rule_translation):

@@ -82,16 +82,36 @@ class CardRuleTests(unittest.TestCase):
         finally:
             card.close()
 
+    def test_glossary_translation_replaces_only_a_confirmed_occurrence(self):
+        from lookup import phrase_context_translation
+        from terminology import selected_phrase
+        source = "The ablation study did not remove the model component."
+        part = sentence_at(source, 13, 18, "en")
+        phrase = selected_phrase(part)
+        text = "衰减研究对照组认为衰减研究没有移除组件。"
+        start = text.rindex("衰减研究")
+        aligned = Passage(text, (start, start + 4))
+        with patch("lookup.translate_leg", side_effect=[aligned, Passage("衰减研究")]):
+            self.assertEqual(phrase_context_translation(part, phrase), "衰减研究对照组认为消融实验没有移除组件。")
+        with patch("lookup.translate_leg", side_effect=[aligned, Passage("消融研究")]):
+            self.assertEqual(phrase_context_translation(part, phrase), text)
+        card = Card()
+        try:
+            card.show_result(part, "术语参考", phrase["translation"], text, QPoint(10, 10))
+            self.assertIn("术语用词待核对", card.text.toPlainText())
+        finally:
+            card.close()
+
     def test_local_phrase_displays_and_saves_while_sentence_is_pending(self):
         from threading import Event
         release = Event()
         text = "The ablation study removes one model component."
         hit = sentence_at(text, 13, 18, "en")
-        def delayed(part):
+        def delayed(part, code):
             if not release.wait(10):
                 raise TimeoutError("test did not release the worker")
-            return "选区译文", "消融实验移除了一个模型组件。", ""
-        with TemporaryDirectory() as temp, patch.object(QProcess, "start"), patch("lookup.translate", side_effect=delayed):
+            return Passage("消融实验移除了一个模型组件。", (0, 4))
+        with TemporaryDirectory() as temp, patch.object(QProcess, "start"), patch("lookup.translate_leg", side_effect=delayed):
             window = Window(Notebook(Path(temp)/"notebook.sqlite3"))
             try:
                 window.lookup_text(hit, QPoint(10,10))
@@ -112,7 +132,7 @@ class CardRuleTests(unittest.TestCase):
                 window.card.close()
                 window.show_ready_phrase(stale_ticket, QPoint(), hit, ("术语参考","旧结果",""), "英语", "英语术语")
                 self.assertFalse(window.card.isVisible())
-                with patch("lookup.translate", side_effect=ValueError("offline model unavailable")):
+                with patch("lookup.translate_leg", side_effect=ValueError("offline model unavailable")):
                     window.lookup_text(hit, QPoint(10, 10))
                     wait_for(lambda: bool(window.card.rule_error))
                     self.assertIn("消融实验", window.card.text.toPlainText())
