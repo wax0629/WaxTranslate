@@ -4,11 +4,17 @@ import re
 import unicodedata
 
 
+# A "model" can also be physical or clinical. The ML sense needs a specific
+# ML term, or a model with evidence about one of its components or variants.
+_ABLATION_CUE = (r"\b(?:encoders?|decoders?|neural networks?|datasets?|transformers?|llms?|machine learning)\b|"
+                 r"编码器|解码器|神经网络|数据集|机器学习|消融实验|"
+                 r"(?=.*(?:\bmodels?\b|模型))(?=.*(?:\b(?:components?|layers?|modules?|variants?|architectures?)\b|组件|模块|变体))")
+
 # Whole expressions have their own reading unit. Ambiguous expressions also
 # require nearby evidence before the reader expands a single pointed word.
 READING_PHRASES = [
     dict(forms=["ablation study", "ablation studies"], translation="消融实验",
-         detail="移除或替换模型中的某一部分，比较结果如何变化。", cue=r"\b(?:models?|components?|encoders?|networks?|datasets?|architectures?)\b|模块|模型|网络|消融实验",
+         detail="移除或替换模型中的某一部分，比较结果如何变化。", cue=_ABLATION_CUE,
          exclude=r"\b(?:catheters?|cardiac|atrial|patients?)\b|手术|消融术|导管|患者|心房"),
     dict(forms=["emergent ability", "emergent abilities", "emergent capability", "emergent capabilities"],
          translation="涌现能力", detail="模型扩大后才表现出来的能力。",
@@ -20,7 +26,7 @@ READING_PHRASES = [
     dict(forms=["attention mask", "attention masks"], translation="注意力掩码", detail="用来控制模型可以关注哪些位置。"),
     dict(forms=["padding token", "padding tokens"], translation="填充词元", detail="用于将不同长度的输入补齐。"),
     dict(forms=["race condition", "race conditions"], translation="竞态条件", detail="多个操作的执行顺序会改变程序结果。",
-         cue=r"\b(?:threads?|concurren(?:t|cy)|locks?|processes|writes?)\b|并发|线程|进程"),
+         cue=r"\b(?:threads?|concurren(?:t|cy)|locks?|processes|writes?|deadlocks?|deadlocked|synchroni[sz]ation|memory safety|atomics?)\b|并发|线程|进程"),
 ]
 
 _PHRASES_BY_FORM = {form: phrase for phrase in READING_PHRASES for form in phrase["forms"]}

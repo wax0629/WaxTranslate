@@ -16,7 +16,8 @@ struct LookupResult {
         guard isUsable else { return false }
         if passage.sourceLanguage == "en", passage.context != passage.text,
            LookupPolicy(passage).automaticallyTranslatesContext, !passage.context.isEmpty {
-            return origin == .sentence || origin == .term
+            return origin == .sentence || origin == .term ||
+                (origin == .standalone && passage.isPhrase && !SentenceContext.isPhrasalVerb(passage.text))
         }
         return true
     }
@@ -371,6 +372,19 @@ enum LookupTranslation {
             try Task.checkCancellation()
             sentence = try await provider.plain(passage.context)
             trace.record("translation.plain_sentence", since: sentenceBegan)
+        }
+
+        if passage.isPhrase, passage.sourceLanguage == "en", !SentenceContext.isPhrasalVerb(passage.text) {
+            // Alignment can include a neighbouring word or only part of a compound.
+            // Confirm the whole selected expression before calling it a contextual gloss.
+            let reference = result(try await provider.plain(passage.text), .standalone, sentence)
+            try Task.checkCancellation()
+            let boundaries = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
+            if let alignedGloss, reference.isUsable,
+               TranslationOutput.normalize(alignedGloss).trimmingCharacters(in: boundaries) == reference.meaning.trimmingCharacters(in: boundaries) {
+                return result(alignedGloss, .sentence, sentence)
+            }
+            return reference
         }
 
         if let gloss = alignedGloss {

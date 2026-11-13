@@ -39,7 +39,11 @@ class CardRuleTests(unittest.TestCase):
         for passage in (picked, sentence_at(source, 13, 18, "en")):
             self.assertEqual((passage.word, passage.anchor), ("ablation study", (13, 18)))
             self.assertIn("消融实验", local_reference(passage)[1])
-        for sentence in ("The patient joined a catheter ablation study using a heart model.",
+        concurrent = sentence_at("A race condition compromises memory safety.", 7, 16, "en")
+        self.assertEqual((concurrent.word, local_reference(concurrent)[2]), ("race condition", "英语术语"))
+        for sentence in ("A laser ablation study compared ceramic cutting angles against a physical model.",
+                         "The ablation study used a model to predict the temperature of the tissue.",
+                         "The patient joined a catheter ablation study using a heart model.",
                          "We built a model, but the cardiac ablation study was separate."):
             a = sentence.index("study")
             self.assertEqual(sentence_at(sentence, a, a+5, "en").word, "study")
@@ -57,6 +61,10 @@ class CardRuleTests(unittest.TestCase):
             adjusted, = requested
             self.assertEqual((adjusted.word, adjusted.anchor), ("battery housing", hit.selection))
             self.assertIn(("只查指向的词", hit.selection), phrase_range_choices(adjusted))
+            with patch("lookup.translate_lookup", return_value=(("句中释义", "外壳保持", "外壳保持干燥。"), None)), \
+                    patch("lookup.translate", return_value=("选区译文", "电池外壳", "")):
+                checked = explain(adjusted)[0]
+                self.assertEqual(checked, ("短语参考", "电池外壳", "外壳保持干燥。"))
             result = explain(adjusted)[0]
             self.assertNotEqual(result[0], UNKNOWN)
             self.assertTrue(result[1] and result[1] != adjusted.word, result)

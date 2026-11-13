@@ -169,11 +169,19 @@ struct ReadingPage: View {
     }
 }
 
-private final class LookupTextView: NSTextView {
+final class LookupTextView: NSTextView {
     var lookup: ((NSRange) -> Void)?
     override func mouseDown(with event: NSEvent) {
         super.mouseDown(with: event)
-        if event.clickCount == 2, selectedRange().length > 0 { lookup?(selectedRange()) }
+        guard event.clickCount == 2 else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        if let range = selectedWord(at: characterIndexForInsertion(at: point)) { lookup?(range) }
+    }
+
+    // AppKit may retain earlier selections. A double click always refers to its own word.
+    func selectedWord(at index: Int) -> NSRange? {
+        let ranges = selectedRanges.map(\.rangeValue).filter { $0.length > 0 }
+        return ranges.first { NSLocationInRange(index, $0) } ?? ranges.first { NSMaxRange($0) == index }
     }
 }
 

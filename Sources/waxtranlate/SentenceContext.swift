@@ -127,6 +127,11 @@ enum SentenceContext {
         return token.selecting(phraseRange, anchor: analysis.pointerHit) ?? token
     }
 
+    static func isPhrasalVerb(_ text: String) -> Bool {
+        let full = NSRange(text.startIndex..., in: text)
+        return englishPhrases.firstMatch(in: text, range: full)?.range == full
+    }
+
     private static let englishPhrases = try! NSRegularExpression(
         pattern: #"""
             (?<![\w‐‑-])

@@ -30,3 +30,30 @@ python3 scripts/windows_regression.py check
 ```
 
 Windows 的隔离 CI 会构建实际便携包，执行桌面回归，并在 100% 和 150% 缩放各保留一套 `phrase-study.png` 前后截图。当前提交的 CI 与安装入口见 [Issue #108](https://github.com/wax0629/WaxTranslate/issues/108)。
+
+## 独立阅读材料
+
+先冻结首版实现 `85bd0f8` 再取外部资料。UD English EWT r2.15 测试集有 2,077 句，含问答、电邮、新闻组、评论与博客。九组术语规则在全量材料的 21,978 个拉丁字母落点上触发了 0 次。这个结果说明日常文本里九组词的覆盖有限，也意味着这份材料无法估算它们命中后的准确率。[固定版本的语料](https://github.com/UniversalDependencies/UD_English-EWT/tree/4dc8e10cf32352e11ab2c46e024b19853b91546e) · [标注和文体说明](https://universaldependencies.org/treebanks/en_ewt/index.html)
+
+按语料已有的 compound 标注选取相邻两个名词，要求词头和词组在原句中位置唯一。满足条件的有 421 对。每种文体独立按「句子 ID 与词序」的 SHA-256 排序，前八对用于发现问题，下一组八对在修订冻结后对照。标注给出的是可核验的选区，中文质量需要另行判断。
+
+第一批 40 对，旧版与新版均未自动选中其中的完整表达。新版 38 对可手动扩选，2 对受连字符/斜线边界限制。实际模型把 `school bus` 对齐成「校车从」，也把不相关的句中成分带入 `mailing list` 的释义。本轮改为交叉核验整组独立译文，出现分歧时显示「短语参考」。该提示说明证据来源，无法保证独立模型给出的中文准确。
+
+材料科学的激光烧蚀及组织热消融挑战样例暴露了歧义，物理模型同样会写作 `model`。现在需要明确的机器学习语汇，或同时出现模型和组件/变体证据，才自动给出「消融实验」。同一表达缺乏领域线索时仍可手选整组。材料科学样例据论文场景改写。[Weixler 等，2023](https://pubmed.ncbi.nlm.nih.gov/36984389/)
+
+第二批另取 40 个此前未据以修改规则的词组，35 个可以在卡内扩选，5 个受原文结构或选词边界限制。对可扩选的 35 个，用同一台 Mac、相同原句和 Apple 模型同时跑冻结版与修订版。14 个结果改为显式的「短语参考」。例如 `web site` 从「网站的」变为「网站」，`risk memo` 从「的风险备忘录」变为「风险备忘录」。另一方面，军事上下文里 `Ops team` 从「行动小组」变成较差的「运营团队」，`mailing list` 从「邮件列表」变成较生硬的「邮寄名单」。这批没有独立的专业译者盲评，不计算中文准确率。两轮可调整范围合计 73/80，衡量的只是选区。首批校车与内阁例在修订后分别显示「校车」「内阁官员」。
+
+### 复现陌生材料抽样
+
+以下检查在后台运行。词组数据和模型输出只写入本机的 `dist`。脚本校验完整数据的 SHA-256。去掉 `--meanings` 可只检查选区。真实词义检查需要 macOS 26.4 及已安装的英语、简体中文包。
+
+```sh
+mkdir -p dist/phrase-corpus
+curl -fsSL https://raw.githubusercontent.com/UniversalDependencies/UD_English-EWT/4dc8e10cf32352e11ab2c46e024b19853b91546e/en_ewt-ud-test.conllu -o dist/phrase-corpus/test.conllu
+python3 scripts/phrase-corpus-check.py dist/phrase-corpus/test.conllu dist/phrase-corpus/first.json --round 1
+python3 scripts/phrase-corpus-check.py dist/phrase-corpus/test.conllu dist/phrase-corpus/second.json --round 2
+swiftc -O -whole-module-optimization -parse-as-library -D WAX_APP_TESTS -target "$(uname -m)-apple-macosx15.2" Sources/waxtranlate/*.swift Tests/Performance/PhraseCorpus.swift -o dist/phrase-corpus/reader
+dist/phrase-corpus/reader dist/phrase-corpus/second.json --meanings
+```
+
+已分析过的两批样本可以用于防回归。如果再根据它们调整实现，验收一般化能力时应换另一批此前未用于调优的材料。两批都只覆盖从英文原句查中文词组，未测其他语言、整篇翻译或真实读者留存。

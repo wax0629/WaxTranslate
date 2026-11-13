@@ -259,7 +259,7 @@
       ],
       "translation": "消融实验",
       "detail": "移除或替换模型中的某一部分，比较结果如何变化。",
-      "cue": "\\b(?:models?|components?|encoders?|networks?|datasets?|architectures?)\\b|模块|模型|网络|消融实验",
+      "cue": "\\b(?:encoders?|decoders?|neural networks?|datasets?|transformers?|llms?|machine learning)\\b|编码器|解码器|神经网络|数据集|机器学习|消融实验|(?=.*(?:\\bmodels?\\b|模型))(?=.*(?:\\b(?:components?|layers?|modules?|variants?|architectures?)\\b|组件|模块|变体))",
       "exclude": "\\b(?:catheters?|cardiac|atrial|patients?)\\b|手术|消融术|导管|患者|心房"
     },
     {
@@ -326,7 +326,7 @@
       ],
       "translation": "竞态条件",
       "detail": "多个操作的执行顺序会改变程序结果。",
-      "cue": "\\b(?:threads?|concurren(?:t|cy)|locks?|processes|writes?)\\b|并发|线程|进程"
+      "cue": "\\b(?:threads?|concurren(?:t|cy)|locks?|processes|writes?|deadlocks?|deadlocked|synchroni[sz]ation|memory safety|atomics?)\\b|并发|线程|进程"
     }
   ]
 }

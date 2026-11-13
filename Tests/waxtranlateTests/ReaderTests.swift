@@ -61,6 +61,12 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         func pick(_ text: String, _ token: String) throws -> Passage {
             try SentenceContext.passage(in: text, selection: (text as NSString).range(of: token, options: .backwards), language: "en")
         }
+        let editor = LookupTextView()
+        editor.string = "study, then housing"
+        let old = NSRange(location: 0, length: 5), new = NSRange(location: 12, length: 7)
+        editor.selectedRanges = [NSValue(range: old), NSValue(range: new)]
+        try expect(editor.selectedWord(at: 15) == new && editor.selectedWord(at: 1) == old)
+        try expect(editor.selectedWord(at: 8) == nil && editor.selectedWord(at: 19) == new)
         let sample = "This model uses an ablation study to compare encoders."
         let source = try pick(sample, "study")
         try expect(source.text == "ablation study" && source.anchor == (sample as NSString).range(of: "study"))
@@ -68,6 +74,7 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         for (text, hit, query, translation) in [
             ("We ran ablation studies without the encoder.", "ablation", "ablation studies", "消融实验"),
             ("Large models sometimes show emergent capabilities.", "capabilities", "emergent capabilities", "涌现能力"),
+            ("A race condition compromises memory safety.", "condition", "race condition", "竞态条件"),
             ("We use stochastic gradient descent to fit the model.", "gradient", "stochastic gradient descent", "随机梯度下降"),
             ("📖 Compare the confidence intervals with earlier confidence intervals.", "intervals", "confidence intervals", "置信区间")
         ] {
@@ -75,7 +82,9 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
             try expect(picked.text == query && LookupPolicy(picked).term?.phrase?.translation == translation)
             try expect(picked.selection == (picked.context as NSString).range(of: query, options: .backwards))
         }
-        for text in ["The patient joined a catheter ablation study using a heart model.",
+        for text in ["A laser ablation study compared ceramic cutting angles against a physical model.",
+                     "The ablation study used a model to predict the temperature of the tissue.",
+                     "The patient joined a catheter ablation study using a heart model.",
                      "The model was prepared, but the cardiac ablation study was separate.",
                      "They study English.", "The ablation, study and model appear separately."] {
             let ordinary = try pick(text, "study")
@@ -109,6 +118,13 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
             $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true &&
                 String(marked[$0.range].characters) == "battery housing"
         })
+        let different = LookupTranslation.Provider(plain: { _ in "电池外壳" }, marked: { _ in
+            var marked = AttributedString("外壳保持")
+            marked.inlinePresentationIntent = .stronglyEmphasized
+            return .init(text: "外壳保持干燥。", attributed: marked)
+        })
+        let reference = try await LookupTranslation.translate(adjusted, provider: different, dictionary: [])
+        try expect(reference.meaning == "电池外壳" && reference.origin == .standalone && reference.canSave(for: adjusted))
         let punctuation = try pick("The battery, housing and cap arrived.", "housing")
         try expect(!punctuation.phraseRangeChoices.contains { $0.action == "包含左词" })
         for kind in [Passage.Structure.code, .path] {

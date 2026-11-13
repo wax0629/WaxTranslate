@@ -129,8 +129,14 @@ def explain(passage, on_phrase=None):
     if not term and passage.anchor and passage.anchor != passage.selection and any(c.isspace() for c in word):
         result, excerpt = translate_lookup(passage)
         origin, gloss, sentence = result
-        if origin == "单词参考":
+        if origin == "句中释义":
+            reference = translate(Passage(word, source_code="en"))[1].strip(" 。.!！?？")
+            if reference != gloss.strip(" 。.!！?？"):
+                origin, gloss = "短语参考", reference
+        elif origin == "单词参考":
             origin = "短语参考"
+        if not gloss or gloss.casefold() == word.casefold():
+            return (UNKNOWN, "未能确认这组词的中文释义。", sentence), excerpt, language, "英语词组"
         return (origin, gloss, sentence), excerpt, language, "英语词组"
     entry, common, passage.phonetic, dictionary_pos = lookup_details(word) if not term else ("", False, "", "")
     base = reference_word(word)
