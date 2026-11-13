@@ -171,10 +171,10 @@ import Translation
             gloss.inlinePresentationIntent = .stronglyEmphasized
             return .init(text: "他们坐在河岸。", attributed: AttributedString("他们坐在") + gloss + AttributedString("。"))
         })
-        let result = try await LookupTranslation.translate(passage, provider: provider, dictionary: dictionary()) { excerpt in
+        let result = try await LookupTranslation.translate(passage, provider: provider, dictionary: dictionary(), onExcerpt: { excerpt in
             events.append(excerpt.meaning)
             if excerpt.sentenceTranslation != nil || excerpt.excerptTranslation == nil { events.append("wrong excerpt") }
-        }
+        })
         try check(events == ["河岸", "full"] && result.sentenceTranslation == "他们坐在河岸上看水。",
                   "confirmed sense must precede full translation and avoid waiting for the dictionary")
         print("Confirmed excerpt appeared before the full sentence; unambiguous alignment bypassed dictionary waiting.")

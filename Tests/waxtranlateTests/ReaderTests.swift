@@ -32,6 +32,8 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testWrappedOCRInTwoColumns()
         try testSentenceAtExactOccurrence()
         try testPhraseAtExactOccurrence()
+        try await testReadingPhrases()
+        try await testConflictingPhraseEvidence()
         try testConciseGloss()
         try testContextExcerpt()
         try testCardPolicy()
@@ -54,6 +56,154 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try await LongContextTests.run()
         try await testInstalledTranslation(ruledOut: ruledOut, ranOut: ranOut)
         print("Passed: capture geometry, cursor-free Retina configuration, small mixed text, OCR, packed typography, phrase selection, exact occurrences, vocabulary migration, review, language routing, dashboard persistence, corrupt-data preservation, reading cancellation, mixed-language terminology, unchanged-result boundaries, verified gloss boundaries, bounded bilingual context, reference boundaries, Option tap guards and Dock preferences.")
+    }
+
+    static func testReadingPhrases() async throws {
+        func pick(_ text: String, _ token: String) throws -> Passage {
+            try SentenceContext.passage(in: text, selection: (text as NSString).range(of: token, options: .backwards), language: "en")
+        }
+        let editor = LookupTextView()
+        editor.string = "study, then housing"
+        let old = NSRange(location: 0, length: 5), new = NSRange(location: 12, length: 7)
+        editor.selectedRanges = [NSValue(range: old), NSValue(range: new)]
+        try expect(editor.selectedWord(at: 15) == new && editor.selectedWord(at: 1) == old)
+        try expect(editor.selectedWord(at: 8) == nil && editor.selectedWord(at: 19) == new)
+        let sample = "This model uses an ablation study to compare encoders."
+        let source = try pick(sample, "study")
+        try expect(source.text == "ablation study" && source.anchor == (sample as NSString).range(of: "study"))
+        try expect(LookupPolicy(source).term?.phrase?.translation == "消融实验")
+        for (text, hit, query, translation) in [
+            ("We ran ablation studies without the encoder.", "ablation", "ablation studies", "消融实验"),
+            ("Large models sometimes show emergent capabilities.", "capabilities", "emergent capabilities", "涌现能力"),
+            ("A race condition compromises memory safety.", "condition", "race condition", "竞态条件"),
+            ("We use stochastic gradient descent to fit the model.", "gradient", "stochastic gradient descent", "随机梯度下降"),
+            ("📖 Compare the confidence intervals with earlier confidence intervals.", "intervals", "confidence intervals", "置信区间")
+        ] {
+            let picked = try pick(text, hit)
+            try expect(picked.text == query && LookupPolicy(picked).term?.phrase?.translation == translation)
+            try expect(picked.selection == (picked.context as NSString).range(of: query, options: .backwards))
+        }
+        for text in ["A laser ablation study compared ceramic cutting angles against a physical model.",
+                     "The ablation study used a model to predict the temperature of the tissue.",
+                     "The patient joined a catheter ablation study using a heart model.",
+                     "The model was prepared, but the cardiac ablation study was separate.",
+                     "They study English.", "The ablation, study and model appear separately."] {
+            let ordinary = try pick(text, "study")
+            try expect(ordinary.text == "study")
+        }
+        let suite = "WaxTranslate.Test.PhraseSave." + UUID().uuidString
+        let defaults = try require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let book = Notebook(defaults: defaults)
+        let meaning = try require(LookupPolicy(source).term?.meaning)
+        try expect(book.save(source, translation: meaning, origin: "term"))
+        let saved = try require(book.entries.first)
+        book.review(saved.id, remembered: true)
+        let nextDue = book.entries[0].due
+        book.completeSentence(for: source, meaning: meaning, translation: "一次消融实验。", origin: "term")
+        let restored = try require(Notebook(defaults: defaults).entries.first)
+        try expect(restored.id == saved.id && restored.sentenceTranslation == "一次消融实验。" && restored.due == nextDue && restored.streak == 1)
+        book.remove(saved.id)
+        book.completeSentence(for: source, meaning: meaning, translation: "晚到的句译。", origin: "term")
+        try expect(book.entries.isEmpty)
+
+        let manualText = "📖 The old housing cracked, but the battery housing stayed dry."
+        let hit = try pick(manualText, "housing")
+        let option = hit.phraseRangeChoices.first { $0.text == "battery housing" }
+        try expect(option != nil)
+        guard let option, let adjusted = hit.selecting(option.range, anchor: hit.anchor) else { return }
+        try expect(adjusted.text == "battery housing" && adjusted.anchor == hit.anchor && adjusted.isPhrase)
+        try expect(adjusted.phraseRangeChoices.contains { $0.text == "housing" && $0.range == hit.selection })
+        let marked = CardContextContent(original: adjusted, expanded: false).text
+        try expect(marked.runs.contains {
+            $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true &&
+                String(marked[$0.range].characters) == "battery housing"
+        })
+        let different = LookupTranslation.Provider(plain: { _ in "电池外壳" }, marked: { _ in
+            var marked = AttributedString("外壳保持")
+            marked.inlinePresentationIntent = .stronglyEmphasized
+            return .init(text: "外壳保持干燥。", attributed: marked)
+        })
+        let reference = try await LookupTranslation.translate(adjusted, provider: different, dictionary: [])
+        try expect(reference.meaning == "电池外壳" && reference.origin == .standalone && reference.canSave(for: adjusted))
+        let punctuation = try pick("The battery, housing and cap arrived.", "housing")
+        try expect(!punctuation.phraseRangeChoices.contains { $0.action == "包含左词" })
+        for kind in [Passage.Structure.code, .path] {
+            let protected = Passage(text: "study", context: sample, language: "en", structure: kind)
+            try expect(protected.phraseRangeChoices.isEmpty && LocalTerminology.phrase(at: protected) == nil)
+        }
+        if #available(macOS 26.4, *),
+           await LanguageAvailability().status(from: Locale.Language(identifier: "en"), to: Locale.Language(identifier: "zh-Hans")) == .installed {
+            let session = TranslationSession(installedSource: Locale.Language(identifier: "en"), target: Locale.Language(identifier: "zh-Hans"))
+            let negative = try pick("The model did not show emergent capabilities.", "emergent")
+            let actual = try await LookupTranslation.translate(negative, session: session, dictionary: [])
+            try expect(actual.origin == .term && actual.meaning.contains("涌现能力"))
+            let sentence = actual.sentenceTranslation ?? ""
+            try expect(sentence.contains("涌现能力") && sentence.range(of: "不|没|未|无", options: .regularExpression) != nil)
+            let chosen = try await LookupTranslation.translate(adjusted, session: session, dictionary: [])
+            try expect(chosen.meaning.contains("壳") || chosen.wordReference?.contains("壳") == true)
+            print("Apple phrase checks: \(negative.text) | \(sentence); \(adjusted.text) | \(chosen.meaning) | \(chosen.wordReference ?? "").")
+        }
+    }
+
+    static func testConflictingPhraseEvidence() async throws {
+        let source = "One support team stayed behind while another support team did not return."
+        let word = (source as NSString).range(of: "team", options: .backwards)
+        let hit = try SentenceContext.passage(in: source, selection: word, language: "en")
+        let choice = try require(hit.phraseRangeChoices.first { $0.text == "support team" })
+        let selected = try require(hit.selecting(choice.range, anchor: hit.anchor))
+        let target = "一支后勤队留守，另一支救援队没有返回。"
+        let marked = { (text: String) in
+            var value = AttributedString(text)
+            value.inlinePresentationIntent = .stronglyEmphasized
+            return value
+        }
+        func lookup(reference: String?, markedGloss: String = "救援队", output: String?,
+                    cancel: Bool = false) async throws -> (LookupResult, [String]) {
+            var probes = [String]()
+            var firstSentence: String?
+            let provider = LookupTranslation.Provider(plain: { text in
+                try expect(firstSentence == target)
+                if text == selected.text {
+                    guard let reference else { throw CocoaError(.fileReadUnknown) }
+                    return reference
+                }
+                if cancel { throw CancellationError() }
+                probes.append(text)
+                for (open, close) in [("<b>", "</b>"), ("<i>", "</i>"), ("\"", "\"")] {
+                    let expected = source.replacingCharacters(in: Range(choice.range, in: source)!, with: open + selected.text + close)
+                    if text == expected, let output {
+                        return target.replacingOccurrences(of: "救援队", with: open + output + close)
+                    }
+                }
+                return target
+            }, marked: { _ in
+                let parts = target.components(separatedBy: markedGloss)
+                let response = AttributedString(parts[0]) + marked(markedGloss) + AttributedString(parts[1])
+                return .init(text: target, attributed: response)
+            })
+            let result = try await LookupTranslation.translate(selected, provider: provider, dictionary: [], onSentence: { firstSentence = $0 })
+            return (result, probes)
+        }
+        let (confirmed, probes) = try await lookup(reference: "支持团队", output: "救援队")
+        try expect(confirmed.origin == .sentence && confirmed.meaning == "救援队" && confirmed.sentenceTranslation == target)
+        try expect(confirmed.canSave(for: selected) && probes.count == 2)
+        let (fast, noProbes) = try await lookup(reference: "救援队", output: nil)
+        try expect(fast.origin == .sentence && noProbes.isEmpty)
+        let (unmarked, _) = try await lookup(reference: "支持团队", output: nil)
+        try expect(unmarked.origin == .standalone && unmarked.meaning == "支持团队")
+        let (substitute, _) = try await lookup(reference: "支持团队", output: "援助队")
+        try expect(substitute.origin == .standalone)
+        let (wrongSpan, _) = try await lookup(reference: "支持团队", markedGloss: "后勤队", output: "救援队")
+        try expect(wrongSpan.origin == .standalone)
+        let (confirmedWithoutReference, _) = try await lookup(reference: nil, output: "救援队")
+        try expect(confirmedWithoutReference.origin == .sentence)
+        let (unresolved, _) = try await lookup(reference: nil, output: nil)
+        try expect(!unresolved.canSave(for: selected) && unresolved.sentenceTranslation == target)
+        do {
+            _ = try await lookup(reference: "支持团队", output: nil, cancel: true)
+            throw CheckFailure(reason: "Cancelled phrase lookup returned a result")
+        } catch is CancellationError {}
     }
 
     static func testAutomaticForeignTermContext() throws {

@@ -4,13 +4,14 @@ import re
 from card_policy import automatic_context, bounded_context, chinese_context, local_reference, needs_confirmation
 from lexicon import lookup_details
 from reader import Passage
-from terminology import resolve_term
+from terminology import resolve_term, selected_phrase
 from languages import NAMES, SHORT_CYRILLIC, UnsupportedLanguage, detect_source
-from translation import translate, translate_lookup
+from translation import translate, translate_leg, translate_lookup
 from word_details import part_of_speech
 
 
 UNKNOWN = "暂未收录"
+CHECKING_PHRASE = "正在核对词组释义"
 DICTIONARY = "英汉词典 · ECDICT"
 DICTIONARY_POS = {"n": "名词", "v": "动词", "vi": "不及物动词", "vt": "及物动词",
                   "a": "形容词", "adj": "形容词", "adv": "副词", "prep": "介词",
@@ -31,6 +32,21 @@ def sentence_translation(text):
         return ""
 
 
+def phrase_context_translation(part, phrase):
+    """Substitute a glossary term only at the exact, independently verified target span."""
+    target = translate_leg(part, "en")
+    if not target.selection or target.word == phrase["translation"]:
+        return target.text
+    try:
+        isolated = translate_leg(Passage(part.word, source_code="en"), "en").text.strip(" 。.!！?？")
+    except (ValueError, RuntimeError, OSError):
+        return target.text
+    if target.word != isolated or not isolated:
+        return target.text
+    start, end = target.selection
+    return target.text[:start] + phrase["translation"] + target.text[end:]
+
+
 def term_context_translation(passage):
     """Return full and compact translations with the exact source of each.
 
@@ -44,8 +60,11 @@ def term_context_translation(passage):
         except UnsupportedLanguage:
             return "", None
 
+    phrase = selected_phrase(passage) if passage.source_code == "en" else None
     def translated(part):
         try:
+            if phrase:
+                return phrase_context_translation(part, phrase)
             return translate(Passage(part.text, source_code=passage.source_code))[1]
         except (ValueError, RuntimeError, OSError):
             return ""
@@ -53,6 +72,26 @@ def term_context_translation(passage):
     part, _ = bounded_context(passage)
     excerpt = (part, translated(part)) if part.text != passage.text else None
     return full, excerpt
+
+
+def confirms_phrase_in_sentence(passage, candidate, sentence):
+    # Keep the original sentence and independently mark only this occurrence.
+    # Removing the returned quotes must reproduce the entire original target;
+    # a matching word somewhere else in the sentence does not verify it.
+    quotes = '"“”'
+    if (not passage.has_complete_context or passage.structure not in ("sentence", "list")
+            or len(passage.text) > 512 or not 2 <= len(candidate) <= 40
+            or sentence.count(candidate) != 1 or any(q in passage.text or q in sentence for q in quotes)
+            or not re.search(r"[\u3400-\u9fff]", candidate)):
+        return False
+    start, end = passage.selection
+    marked = passage.text[:start] + '"' + passage.word + '"' + passage.text[end:]
+    probe = sentence_translation(marked)
+    for opening, closing in (('"', '"'), ('“', '”')):
+        before, mark, after = probe.partition(opening + candidate + closing)
+        if mark and before + candidate + after == sentence:
+            return True
+    return False
 
 
 def preserves_reference(word, gloss, translated):
@@ -73,11 +112,15 @@ def surrounding_script(text):
     return ""
 
 
-def explain(passage):
+def explain(passage, on_phrase=None):
     if passage.selection:
         special = local_reference(passage)
         if special:
             origin, gloss, kind = special
+            if on_phrase and selected_phrase(passage) and automatic_context(passage, confirmed=True):
+                # Dispatch the ready local result before the worker loads or runs the model.
+                passage.source_code = passage.source_code or detect_source(passage.text) or "en"
+                on_phrase((origin, gloss, ""), NAMES.get(passage.source_code, "英语"), kind)
             sentence, excerpt = term_context_translation(passage)
             return (origin, gloss, sentence), excerpt, "中文语境" if chinese_context(passage) else NAMES.get(passage.source_code, "英语"), kind
         if needs_confirmation(passage) and not resolve_term(passage, passage.local_context):
@@ -101,6 +144,9 @@ def explain(passage):
         code = "ru"
         language = "按俄语查词" if passage.selection else "按俄语翻译"
     passage.source_code = code
+    if passage.anchor and passage.anchor != passage.selection and any(c.isspace() for c in passage.word) and chinese_context(passage):
+        gloss = translate(Passage(passage.word, source_code="en"))[1]
+        return ("短语参考", gloss, ""), None, "中文语境", "英语词组"
     if code and code != "en":
         if passage.selection and (passage.structure in ("title", "fragment", "code", "path") or not passage.has_complete_context):
             word = Passage(passage.word, (0, len(passage.word)), source_code=code)
@@ -119,6 +165,20 @@ def explain(passage):
 
     word = passage.word
     term = resolve_term(passage, passage.local_context)
+    if not term and passage.anchor and passage.anchor != passage.selection and any(c.isspace() for c in word):
+        result, excerpt = translate_lookup(passage)
+        origin, gloss, sentence = result
+        if origin == "句中释义":
+            if on_phrase and sentence:
+                on_phrase((CHECKING_PHRASE, "", sentence), language, "英语词组")
+            reference = sentence_translation(word).strip(" 。.!！?？")
+            if reference != gloss.strip(" 。.!！?？") and not confirms_phrase_in_sentence(passage, gloss, sentence):
+                origin, gloss = "短语参考", reference
+        elif origin == "单词参考":
+            origin = "短语参考"
+        if not gloss or gloss.casefold() == word.casefold():
+            return (UNKNOWN, "未能确认这组词的中文释义。", sentence), excerpt, language, "英语词组"
+        return (origin, gloss, sentence), excerpt, language, "英语词组"
     entry, common, passage.phonetic, dictionary_pos = lookup_details(word) if not term else ("", False, "", "")
     base = reference_word(word)
     if not term and not entry and base != word:

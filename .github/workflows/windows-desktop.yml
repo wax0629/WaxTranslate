@@ -70,6 +70,8 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           git worktree add --detach $baseline $env:BASE_SHA
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          # Both source trees use the packaged model files for the same live phrase comparison.
+          New-Item -ItemType Junction -Path (Join-Path $baseline 'models') -Target (Join-Path $env:PORTABLE_APP 'models') | Out-Null
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'visual profile'
           foreach ($scale in '1', '1.5') {
             $env:QT_SCALE_FACTOR = $scale

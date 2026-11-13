@@ -2,6 +2,8 @@
 import re
 from dataclasses import replace
 
+from terminology import selected_phrase
+
 
 def chinese_context(passage):
     if passage.source_code in ("ja", "ko"):
@@ -66,10 +68,35 @@ def local_reference(passage):
             return '语境术语参考', '令牌，用于表示身份、权限或访问凭据。', '技术词'
         if re.search(r'(?:模型|输入|分词|文本|language model)[^与，。；]*$', before, re.I):
             return '语境术语参考', '词元，模型处理文本时使用的基本单位。', '技术词'
-    phrases = {'attention mask': '注意力掩码，用来控制模型可以关注哪些位置。',
-               'padding token': '填充词元，用于将不同长度的输入补齐。'}
-    if word.lower() in phrases:
-        return '术语参考', phrases[word.lower()], '英语术语'
+    phrase = selected_phrase(passage)
+    if phrase:
+        return '术语参考', phrase['translation'] + '，' + phrase['detail'], '英语术语'
+
+
+_ENGLISH_WORD = re.compile(r"(?<![a-z0-9_/‐‑-])(?<![a-z0-9_]\.)[a-z]+(?:['’‐‑-][a-z]+)*(?![a-z0-9_/‐‑-]|\.[a-z0-9_])", re.I | re.ASCII)
+
+
+def phrase_range_choices(passage):
+    if not passage.selection or passage.structure in ('code', 'path') or passage.source_code not in ('', 'en', 'zh', 'zh-Hans'):
+        return []
+    a, b = passage.selection
+    anchor = passage.anchor or passage.selection
+    words = [m.span() for m in _ENGLISH_WORD.finditer(passage.text)]
+    inside = [i for i, (left, right) in enumerate(words) if a <= left and right <= b]
+    if not inside or words[inside[0]][0] != a or words[inside[-1]][1] != b or anchor not in words[inside[0]:inside[-1]+1]:
+        return []
+    def joined(i):
+        gap = passage.text[words[i][1]:words[i+1][0]]
+        return gap.isspace() and '\n' not in gap and '\r' not in gap
+    first, last = inside[0], inside[-1]
+    if not all(joined(i) for i in range(first, last)):
+        return []
+    choices = [] if anchor == passage.selection else [('只查指向的词', anchor)]
+    if first and joined(first-1):
+        choices.append(('包含左词', (words[first-1][0], b)))
+    if last+1 < len(words) and joined(last):
+        choices.append(('包含右词', (a, words[last+1][1])))
+    return choices
 
 
 def bounded_context(passage):

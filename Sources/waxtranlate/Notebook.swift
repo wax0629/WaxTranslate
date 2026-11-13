@@ -5,7 +5,7 @@ struct Entry: Codable, Identifiable {
     let source: String
     let target: String
     let context: String
-    let sentenceTranslation: String?
+    var sentenceTranslation: String?
     var due: Date
     var streak: Int
     var language: String? = nil
@@ -99,6 +99,15 @@ private struct LookupActivity: Codable {
                           structure: passage.structure == .code ? .fragment : passage.structure, sourceKind: passage.structure.rawValue,
                           extent: passage.extent, origin: origin), at: 0)
         return persist(next)
+    }
+
+    func completeSentence(for passage: Passage, meaning: String, translation: String, origin: String) {
+        guard !translation.isEmpty, let i = entries.firstIndex(where: { sameEntry($0, passage) }),
+              entries[i].sentenceTranslation?.isEmpty != false, entries[i].origin == origin,
+              entries[i].target == TranslationOutput.normalize(meaning, target: LookupPolicy(passage).headwordLanguage.hasPrefix("zh") ? "en" : "zh-Hans") else { return }
+        var next = entries
+        next[i].sentenceTranslation = TranslationOutput.normalize(translation, target: passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans")
+        _ = persist(next)
     }
 
     func remove(_ id: UUID) { _ = persist(entries.filter { $0.id != id }) }

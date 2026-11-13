@@ -19,8 +19,10 @@ struct ResultCard: View {
     private let term: TermMeaning?
     private let cacheHit: Bool
     private let policy: LookupPolicy
+    private let rangeChoices: [PhraseRangeChoice]
     private let excerpt: SentenceExcerpt
     @State private var result: LookupResult?
+    @State private var pendingPhraseContext: String?
     @State private var phase = Phase.checking
     @State private var configuration: TranslationSession.Configuration?
     @State private var copied = false
@@ -58,6 +60,7 @@ struct ResultCard: View {
         let decision = LookupPolicy(passage)
         policy = decision
         _contextVisible = State(initialValue: decision.defaultsToContext)
+        rangeChoices = passage.phraseRangeChoices
         excerpt = SentenceExcerpt(passage)
         source = Locale.Language(identifier: language)
         target = Locale.Language(identifier: language.hasPrefix("zh") ? "en" : "zh-Hans")
@@ -79,10 +82,17 @@ struct ResultCard: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if let result {
-                        Text(result.isUsable ? result.meaning : result.wordReference != nil ? "语境词义暂未确认" : policy.unresolvedMessage)
-                            .font(isRegion || !result.isUsable ? .system(size: 16) : .system(size: 17, weight: .medium))
-                            .fixedSize(horizontal: false, vertical: true)
-                        originLabel(result)
+                        if let phrase = term?.phrase, result.origin == .term {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(phrase.translation).font(.system(size: 19, weight: .semibold))
+                                Text(phrase.detail).font(.system(size: 13)).foregroundStyle(DeskTheme.muted)
+                            }.fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text(result.isUsable ? result.meaning : result.wordReference != nil ? "语境词义暂未确认" : policy.unresolvedMessage)
+                                .font(isRegion || !result.isUsable ? .system(size: 16) : .system(size: 17, weight: .medium))
+                                .fixedSize(horizontal: false, vertical: true)
+                            originLabel(result)
+                        }
                         if let reference = result.wordReference {
                             Text("单词参考（未确认当前义项）：" + reference)
                                 .font(.system(size: 12)).foregroundStyle(DeskTheme.muted)
@@ -149,17 +159,23 @@ struct ResultCard: View {
                 try await session.prepareTranslation()
                 trace.record("translation.prepare", since: began)
                 let lookup = dictionaryTask
-                let displayed = try await LookupTranslation.translate(passage, session: session, dictionary: await lookup?.value ?? [], trace: trace) { excerpt in
+                let displayed = try await LookupTranslation.translate(passage, session: session, dictionary: await lookup?.value ?? [], trace: trace, onSentence: { sentence in
+                    guard !Task.isCancelled else { return }
+                    pendingPhraseContext = sentence
+                    trace.record("lookup.first_phrase_context", since: began)
+                }) { excerpt in
                     guard !Task.isCancelled else { return }
                     result = excerpt
                     trace.record("lookup.excerpt_meaning", since: began)
                 }
                 try Task.checkCancellation()
                 result = displayed
+                pendingPhraseContext = nil
                 LookupCache.shared.insert(displayed, for: passage)
                 copied = false
                 phase = .done
                 record(displayed)
+                completeSavedPhrase(displayed)
                 trace.record("lookup.complete", since: began)
             } catch {
                 if !Task.isCancelled { phase = .failed }
@@ -170,8 +186,10 @@ struct ResultCard: View {
                 TranslationRunner(request: request) { completed, outcome in
                     guard let text = manual.complete(completed, outcome: outcome) else { return }
                     var value = result ?? LookupResult(meaning: "", origin: .unresolved)
-                    if completed.text == passage.context { value.sentenceTranslation = text }
-                    else { value.excerptTranslation = text }
+                    if completed.text == passage.context {
+                        value.sentenceTranslation = text
+                        completeSavedPhrase(value)
+                    } else { value.excerptTranslation = text }
                     result = value
                 }.id(request.id)
             }
@@ -245,8 +263,19 @@ struct ResultCard: View {
                 Button(action: close) { Image(systemName: "xmark") }
                     .help("关闭").accessibilityLabel("关闭取词卡").keyboardShortcut(.cancelAction)
             }.buttonStyle(.plain)
-            Text(isRegion ? sourceName + " → " + (passage.sourceLanguage.hasPrefix("zh") ? "英语" : "简体中文") : policy.caption)
-                .font(.system(size: 11)).foregroundStyle(DeskTheme.muted)
+            HStack(alignment: .firstTextBaseline) {
+                Text(term?.phrase != nil ? "英语术语 · 本机词表" : isRegion ? sourceName + " → " + (passage.sourceLanguage.hasPrefix("zh") ? "英语" : "简体中文") : policy.caption)
+                Spacer()
+                if !rangeChoices.isEmpty {
+                    Menu("调整范围") {
+                        ForEach(rangeChoices) { choice in
+                            Button(choice.action + " · " + choice.text) {
+                                if let next = passage.selecting(choice.range, anchor: passage.anchor) { query(next) }
+                            }
+                        }
+                    }.menuStyle(.borderlessButton).fixedSize().accessibilityLabel("调整查词范围")
+                }
+            }.font(.system(size: 11)).foregroundStyle(DeskTheme.muted)
         }
     }
 
@@ -315,7 +344,8 @@ struct ResultCard: View {
 
     private var displayedPassage: Passage { expanded ? passage : excerpt.passage }
     private var displayedSentenceTranslation: String? {
-        !expanded && excerpt.isTruncated ? result?.excerptTranslation : result?.sentenceTranslation
+        if !expanded && excerpt.isTruncated { return result?.excerptTranslation ?? pendingPhraseContext }
+        return result?.sentenceTranslation ?? (excerpt.isTruncated ? nil : pendingPhraseContext)
     }
 
     private var footer: some View {
@@ -342,7 +372,8 @@ struct ResultCard: View {
     @ViewBuilder private var translationStatus: some View {
         switch phase {
         case .checking: ProgressView("检查本机语言包…").controlSize(.small)
-        case .translating: ProgressView(wordRequest != nil ? "正在查询单词参考…" : hasSentence ? "正在翻译原句…" : "正在翻译…").controlSize(.small)
+        case .translating:
+            ProgressView(pendingPhraseContext != nil ? "正在核对词组释义…" : wordRequest != nil ? "正在查询单词参考…" : hasSentence ? "正在翻译原句…" : "正在翻译…").controlSize(.small)
         case .download:
             Button("下载\(sourceName)翻译语言包…") { focusForDownload(); start() }.controlSize(.small)
         case .failed:
@@ -355,6 +386,12 @@ struct ResultCard: View {
             Text("系统不支持这个语言组合，可在设置中选择源语言后重试。").font(.caption).foregroundStyle(DeskTheme.muted)
         case .done:
             if result?.origin == .unresolved && !policy.needsConfirmation { Text("可更换语境或查看参考来源。").font(.caption).foregroundStyle(DeskTheme.muted) }
+        }
+    }
+
+    private func completeSavedPhrase(_ result: LookupResult) {
+        if term?.phrase != nil, result.origin == .term, let sentence = result.sentenceTranslation {
+            notebook.completeSentence(for: passage, meaning: result.meaning, translation: sentence, origin: "term")
         }
     }
 

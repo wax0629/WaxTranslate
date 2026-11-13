@@ -18,6 +18,7 @@ from winrt.windows.media.ocr import OcrEngine
 from winrt.windows.storage.streams import DataWriter
 
 from context_boundary import Line as ContextLine, analyze as analyze_context, editor_lines
+from terminology import phrase_at
 from install_model import ocr_file
 from languages import (HANGUL, KANA, LATIN, NAMES, OCR_TAGS, SHORT_CYRILLIC, SOURCE_SCRIPTS, UnsupportedLanguage,
                        detect_source, script_ocr_score)
@@ -172,14 +173,22 @@ class Passage:
         return bool(self.selection and not self.has_complete_context and
                     (self.word != self.text or self.extent != 'uncertain') and self.structure in ('sentence','list','fragment'))
 
-    def selecting(self, start, end):
+    def selecting(self, start, end, *, anchor=None):
         offset = self.context_offset
         if offset is not None:
             base = offset - self.selection[0]
             offset = base + start if base >= 0 and self.context[base:base+len(self.text)] == self.text else None
         evidence = self.evidence_offset
         if evidence is not None: evidence += start - self.selection[0]
-        return replace(self, selection=(start,end), anchor=(start,end), context_offset=offset, evidence_offset=evidence)
+        return replace(self, selection=(start,end), anchor=anchor or (start,end), context_offset=offset, evidence_offset=evidence, phonetic="")
+
+    def with_reading_phrase(self):
+        if self.source_code not in ("", "en", "zh", "zh-Hans"):
+            return self
+        found = phrase_at(self.text, self.selection, self.structure)
+        if found and found[0] != self.selection:
+            return self.selecting(*found[0], anchor=self.anchor or self.selection)
+        return self
 
     @property
     def word(self):
@@ -202,7 +211,7 @@ def sentence_at(text, start, end, source_code=""):
     context_start, context_end = max(0,start-4000), min(len(text),end+4000)
     return Passage(result.text,result.selection,text[context_start:context_end],start-context_start,
                    source_code=source_code,structure=result.structure,extent=result.extent,anchor=result.anchor,
-                   evidence_text=result.block,evidence_offset=result.block_hit[0])
+                   evidence_text=result.block,evidence_offset=result.block_hit[0]).with_reading_phrase()
 
 
 def context_excerpt(passage):
@@ -366,7 +375,7 @@ def passage_from_lines(lines, point, source_code="", *, is_crop=False, capture_b
         return Passage(heading,(start,start+pointed.hit[1]-pointed.hit[0]),source_code=source_code,structure='title')
     return Passage(result.text,selection,result.block,result.block_hit[0],source_code=source_code,
                    ocr_line=pointed.text if len(prepared)>1 else '',structure=structure,extent=result.extent,anchor=result.anchor,
-                   evidence_text=result.block,evidence_offset=result.block_hit[0]+selection[0]-result.selection[0])
+                   evidence_text=result.block,evidence_offset=result.block_hit[0]+selection[0]-result.selection[0]).with_reading_phrase()
 
 
 async def ocr_lines(engine, image):

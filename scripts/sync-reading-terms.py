@@ -7,7 +7,7 @@ import sys
 root = Path(__file__).resolve().parents[1]
 terms = runpy.run_path(str(root / "windows/terminology.py"))
 names = {"acronyms": "ACRONYMS", "names": "NAMES", "contextNames": "CONTEXT_NAMES",
-         "senses": "SENSES", "multiple": "MULTIPLE", "lowercaseCues": "_LOWERCASE_CUES"}
+         "senses": "SENSES", "multiple": "MULTIPLE", "lowercaseCues": "_LOWERCASE_CUES", "phrases": "READING_PHRASES"}
 content = json.dumps({key: terms[value] for key, value in names.items()}, ensure_ascii=False, indent=2) + "\n"
 path = root / "Assets/Lexicon/reading-terms.json"
 if "--check" in sys.argv:

@@ -4,7 +4,6 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from types import SimpleNamespace
 import time
 import unittest
 from unittest.mock import patch
@@ -15,7 +14,7 @@ from PySide6.QtWidgets import QApplication
 from app import Window, analyze
 from card_policy import automatic_context, bounded_context, chinese_context
 from notebook import Notebook
-from lookup import DICTIONARY, UNKNOWN, explain
+from lookup import CHECKING_PHRASE, DICTIONARY, UNKNOWN, explain
 from popup import Card
 from reader import Passage, sentence_at
 
@@ -30,6 +29,184 @@ def wait_for(predicate):
 
 
 class CardRuleTests(unittest.TestCase):
+    def test_phrase_ranges_across_editor_ocr_and_card(self):
+        from PySide6.QtCore import QPointF, QRectF
+        from reader import Word, passage_from_lines
+        from card_policy import local_reference, phrase_range_choices
+        source = "The ablation study removes one model component."
+        words = [Word(word, QRectF(i*110, 20, 95, 25)) for i, word in enumerate(source.split())]
+        picked = passage_from_lines([words], QPointF(250, 32), "en")
+        for passage in (picked, sentence_at(source, 13, 18, "en")):
+            self.assertEqual((passage.word, passage.anchor), ("ablation study", (13, 18)))
+            self.assertIn("消融实验", local_reference(passage)[1])
+        concurrent = sentence_at("A race condition compromises memory safety.", 7, 16, "en")
+        self.assertEqual((concurrent.word, local_reference(concurrent)[2]), ("race condition", "英语术语"))
+        for sentence in ("A laser ablation study compared ceramic cutting angles against a physical model.",
+                         "The ablation study used a model to predict the temperature of the tissue.",
+                         "The patient joined a catheter ablation study using a heart model.",
+                         "We built a model, but the cardiac ablation study was separate."):
+            a = sentence.index("study")
+            self.assertEqual(sentence_at(sentence, a, a+5, "en").word, "study")
+        text = "📖 The old housing cracked, but the battery housing stayed dry."
+        a = text.rindex("housing")
+        hit = sentence_at(text, a, a+7, "en")
+        card, requested = Card(), []
+        card.term_requested.connect(requested.append)
+        try:
+            card.show_result(hit, "句中释义", "外壳", "电池外壳保持干燥。", QPoint(10,10))
+            menu = card.range_button.menu()
+            self.assertFalse(card.range_button.isHidden())
+            action = next(action for action in menu.actions() if action.text().endswith("battery housing"))
+            action.trigger()
+            adjusted, = requested
+            self.assertEqual((adjusted.word, adjusted.anchor), ("battery housing", hit.selection))
+            self.assertIn(("只查指向的词", hit.selection), phrase_range_choices(adjusted))
+            with patch("lookup.translate_lookup", return_value=(("句中释义", "外壳保持", "外壳保持干燥。"), None)), \
+                    patch("lookup.translate", return_value=("选区译文", "电池外壳", "")):
+                checked = explain(adjusted)[0]
+                self.assertEqual(checked, ("短语参考", "电池外壳", "外壳保持干燥。"))
+            result = explain(adjusted)[0]
+            self.assertNotEqual(result[0], UNKNOWN)
+            self.assertTrue(result[1] and result[1] != adjusted.word, result)
+            card.show_result(adjusted, *result, QPoint(10, 10))
+            with patch.object(card.listen.player, "play") as play:
+                card.listen.click()
+                self.assertEqual(play.call_args.args[1:], ("battery housing", False, "en"))
+            with TemporaryDirectory() as temp:
+                book = Notebook(Path(temp)/"notebook.sqlite3")
+                book.save(adjusted, result)
+                saved, = book.entries()
+                self.assertEqual((saved["position"], saved["word"], saved["context"]), (adjusted.selection[0], adjusted.word, adjusted.text))
+            isolated = sentence_at("The battery, housing and cap arrived.", 13, 20, "en")
+            self.assertNotIn("包含左词", [label for label, span in phrase_range_choices(isolated)])
+        finally:
+            card.close()
+
+    def test_conflicting_phrase_evidence_preserves_the_selected_occurrence(self):
+        text = "One support team stayed behind while another support team did not return."
+        head = text.rindex("team")
+        hit = sentence_at(text, head, head + len("team"), "en")
+        start = text.rindex("support team")
+        phrase = hit.selecting(start, head + len("team"), anchor=hit.selection)
+        marked = text[:start] + '"support team"' + text[head + len("team"):]
+        target = "一支后勤队留守，另一支救援队没有返回。"
+        def check(reference, probe, expected, calls, sentence=target):
+            previews = []
+            def translate_input(part):
+                self.assertEqual(previews, [(CHECKING_PHRASE, "", sentence)])
+                self.assertIn(part.text, ("support team", marked))
+                result = reference if part.text == "support team" else probe
+                if isinstance(result, Exception):
+                    raise result
+                return "选区译文", result, ""
+            with patch("lookup.translate_lookup", return_value=(("句中释义", "救援队", sentence), None)), \
+                    patch("lookup.translate", side_effect=translate_input) as translation:
+                result = explain(phrase, on_phrase=lambda partial, language, kind: previews.append(partial))[0]
+                self.assertEqual(result[:2], expected)
+                self.assertEqual(result[2], sentence)
+                self.assertEqual(translation.call_count, calls)
+
+        correct = target.replace("救援队", "“救援队”")
+        check("支持团队", correct, ("句中释义", "救援队"), 2)
+        check("救援队。", "", ("句中释义", "救援队"), 1)
+        for probe in (target, correct.replace("没有", "已经"), target.replace("后勤队", "“后勤队”"),
+                      correct.replace("“救援队”", "“救”援队"), RuntimeError("model unavailable")):
+            with self.subTest(probe=probe):
+                check("支持团队", probe, ("短语参考", "支持团队"), 2)
+        check("支持团队", correct, ("短语参考", "支持团队"), 1, target.replace("后勤队", "救援队"))
+        check(OSError("reference failed"), correct, ("句中释义", "救援队"), 2)
+        check(OSError("reference failed"), target, (UNKNOWN, "未能确认这组词的中文释义。"), 2)
+
+        with TemporaryDirectory() as temp, patch.object(QProcess, "start"):
+            window = Window(Notebook(Path(temp)/"notebook.sqlite3"))
+            try:
+                ticket = window.ticket
+                preview = CHECKING_PHRASE, "", target
+                window.show_ready_phrase(ticket, QPoint(), phrase, preview, "英语", "英语词组")
+                self.assertIn(target, window.card.text.toPlainText())
+                self.assertIn(CHECKING_PHRASE, window.card.text.toPlainText())
+                self.assertIsNone(window.saved_result)
+                self.assertTrue(window.card.copy.isHidden() and window.card.save.isHidden())
+                completed = Future()
+                final = "句中释义", "救援队", target
+                completed.set_result((phrase, final, None, "英语", "英语词组"))
+                window.show_result(ticket, QPoint(), completed)
+                self.assertEqual(window.saved_result, (phrase, final))
+                self.assertEqual(window.card.copy.accessibleName(), "复制释义")
+                window.card.copy.click()
+                self.assertEqual(QApplication.clipboard().text(), "救援队")
+                window.card.save.click()
+                saved, = window.notebook.entries()
+                self.assertEqual((saved["gloss"], saved["position"]), ("救援队", phrase.selection[0]))
+                window.invalidate()
+                window.show_ready_phrase(ticket, QPoint(), phrase, preview, "英语", "英语词组")
+                self.assertFalse(window.card.isVisible())
+            finally:
+                window.shutdown()
+                window.hide()
+                window.deleteLater()
+
+    def test_glossary_translation_replaces_only_a_confirmed_occurrence(self):
+        from lookup import phrase_context_translation
+        from terminology import selected_phrase
+        source = "The ablation study did not remove the model component."
+        part = sentence_at(source, 13, 18, "en")
+        phrase = selected_phrase(part)
+        text = "衰减研究对照组认为衰减研究没有移除组件。"
+        start = text.rindex("衰减研究")
+        aligned = Passage(text, (start, start + 4))
+        with patch("lookup.translate_leg", side_effect=[aligned, Passage("衰减研究")]):
+            self.assertEqual(phrase_context_translation(part, phrase), "衰减研究对照组认为消融实验没有移除组件。")
+        with patch("lookup.translate_leg", side_effect=[aligned, Passage("消融研究")]):
+            self.assertEqual(phrase_context_translation(part, phrase), text)
+        card = Card()
+        try:
+            card.show_result(part, "术语参考", phrase["translation"], text, QPoint(10, 10))
+            self.assertIn("术语用词待核对", card.text.toPlainText())
+        finally:
+            card.close()
+
+    def test_local_phrase_displays_and_saves_while_sentence_is_pending(self):
+        from threading import Event
+        release = Event()
+        text = "The ablation study removes one model component."
+        hit = sentence_at(text, 13, 18, "en")
+        def delayed(part, code):
+            if not release.wait(10):
+                raise TimeoutError("test did not release the worker")
+            return Passage("消融实验移除了一个模型组件。", (0, 4))
+        with TemporaryDirectory() as temp, patch.object(QProcess, "start"), patch("lookup.translate_leg", side_effect=delayed):
+            window = Window(Notebook(Path(temp)/"notebook.sqlite3"))
+            try:
+                window.lookup_text(hit, QPoint(10,10))
+                wait_for(lambda: window.card.headword.text() == "ablation study")
+                self.assertIn("消融实验", window.card.text.toPlainText())
+                self.assertTrue(window.card.rule_waiting)
+                window.card.save.click()
+                self.assertEqual(window.notebook.entries()[0]["word"], "ablation study")
+                release.set()
+                wait_for(lambda: not window.card.rule_waiting)
+                self.assertIn("消融实验移除了", window.card.text.toPlainText())
+                self.assertFalse(window.card.save.isEnabled())
+                saved, = window.notebook.entries()
+                self.assertEqual(saved["translation"], "消融实验移除了一个模型组件。")
+                window.stats_pool.submit(lambda: None).result(timeout=5)
+                self.assertEqual(window.notebook.activity_snapshot().total, 1)
+                stale_ticket = window.ticket
+                window.card.close()
+                window.show_ready_phrase(stale_ticket, QPoint(), hit, ("术语参考","旧结果",""), "英语", "英语术语")
+                self.assertFalse(window.card.isVisible())
+                with patch("lookup.translate_leg", side_effect=ValueError("offline model unavailable")):
+                    window.lookup_text(hit, QPoint(10, 10))
+                    wait_for(lambda: bool(window.card.rule_error))
+                    self.assertIn("消融实验", window.card.text.toPlainText())
+                    self.assertFalse(window.card.rule_waiting)
+            finally:
+                release.set()
+                window.shutdown()
+                window.hide()
+                window.deleteLater()
+
     def test_manual_context_routes_english_sentence_with_chinese_proper_name(self):
         with TemporaryDirectory() as temp, patch.object(QProcess, "start"):
             window = Window(Notebook(Path(temp) / "notebook.sqlite3"))

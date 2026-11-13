@@ -250,5 +250,83 @@
     "rag": "\\b(?:llm|retrieval|embeddings?|vector database)\\b|\\brag pipeline\\b",
     "ide": "\\b(?:debugger|plugins?|editor|source code)\\b",
     "rest": "\\brest (?:api|endpoints?|services?)\\b"
-  }
+  },
+  "phrases": [
+    {
+      "forms": [
+        "ablation study",
+        "ablation studies"
+      ],
+      "translation": "消融实验",
+      "detail": "移除或替换模型中的某一部分，比较结果如何变化。",
+      "cue": "\\b(?:encoders?|decoders?|neural networks?|datasets?|transformers?|llms?|machine learning)\\b|编码器|解码器|神经网络|数据集|机器学习|消融实验|(?=.*(?:\\bmodels?\\b|模型))(?=.*(?:\\b(?:components?|layers?|modules?|variants?|architectures?)\\b|组件|模块|变体))",
+      "exclude": "\\b(?:catheters?|cardiac|atrial|patients?)\\b|手术|消融术|导管|患者|心房"
+    },
+    {
+      "forms": [
+        "emergent ability",
+        "emergent abilities",
+        "emergent capability",
+        "emergent capabilities"
+      ],
+      "translation": "涌现能力",
+      "detail": "模型扩大后才表现出来的能力。",
+      "cue": "\\b(?:models?|llms?|scal(?:e|ing))\\b|模型|规模|大语言"
+    },
+    {
+      "forms": [
+        "stochastic gradient descent"
+      ],
+      "translation": "随机梯度下降",
+      "detail": "每次用一个样本或一个小批次估计梯度，再更新参数。"
+    },
+    {
+      "forms": [
+        "gradient descent"
+      ],
+      "translation": "梯度下降",
+      "detail": "沿着函数值下降的方向逐步更新参数。"
+    },
+    {
+      "forms": [
+        "confidence interval",
+        "confidence intervals"
+      ],
+      "translation": "置信区间",
+      "detail": "由样本估算的参数范围，按给定的置信水平构造。"
+    },
+    {
+      "forms": [
+        "standard deviation",
+        "standard deviations"
+      ],
+      "translation": "标准差",
+      "detail": "衡量一组数值相对平均值的离散程度。"
+    },
+    {
+      "forms": [
+        "attention mask",
+        "attention masks"
+      ],
+      "translation": "注意力掩码",
+      "detail": "用来控制模型可以关注哪些位置。"
+    },
+    {
+      "forms": [
+        "padding token",
+        "padding tokens"
+      ],
+      "translation": "填充词元",
+      "detail": "用于将不同长度的输入补齐。"
+    },
+    {
+      "forms": [
+        "race condition",
+        "race conditions"
+      ],
+      "translation": "竞态条件",
+      "detail": "多个操作的执行顺序会改变程序结果。",
+      "cue": "\\b(?:threads?|concurren(?:t|cy)|locks?|processes|writes?|deadlocks?|deadlocked|synchroni[sz]ation|memory safety|atomics?)\\b|并发|线程|进程"
+    }
+  ]
 }

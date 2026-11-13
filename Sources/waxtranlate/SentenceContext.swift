@@ -118,12 +118,18 @@ enum SentenceContext {
         let word = String(analysis.context[range])
         let token = Passage(text: word, context: analysis.context, selection: analysis.hit, anchor: analysis.pointerHit, language: language,
                             nearbyContext: analysis.block, nearbySelection: analysis.blockHit, structure: analysis.structure, extent: analysis.extent)
-        let full = NSRange(analysis.context.startIndex..., in: analysis.context)
-        guard let match = englishPhrases.matches(in: analysis.context, range: full).first(where: {
-            NSIntersectionRange($0.range, analysis.hit) == analysis.hit
-        }), (token.sourceLanguage == "en" || token.sourceLanguage.hasPrefix("zh")), let phrase = Range(match.range, in: analysis.context) else { return token }
-        return Passage(text: String(analysis.context[phrase]), context: analysis.context, selection: match.range, anchor: analysis.pointerHit, language: language,
-                       nearbyContext: analysis.block, nearbySelection: analysis.blockHit, structure: analysis.structure, extent: analysis.extent)
+        let phraseRange = LocalTerminology.phrase(at: token)?.range ?? englishPhrases.matches(in: analysis.context,
+            range: NSRange(analysis.context.startIndex..., in: analysis.context)).first {
+                NSIntersectionRange($0.range, analysis.hit) == analysis.hit
+            }?.range
+        guard let phraseRange, phraseRange != token.selection, token.structure != .code, token.structure != .path,
+              token.sourceLanguage == "en" || token.sourceLanguage.hasPrefix("zh") else { return token }
+        return token.selecting(phraseRange, anchor: analysis.pointerHit) ?? token
+    }
+
+    static func isPhrasalVerb(_ text: String) -> Bool {
+        let full = NSRange(text.startIndex..., in: text)
+        return englishPhrases.firstMatch(in: text, range: full)?.range == full
     }
 
     private static let englishPhrases = try! NSRegularExpression(
@@ -133,8 +139,6 @@ enum SentenceContext {
                 (?:rule|rules|ruled|ruling)    \h+ out
               | (?:run|runs|ran|running)       \h+ out \h+ of
               | (?:look|looks|looked|looking)  \h+ up
-              | attention \h+ mask
-              | padding \h+ token
             )
             (?![\w‐‑-])
             """#,
