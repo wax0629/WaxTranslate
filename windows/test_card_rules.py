@@ -124,6 +124,7 @@ class CardRuleTests(unittest.TestCase):
                 preview = CHECKING_PHRASE, "", target
                 window.show_ready_phrase(ticket, QPoint(), phrase, preview, "英语", "英语词组")
                 self.assertIn(target, window.card.text.toPlainText())
+                self.assertIn(CHECKING_PHRASE, window.card.text.toPlainText())
                 self.assertIsNone(window.saved_result)
                 self.assertTrue(window.card.copy.isHidden() and window.card.save.isHidden())
                 completed = Future()
@@ -131,6 +132,9 @@ class CardRuleTests(unittest.TestCase):
                 completed.set_result((phrase, final, None, "英语", "英语词组"))
                 window.show_result(ticket, QPoint(), completed)
                 self.assertEqual(window.saved_result, (phrase, final))
+                self.assertEqual(window.card.copy.accessibleName(), "复制释义")
+                window.card.copy.click()
+                self.assertEqual(QApplication.clipboard().text(), "救援队")
                 window.card.save.click()
                 saved, = window.notebook.entries()
                 self.assertEqual((saved["gloss"], saved["position"]), ("救援队", phrase.selection[0]))

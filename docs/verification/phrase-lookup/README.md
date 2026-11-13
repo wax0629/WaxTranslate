@@ -57,3 +57,50 @@ dist/phrase-corpus/reader dist/phrase-corpus/second.json --meanings
 ```
 
 已分析过的两批样本可以用于防回归。如果再根据它们调整实现，验收一般化能力时应换另一批此前未用于调优的材料。两批都只覆盖从英文原句查中文词组，未测其他语言、整篇翻译或真实读者留存。
+
+## 词组在这句话里是什么意思
+
+在「对照翻译」粘贴下列自写样句，双击 `team`，在已有卡片点「调整范围 → 包含左词 · Ops team」。
+
+> The commander sent an Ops team to rescue the hostages.
+
+Mac 上同一个离线模型单独译出「运营团队」，在营救人质的句子里译出「行动小组」。新版先展示中文句译，核准后将「行动小组」放在词头下。复制和收藏都使用最终显示的词组释义。改变选区、关闭或重新查询会使旧结果失效。
+
+| 上一轮 Mac 开发版 | 本轮 Mac 开发版 |
+| --- | --- |
+| ![军事语境中，旧版词头显示短语参考「运营团队」](context-before.png) | ![相同原文与落点，新版词头显示句中释义「行动小组」](context-after.png) |
+
+### 如何决定用哪一个译法
+
+对用户选中的英文词组，先比较它在句中的译文与单独翻译的结果。一致时直接采用。有分歧时，Mac 用两种不同的标记复查用户选中的位置。两次都指向原译文的同一段中文，且和系统最初识别的词组边界吻合，才采用句中译法。Windows 先用离线引擎对齐选区，再用引号标记同一处重新翻译。取下引号后须还原原译句，中文词组也只能出现一次。证据不足时会标明「短语参考」。如果独立释义也取不到，卡片保留已完成的句译。
+
+### 用另一份语料检查泛化
+
+事先固定 UD English GUM r2.15 测试集。1,285 句、15 种文体中共有 368 对符合条件的相邻名词。每类按与 EWT 相同的稳定哈希顺序选前三对。旧版和本版都能从同一词头扩选其中 42/45 对。另 3 对的左词属于连字符复合词，无法恰好扩选为标注的两个词。自动词表在全量扫描的 20,707 个英文落点上零次触发。数据不随应用分发。[语料及固定版本](https://github.com/UniversalDependencies/UD_English-GUM/tree/34d01cb603867d0c085896e8286a0fe01229fa37) · [GUM 文体与授权](https://universaldependencies.org/treebanks/en_gum/index.html)
+
+| 验证项 | 预期 | 实际结果 | 结论 |
+| --- | --- | --- | --- |
+| 已知分歧与边界 | 选中词组贴合当前句，同时保住上一轮的防错 | 军事语境的 Ops team 恢复「行动小组」，邮件场景的 mailing list 恢复「邮件列表」；school bus 是「校车」，web site 是「网站」。另一处 mailing list 的初次对齐包含后续实词，保留「邮寄名单」的短语参考。 | 两个已知退步修复，歧义仍有漏判 |
+| 陌生材料前后对照 | 在同一台 Mac 上对照全部可扩选样本 | 42 个可扩选样本中，41 个首释义及来源一致。唯一变化是口语 retirement bit，由「退休的一点」变为「退休部分」。两轮回放的释义和来源一致。 | 调换次序并隐去版本后，执行者略偏向「退休部分」。两种都生硬，未计为明确的语义改善 |
+| 首张卡仍会答错什么 | 检查两版共同答错的情况 | 调查问卷中的 discrimination measure 被译作「歧视措施」，实际指衡量是否受到歧视的指标。聊天里的 disclosure bit 出现「披露位」。 | 两版共同失败；本次未按这些词调规则 |
+
+此处只有一名执行者对发生变化的两份释义隐藏版本后判断，按是否保持原意、完整词组和修饰范围比较。语料标注的是英语依存关系，没有标准中文答案。这 42 个结果不能得出总体译准率；真实读者是否还会打开第二个工具，需要独立试用。
+
+### 读者等待的时间
+
+同一台 Intel Mac 在语料检查中各跑旧版、新版两轮，每轮 42 个可扩选词组，以进入本地翻译开始计时。旧版和新版返回最终词义的中位数分别为 1.44 秒、3.69 秒（每版 84 次）。新版有 36/42 个词组得到可提前展示的句译，两轮共 72 次，中位数为 1.21 秒。对这 72 次按同一次请求计时，句译比最终词义早 2.76 秒。其余 6 个样本没有提前句译。每个版本自身的两轮释义、来源和句译一致。
+
+这组数据包含当时的本机负载，计时起点在选区已识别之后，未包含 OCR 或窗口绘制。此前同语料一次负载较轻的回放，最终词义中位数旧版 290 毫秒、新版 526 毫秒。在这两种环境里，核验都增加了最终词义的等待。首次原生卡片取证还遇到过 12 秒超时，单独重试取得了上方对照。
+
+Windows 打包版在 100% 和 150% 缩放下，营救句首释义均为「行动小组」，句译作「行动组」，因此标为「短语参考」。邮件句两档均为「邮件列表」，标为「句中释义」。[两档原生截图与界面文本](https://github.com/wax0629/WaxTranslate/actions/runs/43401708569/artifacts/14025882079)
+
+用本机已安装的英译中模型运行以下命令，可以复现语料抽样和计时。第一个命令从固定图像的 Vision 落点进入实际 SwiftUI 卡片，保存新旧版本的截图。
+
+```sh
+./scripts/check-hover-feedback.sh --context-preview dist/phrase-context-cards 1bc6a0d
+mkdir -p dist/phrase-gum
+curl -fsSL https://raw.githubusercontent.com/UniversalDependencies/UD_English-GUM/34d01cb603867d0c085896e8286a0fe01229fa37/en_gum-ud-test.conllu -o dist/phrase-gum/test.conllu
+python3 scripts/phrase-corpus-check.py dist/phrase-gum/test.conllu dist/phrase-gum/samples.json
+swiftc -O -whole-module-optimization -parse-as-library -D WAX_APP_TESTS -D WAX_PHRASE_PROGRESS -target "$(uname -m)-apple-macosx15.2" Sources/waxtranlate/*.swift Tests/Performance/PhraseCorpus.swift -o dist/phrase-gum/reader
+dist/phrase-gum/reader dist/phrase-gum/samples.json --meanings
+```

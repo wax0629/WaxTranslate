@@ -316,16 +316,22 @@ class Card(QWidget):
                     can_save=True, can_search=False, references=(), web_search=False):
         self.loading = False
         self.set_phrase_choices(passage)
-        if passage.selection and not (references or web_search) and (chinese_context(passage) or (passage.structure in ('path','code','fragment','title') or not passage.has_complete_context) or origin == '暂未收录' or origin in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考')):
+        if origin == CHECKING_PHRASE:
+            self.rule_state = None
+            self.listen.set_content(passage.word, passage.text, passage.source_code or "en")
+            content = (f"<p class='details'>{plain(origin)}…</p><p class='source'>{marked_source(passage)}</p>"
+                       f"<p class='translation'>{plain(sentence)}</p>")
+            self.present(origin, content, point, word=passage.word)
+            return
+        if passage.selection and not (references or web_search) and (
+                pos == "英语词组" or chinese_context(passage) or not passage.has_complete_context
+                or passage.structure in ("path", "code", "fragment", "title")
+                or origin in ("暂未收录", "名称参考", "惯用名称参考", "术语参考", "语境术语参考", "多义参考")):
             self.show_rule_result(passage, origin, gloss, sentence, point, language, pos, can_save, can_search, excerpt)
             return
         self.rule_state = None
         self.listen.set_content(passage.word, passage.text, passage.source_code or "en",
                                 sentence_language="zh" if chinese_context(passage) else passage.source_code or "en")
-        if origin == CHECKING_PHRASE:
-            content = f"<p class='source'>{marked_source(passage)}</p><p class='translation'>{plain(sentence)}</p>"
-            self.present(origin, content, point, word=passage.word)
-            return
         if not passage.selection:
             details = (language or "按英语翻译") + " → 简体中文"
             translation = gloss or sentence

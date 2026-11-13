@@ -40,7 +40,7 @@ if [[ "${1:-}" != --desktop ]]; then
     compile . "$work/current"
     "$work/current"
   else
-    echo "Usage: $0 [--compare <previous-commit> | --phrase-preview <directory> <pre-phrase-commit> | --desktop [image-directory]]" >&2
+    echo "Usage: $0 [--compare <previous-commit> | --phrase-preview <directory> <pre-phrase-commit> | --context-preview <directory> <previous-phrase-commit> | --desktop [image-directory]]" >&2
     exit 2
   fi
   exit
