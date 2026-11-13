@@ -1,4 +1,4 @@
-"""Evaluate reading spans on UD English EWT r2.15 without shipping its text."""
+"""Evaluate reading spans on pinned English UD corpora without shipping their text."""
 import argparse
 from collections import Counter, defaultdict
 import hashlib
@@ -11,7 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "windows"))
 from terminology import phrase_at
 
-SHA256 = "0612e45914359e4b36d187ef2bfeaf66fc8933210925be985c5fbf6a9e311036"
+# (dataset, pairs per genre). EWT development rounds remain reproducible.
+CORPORA = {
+    "0612e45914359e4b36d187ef2bfeaf66fc8933210925be985c5fbf6a9e311036": ("EWT", 8),
+    "99deb5746618d8ab83e5cafc2d07851e76389b2c8babf5ad9e5ef176a4619114": ("GUM", 3),
+}
 WORD = re.compile(r"[A-Za-z]+")
 
 
@@ -24,18 +28,22 @@ def main():
     parser.add_argument("corpus", type=Path)
     parser.add_argument("samples", type=Path, help="Ignored local JSON for the native reader check")
     parser.add_argument("--round", type=int, choices=(1, 2), default=1,
-                        help="Round 2 takes the next eight disjoint pairs per genre")
+                        help="EWT round 2 takes the next eight disjoint pairs per genre")
     args = parser.parse_args()
     data = args.corpus.read_bytes()
-    if hashlib.sha256(data).hexdigest() != SHA256:
-        parser.error("Use en_ewt-ud-test.conllu from UD_English-EWT at 4dc8e10 (r2.15)")
+    corpus = CORPORA.get(hashlib.sha256(data).hexdigest())
+    if corpus is None:
+        parser.error("Use UD English EWT 4dc8e10 or GUM 34d01cb (r2.15 test split)")
+    name, count = corpus
+    if name == "GUM" and args.round != 1:
+        parser.error("GUM has one preselected evaluation round")
     cases, counts = defaultdict(list), Counter()
     triggers = set()
     for block in data.decode().strip().split("\n\n"):
         lines = block.splitlines()
         meta = dict(line[2:].split(" = ", 1) for line in lines if line.startswith("# ") and " = " in line)
         text, sentence_id = meta["text"], meta["sent_id"]
-        genre = sentence_id.split("-", 1)[0]
+        genre = sentence_id.split("_")[1] if name == "GUM" else sentence_id.split("-", 1)[0]
         counts["sentences"] += 1
         for token in WORD.finditer(text):
             counts["token_hits"] += 1
@@ -60,8 +68,8 @@ def main():
     samples = []
     for genre, pairs in sorted(cases.items()):
         ordered = sorted(pairs, key=lambda pair: hashlib.sha256(pair["id"].encode()).digest())
-        start = (args.round - 1) * 8
-        batch = ordered[start:start + 8]
+        start = (args.round - 1) * count
+        batch = ordered[start:start + count]
         samples.extend(batch)
         print(f"{genre}: {len(pairs)} eligible, {len(batch)} sampled")
     args.samples.write_text(json.dumps(samples, ensure_ascii=False))

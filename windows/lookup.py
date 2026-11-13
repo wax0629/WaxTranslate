@@ -11,6 +11,7 @@ from word_details import part_of_speech
 
 
 UNKNOWN = "暂未收录"
+CHECKING_PHRASE = "正在核对词组释义"
 DICTIONARY = "英汉词典 · ECDICT"
 DICTIONARY_POS = {"n": "名词", "v": "动词", "vi": "不及物动词", "vt": "及物动词",
                   "a": "形容词", "adj": "形容词", "adv": "副词", "prep": "介词",
@@ -71,6 +72,26 @@ def term_context_translation(passage):
     part, _ = bounded_context(passage)
     excerpt = (part, translated(part)) if part.text != passage.text else None
     return full, excerpt
+
+
+def confirms_phrase_in_sentence(passage, candidate, sentence):
+    # Keep the original sentence and independently mark only this occurrence.
+    # Removing the returned quotes must reproduce the entire original target;
+    # a matching word somewhere else in the sentence does not verify it.
+    quotes = '"“”'
+    if (not passage.has_complete_context or passage.structure not in ("sentence", "list")
+            or len(passage.text) > 512 or not 2 <= len(candidate) <= 40
+            or sentence.count(candidate) != 1 or any(q in passage.text or q in sentence for q in quotes)
+            or not re.search(r"[\u3400-\u9fff]", candidate)):
+        return False
+    start, end = passage.selection
+    marked = passage.text[:start] + '"' + passage.word + '"' + passage.text[end:]
+    probe = sentence_translation(marked)
+    for opening, closing in (('"', '"'), ('“', '”')):
+        before, mark, after = probe.partition(opening + candidate + closing)
+        if mark and before + candidate + after == sentence:
+            return True
+    return False
 
 
 def preserves_reference(word, gloss, translated):
@@ -148,8 +169,10 @@ def explain(passage, on_phrase=None):
         result, excerpt = translate_lookup(passage)
         origin, gloss, sentence = result
         if origin == "句中释义":
-            reference = translate(Passage(word, source_code="en"))[1].strip(" 。.!！?？")
-            if reference != gloss.strip(" 。.!！?？"):
+            if on_phrase and sentence:
+                on_phrase((CHECKING_PHRASE, "", sentence), language, "英语词组")
+            reference = sentence_translation(word).strip(" 。.!！?？")
+            if reference != gloss.strip(" 。.!！?？") and not confirms_phrase_in_sentence(passage, gloss, sentence):
                 origin, gloss = "短语参考", reference
         elif origin == "单词参考":
             origin = "短语参考"

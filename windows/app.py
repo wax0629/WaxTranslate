@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QFrame, QHBoxLayout, 
 
 from notebook import Notebook
 from home import HomePage
-from lookup import UNKNOWN, explain, reference_word, sentence_translation
+from lookup import CHECKING_PHRASE, UNKNOWN, explain, reference_word, sentence_translation
 from online_terms import search_entities
 from popup import Card
 from speech import SpeechPlayer
@@ -820,6 +820,9 @@ class Window(QWidget):
 
     def show_ready_phrase(self, ticket, point, passage, result, language, kind):
         if ticket != self.ticket:
+            return
+        if result[0] == CHECKING_PHRASE:
+            self.card.show_result(passage, *result, point, language=language, pos=kind, can_save=False, can_search=False)
             return
         self.partial_phrase_ticket = ticket
         self.saved_result = passage, result

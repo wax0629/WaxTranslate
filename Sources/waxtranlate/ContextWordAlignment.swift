@@ -62,7 +62,7 @@ struct ContextWordAlignment {
         compoundHead = Self.isCompoundNounHead(passage)
     }
 
-    func recover(using translate: (String) async throws -> String) async throws -> String? {
+    func recover(exactPhrase: Bool = false, using translate: (String) async throws -> String) async throws -> String? {
         var agreement: Range<Int>?
         var confirmations = 0
         for (index, probe) in probes.enumerated() {
@@ -72,8 +72,9 @@ struct ContextWordAlignment {
             catch is CancellationError { throw CancellationError() }
             catch { try Task.checkCancellation(); return nil }
             try Task.checkCancellation()
-            if let span = parse(translated, marker: probe.marker), let projected = project(span) {
+            if let span = parse(translated, marker: probe.marker), let projected = project(span, exactPhrase: exactPhrase) {
                 if let previous = agreement {
+                    if exactPhrase && previous != projected { return nil }
                     let lower = max(previous.lowerBound, projected.lowerBound)
                     let upper = min(previous.upperBound, projected.upperBound)
                     // Conflicting locations are not resolved by cherry-picking
@@ -85,6 +86,7 @@ struct ContextWordAlignment {
                 if confirmations == 2, let agreement {
                     let start = target.index(target.startIndex, offsetBy: agreement.lowerBound)
                     let end = target.index(target.startIndex, offsetBy: agreement.upperBound)
+                    if exactPhrase { return String(target[start..<end]) }
                     let range = Self.completeTargetWord(NSRange(start..<end, in: target), in: target, compoundHead: compoundHead)
                     guard let span = Range(range, in: target) else { return nil }
                     return String(target[span]).trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
@@ -163,7 +165,7 @@ struct ContextWordAlignment {
         return nil
     }
 
-    private func project(_ span: Span) -> Range<Int>? {
+    private func project(_ span: Span, exactPhrase: Bool) -> Range<Int>? {
         let n = characters.count, left = Array(span.prefix), right = Array(span.suffix)
         let before = Self.prefixCosts(left, characters)
         let after = Self.prefixCosts(Array(right.reversed()), Array(characters.reversed()))
@@ -178,6 +180,7 @@ struct ContextWordAlignment {
         }
         let exact = !ranges.isEmpty
         if !exact {
+            if exactPhrase { return nil }
             // A retained English token or a synonym can still locate a word.
             // Require the marked hole to explain text missing from the two
             // surrounding strings, rather than inventing a word when it was omitted.

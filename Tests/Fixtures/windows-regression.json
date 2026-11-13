@@ -1819,12 +1819,14 @@
         "模型语境得到 ablation study，医学反例保持单词。",
         "调整只应用于命中的位置，原句与所选释义能够保存。",
         "术语先可用，句译补入同一收藏，历史只计一次，过期请求不能重开卡片。",
-        "只在独立词组译文与当前落点的目标选区一致时替换术语，保留否定和另一处同名词；有歧义时标明句译用词待核对。"
+        "只在独立词组译文与当前落点的目标选区一致时替换术语，保留否定和另一处同名词；有歧义时标明句译用词待核对。",
+        "扩选词组遇到句译分歧时，核对第二处落点、完整词组和否定；句中证据不足退回短语参考，保留已经得到的句译。"
       ],
       "automation": [
         "windows/test_card_rules.py::CardRuleTests.test_phrase_ranges_across_editor_ocr_and_card",
         "windows/test_card_rules.py::CardRuleTests.test_local_phrase_displays_and_saves_while_sentence_is_pending",
-        "windows/test_card_rules.py::CardRuleTests.test_glossary_translation_replaces_only_a_confirmed_occurrence"
+        "windows/test_card_rules.py::CardRuleTests.test_glossary_translation_replaces_only_a_confirmed_occurrence",
+        "windows/test_card_rules.py::CardRuleTests.test_conflicting_phrase_evidence_preserves_the_selected_occurrence"
       ]
     }
   ]

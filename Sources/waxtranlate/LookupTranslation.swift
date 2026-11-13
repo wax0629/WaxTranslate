@@ -259,7 +259,7 @@ enum LookupTranslation {
     }
 
     static func translate(_ passage: Passage, session: TranslationSession, dictionary: @autoclosure () async -> [String], trace: LookupTrace = LookupTrace(),
-                          onExcerpt: ((LookupResult) async -> Void)? = nil) async throws -> LookupResult {
+                          onSentence: ((String) -> Void)? = nil, onExcerpt: ((LookupResult) async -> Void)? = nil) async throws -> LookupResult {
         let marked: ((AttributedString) async throws -> Response)?
         if #available(macOS 26.4, *) {
             marked = { value in
@@ -267,7 +267,7 @@ enum LookupTranslation {
                 return Response(text: response.targetText, attributed: response.attributedTargetText)
             }
         } else { marked = nil }
-        return try await translate(passage, provider: Provider(plain: { try await session.translate($0).targetText }, marked: marked), dictionary: await dictionary(), trace: trace, onExcerpt: onExcerpt)
+        return try await translate(passage, provider: Provider(plain: { try await session.translate($0).targetText }, marked: marked), dictionary: await dictionary(), trace: trace, onSentence: onSentence, onExcerpt: onExcerpt)
     }
 
     private static func translateContext(_ passage: Passage, term: ReadingPhrase?, provider: Provider) async throws -> String {
@@ -290,7 +290,7 @@ enum LookupTranslation {
     }
 
     static func translate(_ passage: Passage, provider: Provider, dictionary: @autoclosure () async -> [String], trace: LookupTrace = LookupTrace(),
-                          onExcerpt: ((LookupResult) async -> Void)? = nil) async throws -> LookupResult {
+                          onSentence: ((String) -> Void)? = nil, onExcerpt: ((LookupResult) async -> Void)? = nil) async throws -> LookupResult {
         try Task.checkCancellation()
         // Enforce completeness at the provider boundary as well as in the card.
         // Explicit fragment translation uses TranslationRunner with a labelled,
@@ -311,7 +311,7 @@ enum LookupTranslation {
             output = LookupResult(meaning: TranslationOutput.normalize(term.meaning), origin: .term,
                                   sentenceTranslation: TranslationOutput.normalize(sentence, target: passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans"))
         } else {
-            output = try await translateMeaning(excerpt.passage, retry: SentenceExcerpt.alignmentRetry(passage), provider: provider, dictionary: dictionary, trace: trace)
+            output = try await translateMeaning(excerpt.passage, retry: SentenceExcerpt.alignmentRetry(passage), provider: provider, dictionary: dictionary, trace: trace, onSentence: onSentence)
         }
         try Task.checkCancellation()
         if excerpt.isTruncated {
@@ -331,7 +331,8 @@ enum LookupTranslation {
         }
         // Recovery uses the whole original passage, retaining conditions and
         // the exact occurrence even when the card shows a shorter excerpt.
-        if output.origin == .unresolved, let sentence = output.sentenceTranslation,
+        if output.origin == .unresolved, !passage.isPhrase || SentenceContext.isPhrasalVerb(passage.text),
+           let sentence = output.sentenceTranslation,
            let alignment = ContextWordAlignment(passage, translation: sentence, focus: .nounHead) {
             let began = LookupTrace.now
             if let recovered = try await alignment.recover(using: provider.plain) {
@@ -348,7 +349,8 @@ enum LookupTranslation {
         return output
     }
 
-    private static func translateMeaning(_ passage: Passage, retry: Passage?, provider: Provider, dictionary: () async -> [String], trace: LookupTrace) async throws -> LookupResult {
+    private static func translateMeaning(_ passage: Passage, retry: Passage?, provider: Provider, dictionary: () async -> [String], trace: LookupTrace,
+                                         onSentence: ((String) -> Void)?) async throws -> LookupResult {
         func result(_ meaning: String, _ origin: LookupResult.Origin, _ sentence: String? = nil) -> LookupResult {
             makeResult(for: passage, meaning: meaning, origin: origin, sentence: sentence)
         }
@@ -375,16 +377,30 @@ enum LookupTranslation {
         }
 
         if passage.isPhrase, passage.sourceLanguage == "en", !SentenceContext.isPhrasalVerb(passage.text) {
-            // Alignment can include a neighbouring word or only part of a compound.
-            // Confirm the whole selected expression before calling it a contextual gloss.
-            let reference = result(try await provider.plain(passage.text), .standalone, sentence)
             try Task.checkCancellation()
+            if !sentence.isEmpty { onSentence?(TranslationOutput.normalize(sentence)) }
+            let independent: String
+            do { independent = try await provider.plain(passage.text) }
+            catch is CancellationError { throw CancellationError() }
+            catch { independent = "" }
+            try Task.checkCancellation()
+            let reference = result(independent, .standalone, sentence)
+            guard let alignedGloss else { return reference }
+            let candidate = TranslationOutput.normalize(alignedGloss)
             let boundaries = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
-            if let alignedGloss, reference.isUsable,
-               TranslationOutput.normalize(alignedGloss).trimmingCharacters(in: boundaries) == reference.meaning.trimmingCharacters(in: boundaries) {
-                return result(alignedGloss, .sentence, sentence)
+            if reference.isUsable, candidate == reference.meaning.trimmingCharacters(in: boundaries) {
+                return result(candidate, .sentence, sentence)
             }
-            return reference
+            // A clipped function word can already explain the disagreement.
+            if reference.isUsable, verifiedBoundaryMeaning(candidate, references: [reference.meaning]) != nil { return reference }
+            // Two literal markings must reproduce the same target span at this occurrence.
+            // Only complete boundary tokens may separate that span from the first alignment.
+            guard candidate.count >= 2,
+                  let alignment = ContextWordAlignment(passage, translation: sentence),
+                  let confirmed = try await alignment.recover(exactPhrase: true, using: provider.plain),
+                  confirmed.count >= 2, !needsBoundaryVerification(confirmed),
+                  verifiedBoundaryMeaning(candidate, references: [confirmed]) != nil else { return reference }
+            return result(confirmed, .sentence, sentence)
         }
 
         if let gloss = alignedGloss {

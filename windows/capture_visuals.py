@@ -143,6 +143,20 @@ def main():
             result, excerpt, language, pos = explain(picked)
             show_card(picked, *result, point, excerpt=excerpt, language=language, pos=pos)
             capture(card, "phrase-study")
+            # Older source trees predate manual expansion. Never fabricate a selection for them.
+            import card_policy
+            if hasattr(card_policy, "phrase_range_choices"):
+                for name, source, phrase in (
+                        ("phrase-rescue", "The commander sent an Ops team to rescue the hostages.", "Ops team"),
+                        ("phrase-email", "We added their addresses to the mailing list.", "mailing list")):
+                    word = phrase.split()[-1]
+                    start = source.rindex(word)
+                    hit = sentence_at(source, start, start + len(word), "en")
+                    span = next(span for _, span in card_policy.phrase_range_choices(hit) if source[slice(*span)] == phrase)
+                    picked = hit.selecting(*span, anchor=hit.selection)
+                    result, excerpt, language, pos = explain(picked)
+                    show_card(picked, *result, point, excerpt=excerpt, language=language, pos=pos)
+                    capture(card, name)
             # Declared layout fixtures, separate from the real OCR/model tests.
             for extent,source in (
                 ('missingStart','the sensor remains connected.'),

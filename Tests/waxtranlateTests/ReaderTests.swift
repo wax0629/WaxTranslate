@@ -33,6 +33,7 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testSentenceAtExactOccurrence()
         try testPhraseAtExactOccurrence()
         try await testReadingPhrases()
+        try await testConflictingPhraseEvidence()
         try testConciseGloss()
         try testContextExcerpt()
         try testCardPolicy()
@@ -143,6 +144,66 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
             try expect(chosen.meaning.contains("壳") || chosen.wordReference?.contains("壳") == true)
             print("Apple phrase checks: \(negative.text) | \(sentence); \(adjusted.text) | \(chosen.meaning) | \(chosen.wordReference ?? "").")
         }
+    }
+
+    static func testConflictingPhraseEvidence() async throws {
+        let source = "One support team stayed behind while another support team did not return."
+        let word = (source as NSString).range(of: "team", options: .backwards)
+        let hit = try SentenceContext.passage(in: source, selection: word, language: "en")
+        let choice = try require(hit.phraseRangeChoices.first { $0.text == "support team" })
+        let selected = try require(hit.selecting(choice.range, anchor: hit.anchor))
+        let target = "一支后勤队留守，另一支救援队没有返回。"
+        let marked = { (text: String) in
+            var value = AttributedString(text)
+            value.inlinePresentationIntent = .stronglyEmphasized
+            return value
+        }
+        func lookup(reference: String?, markedGloss: String = "救援队", output: String?,
+                    cancel: Bool = false) async throws -> (LookupResult, [String]) {
+            var probes = [String]()
+            var firstSentence: String?
+            let provider = LookupTranslation.Provider(plain: { text in
+                try expect(firstSentence == target)
+                if text == selected.text {
+                    guard let reference else { throw CocoaError(.fileReadUnknown) }
+                    return reference
+                }
+                if cancel { throw CancellationError() }
+                probes.append(text)
+                for (open, close) in [("<b>", "</b>"), ("<i>", "</i>"), ("\"", "\"")] {
+                    let expected = source.replacingCharacters(in: Range(choice.range, in: source)!, with: open + selected.text + close)
+                    if text == expected, let output {
+                        return target.replacingOccurrences(of: "救援队", with: open + output + close)
+                    }
+                }
+                return target
+            }, marked: { _ in
+                let parts = target.components(separatedBy: markedGloss)
+                let response = AttributedString(parts[0]) + marked(markedGloss) + AttributedString(parts[1])
+                return .init(text: target, attributed: response)
+            })
+            let result = try await LookupTranslation.translate(selected, provider: provider, dictionary: [], onSentence: { firstSentence = $0 })
+            return (result, probes)
+        }
+        let (confirmed, probes) = try await lookup(reference: "支持团队", output: "救援队")
+        try expect(confirmed.origin == .sentence && confirmed.meaning == "救援队" && confirmed.sentenceTranslation == target)
+        try expect(confirmed.canSave(for: selected) && probes.count == 2)
+        let (fast, noProbes) = try await lookup(reference: "救援队", output: nil)
+        try expect(fast.origin == .sentence && noProbes.isEmpty)
+        let (unmarked, _) = try await lookup(reference: "支持团队", output: nil)
+        try expect(unmarked.origin == .standalone && unmarked.meaning == "支持团队")
+        let (substitute, _) = try await lookup(reference: "支持团队", output: "援助队")
+        try expect(substitute.origin == .standalone)
+        let (wrongSpan, _) = try await lookup(reference: "支持团队", markedGloss: "后勤队", output: "救援队")
+        try expect(wrongSpan.origin == .standalone)
+        let (confirmedWithoutReference, _) = try await lookup(reference: nil, output: "救援队")
+        try expect(confirmedWithoutReference.origin == .sentence)
+        let (unresolved, _) = try await lookup(reference: nil, output: nil)
+        try expect(!unresolved.canSave(for: selected) && unresolved.sentenceTranslation == target)
+        do {
+            _ = try await lookup(reference: "支持团队", output: nil, cancel: true)
+            throw CheckFailure(reason: "Cancelled phrase lookup returned a result")
+        } catch is CancellationError {}
     }
 
     static func testAutomaticForeignTermContext() throws {

@@ -22,6 +22,7 @@ struct ResultCard: View {
     private let rangeChoices: [PhraseRangeChoice]
     private let excerpt: SentenceExcerpt
     @State private var result: LookupResult?
+    @State private var pendingPhraseContext: String?
     @State private var phase = Phase.checking
     @State private var configuration: TranslationSession.Configuration?
     @State private var copied = false
@@ -158,13 +159,18 @@ struct ResultCard: View {
                 try await session.prepareTranslation()
                 trace.record("translation.prepare", since: began)
                 let lookup = dictionaryTask
-                let displayed = try await LookupTranslation.translate(passage, session: session, dictionary: await lookup?.value ?? [], trace: trace) { excerpt in
+                let displayed = try await LookupTranslation.translate(passage, session: session, dictionary: await lookup?.value ?? [], trace: trace, onSentence: { sentence in
+                    guard !Task.isCancelled else { return }
+                    pendingPhraseContext = sentence
+                    trace.record("lookup.first_phrase_context", since: began)
+                }) { excerpt in
                     guard !Task.isCancelled else { return }
                     result = excerpt
                     trace.record("lookup.excerpt_meaning", since: began)
                 }
                 try Task.checkCancellation()
                 result = displayed
+                pendingPhraseContext = nil
                 LookupCache.shared.insert(displayed, for: passage)
                 copied = false
                 phase = .done
@@ -338,7 +344,8 @@ struct ResultCard: View {
 
     private var displayedPassage: Passage { expanded ? passage : excerpt.passage }
     private var displayedSentenceTranslation: String? {
-        !expanded && excerpt.isTruncated ? result?.excerptTranslation : result?.sentenceTranslation
+        if !expanded && excerpt.isTruncated { return result?.excerptTranslation ?? pendingPhraseContext }
+        return result?.sentenceTranslation ?? (excerpt.isTruncated ? nil : pendingPhraseContext)
     }
 
     private var footer: some View {
@@ -365,7 +372,8 @@ struct ResultCard: View {
     @ViewBuilder private var translationStatus: some View {
         switch phase {
         case .checking: ProgressView("检查本机语言包…").controlSize(.small)
-        case .translating: ProgressView(wordRequest != nil ? "正在查询单词参考…" : hasSentence ? "正在翻译原句…" : "正在翻译…").controlSize(.small)
+        case .translating:
+            ProgressView(pendingPhraseContext != nil ? "正在核对词组释义…" : wordRequest != nil ? "正在查询单词参考…" : hasSentence ? "正在翻译原句…" : "正在翻译…").controlSize(.small)
         case .download:
             Button("下载\(sourceName)翻译语言包…") { focusForDownload(); start() }.controlSize(.small)
         case .failed:

@@ -20,7 +20,12 @@ import Translation
         }
         var automatic = 0, adjustable = 0, wrong = 0
         for sample in samples {
-            let hit = (sample.text as NSString).range(of: sample.word)
+            let source = sample.text as NSString
+            let expression = #"(?<!\w)"# + NSRegularExpression.escapedPattern(for: sample.phrase) + #"(?!\w)"#
+            let pair = source.range(of: expression, options: .regularExpression)
+            guard pair.location != NSNotFound else { throw CocoaError(.fileReadCorruptFile) }
+            let hit = source.range(of: sample.word, options: .backwards, range: pair)
+            guard hit.location != NSNotFound else { throw CocoaError(.fileReadCorruptFile) }
             let passage = try SentenceContext.passage(in: sample.text, selection: hit, language: "en")
             if passage.text == sample.phrase { automatic += 1; continue }
             if passage.text != sample.word { wrong += 1; print("unexpected-span", sample.id); continue }
@@ -30,9 +35,20 @@ import Translation
                expanded.text == sample.phrase, expanded.anchor == passage.selection {
                 adjustable += 1
                 if let session {
+                    let began = LookupTrace.now
+                    var firstSentenceMs: Int?
+                    #if WAX_PHRASE_PROGRESS
+                    let result = try await LookupTranslation.translate(expanded, session: session, dictionary: [], onSentence: { _ in
+                        firstSentenceMs = Int((LookupTrace.now - began) * 1000)
+                    })
+                    #else
                     let result = try await LookupTranslation.translate(expanded, session: session, dictionary: [])
-                    let answer = ["id": sample.id, "phrase": sample.phrase, "gloss": result.meaning,
-                                  "reference": result.wordReference ?? "", "origin": String(describing: result.origin)]
+                    #endif
+                    var answer = ["id": sample.id, "phrase": sample.phrase, "gloss": result.meaning,
+                                  "reference": result.wordReference ?? "", "origin": String(describing: result.origin),
+                                  "sentence": result.sentenceTranslation ?? "",
+                                  "latency_ms": String(Int((LookupTrace.now - began) * 1000))]
+                    if let firstSentenceMs { answer["first_sentence_ms"] = String(firstSentenceMs) }
                     let line = try JSONEncoder().encode(answer)
                     print(String(decoding: line, as: UTF8.self))
                 }

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication
 from app import Window, analyze
 from card_policy import automatic_context, bounded_context, chinese_context
 from notebook import Notebook
-from lookup import DICTIONARY, UNKNOWN, explain
+from lookup import CHECKING_PHRASE, DICTIONARY, UNKNOWN, explain
 from popup import Card
 from reader import Passage, sentence_at
 
@@ -81,6 +81,66 @@ class CardRuleTests(unittest.TestCase):
             self.assertNotIn("包含左词", [label for label, span in phrase_range_choices(isolated)])
         finally:
             card.close()
+
+    def test_conflicting_phrase_evidence_preserves_the_selected_occurrence(self):
+        text = "One support team stayed behind while another support team did not return."
+        head = text.rindex("team")
+        hit = sentence_at(text, head, head + len("team"), "en")
+        start = text.rindex("support team")
+        phrase = hit.selecting(start, head + len("team"), anchor=hit.selection)
+        marked = text[:start] + '"support team"' + text[head + len("team"):]
+        target = "一支后勤队留守，另一支救援队没有返回。"
+        def check(reference, probe, expected, calls, sentence=target):
+            previews = []
+            def translate_input(part):
+                self.assertEqual(previews, [(CHECKING_PHRASE, "", sentence)])
+                self.assertIn(part.text, ("support team", marked))
+                result = reference if part.text == "support team" else probe
+                if isinstance(result, Exception):
+                    raise result
+                return "选区译文", result, ""
+            with patch("lookup.translate_lookup", return_value=(("句中释义", "救援队", sentence), None)), \
+                    patch("lookup.translate", side_effect=translate_input) as translation:
+                result = explain(phrase, on_phrase=lambda partial, language, kind: previews.append(partial))[0]
+                self.assertEqual(result[:2], expected)
+                self.assertEqual(result[2], sentence)
+                self.assertEqual(translation.call_count, calls)
+
+        correct = target.replace("救援队", "“救援队”")
+        check("支持团队", correct, ("句中释义", "救援队"), 2)
+        check("救援队。", "", ("句中释义", "救援队"), 1)
+        for probe in (target, correct.replace("没有", "已经"), target.replace("后勤队", "“后勤队”"),
+                      correct.replace("“救援队”", "“救”援队"), RuntimeError("model unavailable")):
+            with self.subTest(probe=probe):
+                check("支持团队", probe, ("短语参考", "支持团队"), 2)
+        check("支持团队", correct, ("短语参考", "支持团队"), 1, target.replace("后勤队", "救援队"))
+        check(OSError("reference failed"), correct, ("句中释义", "救援队"), 2)
+        check(OSError("reference failed"), target, (UNKNOWN, "未能确认这组词的中文释义。"), 2)
+
+        with TemporaryDirectory() as temp, patch.object(QProcess, "start"):
+            window = Window(Notebook(Path(temp)/"notebook.sqlite3"))
+            try:
+                ticket = window.ticket
+                preview = CHECKING_PHRASE, "", target
+                window.show_ready_phrase(ticket, QPoint(), phrase, preview, "英语", "英语词组")
+                self.assertIn(target, window.card.text.toPlainText())
+                self.assertIsNone(window.saved_result)
+                self.assertTrue(window.card.copy.isHidden() and window.card.save.isHidden())
+                completed = Future()
+                final = "句中释义", "救援队", target
+                completed.set_result((phrase, final, None, "英语", "英语词组"))
+                window.show_result(ticket, QPoint(), completed)
+                self.assertEqual(window.saved_result, (phrase, final))
+                window.card.save.click()
+                saved, = window.notebook.entries()
+                self.assertEqual((saved["gloss"], saved["position"]), ("救援队", phrase.selection[0]))
+                window.invalidate()
+                window.show_ready_phrase(ticket, QPoint(), phrase, preview, "英语", "英语词组")
+                self.assertFalse(window.card.isVisible())
+            finally:
+                window.shutdown()
+                window.hide()
+                window.deleteLater()
 
     def test_glossary_translation_replaces_only_a_confirmed_occurrence(self):
         from lookup import phrase_context_translation

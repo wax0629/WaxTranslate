@@ -65,9 +65,10 @@ import Translation
         TranslationWarmup.start()
         await Reader.warmUp(language: nil)
         #if !WAX_HOVER_BASELINE
-        if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--phrase-preview" {
+        if CommandLine.arguments.count == 3 && ["--phrase-preview", "--context-preview"].contains(CommandLine.arguments[1]) {
             try await previewPhrase(in: window, notebook: notebook, preferences: preferences,
-                                    canTranslate: canTranslate, output: URL(fileURLWithPath: CommandLine.arguments[2]))
+                                    canTranslate: canTranslate, expanded: CommandLine.arguments[1] == "--context-preview",
+                                    output: URL(fileURLWithPath: CommandLine.arguments[2]))
             return
         }
         #endif
@@ -145,15 +146,26 @@ import Translation
 
     #if !WAX_HOVER_BASELINE
     @MainActor private static func previewPhrase(in window: NSPanel, notebook: Notebook, preferences: Preferences,
-                                                 canTranslate: Bool, output: URL) async throws {
+                                                 canTranslate: Bool, expanded: Bool, output: URL) async throws {
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-        let cache = Reader.HoverCache(), sample = Sample("The ablation study removes one model component.")
-        let point = sample.point("study")
+        let cache = Reader.HoverCache()
+        let sample = Sample(expanded ? "The commander sent an Ops team to rescue the hostages." : "The ablation study removes one model component.")
+        let point = sample.point(expanded ? "team" : "study")
         for attempt in 1...3 {
             window.contentView = nil
             let began = LookupTrace.now
-            let passage = try await cache.passage(at: point, on: screen, displayID: 1, language: nil,
-                                                  trace: LookupTrace(), image: sample.crop)
+            let hit = try await cache.passage(at: point, on: screen, displayID: 1, language: nil,
+                                              trace: LookupTrace(), image: sample.crop)
+            let passage: Passage
+            if expanded {
+                #if WAX_CONTEXT_PREVIEW
+                guard canTranslate, let option = hit.phraseRangeChoices.first(where: { $0.text == "Ops team" }),
+                      let selection = hit.selecting(option.range, anchor: hit.anchor) else { throw failure("English model or phrase range unavailable") }
+                passage = selection
+                #else
+                throw failure("Compile the context preview with WAX_CONTEXT_PREVIEW")
+                #endif
+            } else { passage = hit }
             let card = ResultCard(passage: passage, notebook: notebook, preferences: preferences, close: {},
                                   speak: { _, _ in }, focusForDownload: {})
             let host = NSHostingView(rootView: card.environment(\.colorScheme, .light))
@@ -167,7 +179,8 @@ import Translation
             let milliseconds = (LookupTrace.now - began) * 1000
             print("attempt=\(attempt) first_gloss_ms=\(String(format: "%.1f", milliseconds)) word=\(passage.text) gloss=\(first.meaning)")
             #if WAX_EXPECT_READING_PHRASE
-            guard passage.text == "ablation study", first.meaning.hasPrefix("消融实验") else { throw failure("Wrong first gloss") }
+            let expected = expanded ? "行动小组" : "消融实验"
+            guard first.meaning.hasPrefix(expected) else { throw failure("Wrong first gloss") }
             #endif
             if canTranslate {
                 while LookupCache.shared.result(for: key)?.sentenceTranslation == nil && LookupTrace.now - began < 12 {

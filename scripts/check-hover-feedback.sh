@@ -11,15 +11,20 @@ if [[ "${1:-}" != --desktop ]]; then
     swiftc -O -whole-module-optimization -parse-as-library -D WAX_APP_TESTS "$@" -target "$(uname -m)-apple-macosx15.2" \
       "$source"/Sources/waxtranlate/*.swift Tests/Performance/OffscreenHover.swift -o "$output"
   }
-  if [[ "${1:-}" == --phrase-preview && $# == 3 ]]; then
+  if [[ ( "${1:-}" == --phrase-preview || "${1:-}" == --context-preview ) && $# == 3 ]]; then
     baseline="$(git rev-parse --verify "$3^{commit}")"
     mkdir "$work/base"
     git archive "$baseline" Sources Assets/Lexicon | tar -x -C "$work/base"
-    compile "$work/base" "$work/before"
-    compile . "$work/after" -D WAX_EXPECT_READING_PHRASE
+    if [[ "$1" == --context-preview ]]; then
+      compile "$work/base" "$work/before" -D WAX_CONTEXT_PREVIEW
+      compile . "$work/after" -D WAX_EXPECT_READING_PHRASE -D WAX_CONTEXT_PREVIEW
+    else
+      compile "$work/base" "$work/before"
+      compile . "$work/after" -D WAX_EXPECT_READING_PHRASE
+    fi
     for version in before after after before before after; do
       echo "version=$version"
-      "$work/$version" --phrase-preview "$2/$version"
+      "$work/$version" "$1" "$2/$version"
     done
   elif [[ "${1:-}" == --compare && $# == 2 ]]; then
     baseline="$(git rev-parse --verify "$2^{commit}")"

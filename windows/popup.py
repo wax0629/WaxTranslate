@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsDropShadowEffect, 
                                QLabel, QMenu, QPushButton, QSizePolicy, QTextBrowser, QToolButton, QVBoxLayout, QWidget)
 
 from languages import SUPPORTED
-from lookup import DICTIONARY
+from lookup import CHECKING_PHRASE, DICTIONARY
 from card_policy import automatic_context, bounded_context, chinese_context, needs_confirmation, phrase_range_choices
 from terminology import selected_phrase
 from speech import ListenButton, SpeechPlayer
@@ -322,6 +322,10 @@ class Card(QWidget):
         self.rule_state = None
         self.listen.set_content(passage.word, passage.text, passage.source_code or "en",
                                 sentence_language="zh" if chinese_context(passage) else passage.source_code or "en")
+        if origin == CHECKING_PHRASE:
+            content = f"<p class='source'>{marked_source(passage)}</p><p class='translation'>{plain(sentence)}</p>"
+            self.present(origin, content, point, word=passage.word)
+            return
         if not passage.selection:
             details = (language or "按英语翻译") + " → 简体中文"
             translation = gloss or sentence
