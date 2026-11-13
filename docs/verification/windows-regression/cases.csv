@@ -255,3 +255,9 @@ windows/test_model_integrity.py::ModelIntegrityTests.test_cancel_during_transfer
 windows/test_model_integrity.py::ModelIntegrityTests.test_cancel_after_extraction_does_not_publish_partial_model
 windows/test_translation_resources.py::TranslationResourceTests.test_verified_legacy_packages_remain_usable_without_manifest
 windows/test_language_packs.py::LanguagePackTests.test_reverse_chinese_model_has_an_explicit_repair_entry",
+WT-LOOK-010,词义与卡片,P0,offscreen,查完整术语，调整原句选区并补齐已收藏的句译,The ablation study removes one model component.,study,"[13, 18)",使用离线英语模型与独立词本。,"从编辑器与 OCR 命中 study，再检查导管消融语境。
+在第二处 housing 所在卡片向左扩选 battery housing，检查朗读对象、原文位置与收藏。
+暂扣整句模型结果，在首张术语卡先收藏，再放行句译并关闭卡片。","模型语境得到 ablation study，医学反例保持单词。
+调整只应用于命中的位置，原句与所选释义能够保存。
+术语先可用，句译补入同一收藏，历史只计一次，过期请求不能重开卡片。","windows/test_card_rules.py::CardRuleTests.test_phrase_ranges_across_editor_ocr_and_card
+windows/test_card_rules.py::CardRuleTests.test_local_phrase_displays_and_saves_while_sentence_is_pending",

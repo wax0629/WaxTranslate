@@ -152,6 +152,16 @@ class Notebook:
                         int(time.time()), passage.source_code or "en", "fragment" if structure == "code" else structure,
                         getattr(passage, "extent", "complete"), structure))
 
+    def complete_sentence(self, passage, result):
+        source, gloss, translation = result
+        if translation:
+            with self.connection() as db:
+                db.execute("""UPDATE entries SET translation=?
+                              WHERE word=? AND context=? AND position=? AND language=?
+                              AND source=? AND gloss=? AND translation=''""",
+                           (translation, passage.word, passage.text, passage.selection[0],
+                            passage.source_code or "en", source, gloss))
+
     def entries(self):
         with self.connection() as db:
             return db.execute("SELECT * FROM entries ORDER BY due, id DESC").fetchall()

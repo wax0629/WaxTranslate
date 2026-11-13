@@ -1,7 +1,7 @@
 """Capture native Windows UI fixtures using isolated data and installed dependencies.
 
 Pass --source-root to capture the baseline checkout with the same fixture runner.
-No OCR, model inference, network request, registry write or physical input is used.
+The phrase comparison runs the packaged local model on a fixed sentence.
 """
 import argparse
 import ctypes
@@ -135,6 +135,14 @@ def main():
                              '术语参考','应用程序编程接口，供一个程序调用另一个程序提供的功能。',
                              '该接口返回一个响应。',point,language='英语',pos='缩写',can_search=True)
             capture(card,'rules-foreign-term')
+            from lookup import explain
+            from reader import sentence_at
+            source = "The ablation study removes one model component."
+            hit = source.index("study")
+            picked = sentence_at(source, hit, hit + len("study"), "en")
+            result, excerpt, language, pos = explain(picked)
+            show_card(picked, *result, point, excerpt=excerpt, language=language, pos=pos)
+            capture(card, "phrase-study")
             # Declared layout fixtures, separate from the real OCR/model tests.
             for extent,source in (
                 ('missingStart','the sensor remains connected.'),

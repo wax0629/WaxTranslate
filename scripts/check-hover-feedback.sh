@@ -11,7 +11,17 @@ if [[ "${1:-}" != --desktop ]]; then
     swiftc -O -whole-module-optimization -parse-as-library -D WAX_APP_TESTS "$@" -target "$(uname -m)-apple-macosx15.2" \
       "$source"/Sources/waxtranlate/*.swift Tests/Performance/OffscreenHover.swift -o "$output"
   }
-  if [[ "${1:-}" == --compare && $# == 2 ]]; then
+  if [[ "${1:-}" == --phrase-preview && $# == 3 ]]; then
+    baseline="$(git rev-parse --verify "$3^{commit}")"
+    mkdir "$work/base"
+    git archive "$baseline" Sources Assets/Lexicon | tar -x -C "$work/base"
+    compile "$work/base" "$work/before"
+    compile . "$work/after" -D WAX_EXPECT_READING_PHRASE
+    for version in before after after before before after; do
+      echo "version=$version"
+      "$work/$version" --phrase-preview "$2/$version"
+    done
+  elif [[ "${1:-}" == --compare && $# == 2 ]]; then
     baseline="$(git rev-parse --verify "$2^{commit}")"
     mkdir "$work/base"
     git archive "$baseline" Sources | tar -x -C "$work/base"
@@ -25,7 +35,7 @@ if [[ "${1:-}" != --desktop ]]; then
     compile . "$work/current"
     "$work/current"
   else
-    echo "Usage: $0 [--compare <previous-commit> | --desktop [image-directory]]" >&2
+    echo "Usage: $0 [--compare <previous-commit> | --phrase-preview <directory> <pre-phrase-commit> | --desktop [image-directory]]" >&2
     exit 2
   fi
   exit

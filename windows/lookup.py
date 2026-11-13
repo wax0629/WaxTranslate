@@ -4,7 +4,7 @@ import re
 from card_policy import automatic_context, bounded_context, chinese_context, local_reference, needs_confirmation
 from lexicon import lookup_details
 from reader import Passage
-from terminology import resolve_term
+from terminology import resolve_term, selected_phrase
 from languages import NAMES, SHORT_CYRILLIC, UnsupportedLanguage, detect_source
 from translation import translate, translate_lookup
 from word_details import part_of_speech
@@ -73,11 +73,15 @@ def surrounding_script(text):
     return ""
 
 
-def explain(passage):
+def explain(passage, on_phrase=None):
     if passage.selection:
         special = local_reference(passage)
         if special:
             origin, gloss, kind = special
+            if on_phrase and selected_phrase(passage) and automatic_context(passage, confirmed=True):
+                # Dispatch the ready local result before the worker loads or runs the model.
+                passage.source_code = passage.source_code or detect_source(passage.text) or "en"
+                on_phrase((origin, gloss, ""), NAMES.get(passage.source_code, "英语"), kind)
             sentence, excerpt = term_context_translation(passage)
             return (origin, gloss, sentence), excerpt, "中文语境" if chinese_context(passage) else NAMES.get(passage.source_code, "英语"), kind
         if needs_confirmation(passage) and not resolve_term(passage, passage.local_context):
@@ -101,6 +105,9 @@ def explain(passage):
         code = "ru"
         language = "按俄语查词" if passage.selection else "按俄语翻译"
     passage.source_code = code
+    if passage.anchor and passage.anchor != passage.selection and any(c.isspace() for c in passage.word) and chinese_context(passage):
+        gloss = translate(Passage(passage.word, source_code="en"))[1]
+        return ("短语参考", gloss, ""), None, "中文语境", "英语词组"
     if code and code != "en":
         if passage.selection and (passage.structure in ("title", "fragment", "code", "path") or not passage.has_complete_context):
             word = Passage(passage.word, (0, len(passage.word)), source_code=code)
@@ -119,6 +126,12 @@ def explain(passage):
 
     word = passage.word
     term = resolve_term(passage, passage.local_context)
+    if not term and passage.anchor and passage.anchor != passage.selection and any(c.isspace() for c in word):
+        result, excerpt = translate_lookup(passage)
+        origin, gloss, sentence = result
+        if origin == "单词参考":
+            origin = "短语参考"
+        return (origin, gloss, sentence), excerpt, language, "英语词组"
     entry, common, passage.phonetic, dictionary_pos = lookup_details(word) if not term else ("", False, "", "")
     base = reference_word(word)
     if not term and not entry and base != word:

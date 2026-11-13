@@ -64,6 +64,13 @@ import Translation
         } else { canTranslate = false }
         TranslationWarmup.start()
         await Reader.warmUp(language: nil)
+        #if !WAX_HOVER_BASELINE
+        if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--phrase-preview" {
+            try await previewPhrase(in: window, notebook: notebook, preferences: preferences,
+                                    canTranslate: canTranslate, output: URL(fileURLWithPath: CommandLine.arguments[2]))
+            return
+        }
+        #endif
         let infection = Sample("These results do not rule out infection.")
         let river = Sample("They sat on the river bank and watched the water.")
         let loan = Sample("The bank approved the loan.")
@@ -77,6 +84,7 @@ import Translation
         #if !WAX_HOVER_BASELINE
         cases.append(("shift-key", Sample("Hold down Shift to select text."), "Shift", "Shift", "换挡键", .term))
         cases.append(("work-shift", Sample("Her shift starts at noon."), "shift", "shift", "班", .sentence))
+        cases.append(("model-study", Sample("The ablation study removes one model component."), "study", "ablation study", "消融实验", .term))
         let cache = Reader.HoverCache()
         #endif
         for (name, sample, token, word, meaning, origin) in cases {
@@ -136,6 +144,49 @@ import Translation
     }
 
     #if !WAX_HOVER_BASELINE
+    @MainActor private static func previewPhrase(in window: NSPanel, notebook: Notebook, preferences: Preferences,
+                                                 canTranslate: Bool, output: URL) async throws {
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let cache = Reader.HoverCache(), sample = Sample("The ablation study removes one model component.")
+        let point = sample.point("study")
+        for attempt in 1...3 {
+            window.contentView = nil
+            let began = LookupTrace.now
+            let passage = try await cache.passage(at: point, on: screen, displayID: 1, language: nil,
+                                                  trace: LookupTrace(), image: sample.crop)
+            let card = ResultCard(passage: passage, notebook: notebook, preferences: preferences, close: {},
+                                  speak: { _, _ in }, focusForDownload: {})
+            let host = NSHostingView(rootView: card.environment(\.colorScheme, .light))
+            let total = notebook.totalLookups, key = passage.using(language: passage.sourceLanguage)
+            window.contentView = host
+            window.setContentSize(host.fittingSize)
+            host.layoutSubtreeIfNeeded()
+            while notebook.totalLookups == total && LookupTrace.now - began < 12 { try await Task.sleep(for: .milliseconds(8)) }
+            guard notebook.totalLookups > total, let first = notebook.recent.first else { throw failure("Missing first gloss") }
+            host.layoutSubtreeIfNeeded()
+            let milliseconds = (LookupTrace.now - began) * 1000
+            print("attempt=\(attempt) first_gloss_ms=\(String(format: "%.1f", milliseconds)) word=\(passage.text) gloss=\(first.meaning)")
+            #if WAX_EXPECT_READING_PHRASE
+            guard passage.text == "ablation study", first.meaning.hasPrefix("消融实验") else { throw failure("Wrong first gloss") }
+            #endif
+            if canTranslate {
+                while LookupCache.shared.result(for: key)?.sentenceTranslation == nil && LookupTrace.now - began < 12 {
+                    try await Task.sleep(for: .milliseconds(8))
+                }
+                guard let sentence = LookupCache.shared.result(for: key)?.sentenceTranslation else { throw failure("Missing sentence") }
+                print("sentence=\(sentence)")
+            }
+            if attempt == 1 {
+                window.setContentSize(host.fittingSize)
+                host.layoutSubtreeIfNeeded()
+                guard !window.isVisible, let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { throw failure("Offscreen snapshot unavailable") }
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                guard let png = bitmap.representation(using: .png, properties: [:]) else { throw failure("PNG encoding failed") }
+                try png.write(to: output.appendingPathComponent("card.png"))
+            }
+        }
+    }
+
     private static func checkChangedPixelsAndCancellation() async throws {
         let cache = Reader.HoverCache()
         let first = Sample("The bank closed today."), second = Sample("The bark changed color.")

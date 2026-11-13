@@ -53,12 +53,22 @@ struct Passage: Equatable {
         return (context, selection)
     }
 
-    func selecting(_ range: NSRange) -> Passage? {
-        guard let selected = Range(range, in: context) else { return nil }
-        let evidence = semanticEvidence
-        let evidenceOffset = (evidence.selection?.location ?? selection?.location ?? 0) - (selection?.location ?? 0)
-        return Passage(text: String(context[selected]), context: context, selection: range, language: language,
-                       nearbyContext: evidence.text, nearbySelection: NSRange(location: range.location + evidenceOffset, length: range.length), structure: structure, extent: extent)
+    func selecting(_ range: NSRange, anchor newAnchor: NSRange? = nil) -> Passage? {
+        let length = context.utf16.count
+        guard range.location >= 0, range.location <= length, range.length > 0, range.length <= length - range.location,
+              let selected = Range(range, in: context) else { return nil }
+        // Both offsets refer to the same occurrence after sentence segmentation.
+        let evidenceOffset = (nearbySelection?.location ?? 0) - (selection?.location ?? 0)
+        let shifted = NSRange(location: range.location + evidenceOffset, length: range.length)
+        let valid = nearbyContext.flatMap { raw -> NSRange? in
+            let length = raw.utf16.count
+            guard shifted.location >= 0, shifted.location <= length, shifted.length <= length - shifted.location,
+                  let span = Range(shifted, in: raw), raw[span] == context[selected] else { return nil }
+            return shifted
+        }
+        return Passage(text: String(context[selected]), context: context, selection: range, anchor: newAnchor ?? range,
+                       language: language, nearbyContext: valid == nil ? nil : nearbyContext, nearbySelection: valid,
+                       structure: structure, extent: extent)
     }
 
     var wholeTitle: Passage { Passage(text: context, context: "", language: language, structure: .title) }

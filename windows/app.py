@@ -118,7 +118,7 @@ class Selection(QWidget):
 
 
 def analyze(image, point, passage, source_code="", *, is_crop=False, original=None,
-            defer_expansion=False, cancelled=lambda: False):
+            defer_expansion=False, cancelled=lambda: False, on_phrase=None):
     # Pasted/editor selections already carry exact text and offsets. Resolve
     # them directly so unknown identifiers do not wait behind OCR/model warmup.
     if cancelled():
@@ -137,6 +137,11 @@ def analyze(image, point, passage, source_code="", *, is_crop=False, original=No
     passage.source_code = passage.source_code or source_code
     if defer_expansion and passage.needs_context_expansion:
         return passage, None, None, "", ""
+    if on_phrase is not None:
+        def ready(result, language, kind):
+            if not cancelled():
+                on_phrase(passage, result, language, kind)
+        return passage, *explain(passage, on_phrase=ready)
     return passage, *explain(passage)
 
 
@@ -150,6 +155,7 @@ def online_meanings(word):
 
 
 class Window(QWidget):
+    phrase_ready = Signal(int, object, object, object, str, str)
     finished = Signal(int, object, object)
     online_finished = Signal(int, object)
     stats_ready = Signal(object)
@@ -191,6 +197,8 @@ class Window(QWidget):
         self.stats_pool = ThreadPoolExecutor(max_workers=1)
         self.pending = None
         self.finished.connect(self.show_result)
+        self.phrase_ready.connect(self.show_ready_phrase)
+        self.partial_phrase_ticket = None
         self.compact = None
         outer = self.shell = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -538,6 +546,17 @@ class Window(QWidget):
         if self.library.isVisible():
             self.library.refresh()
 
+    def complete_saved_phrase(self, passage, result):
+        self.saved_result = passage, result
+        if self.card.rule_saved and result[2]:
+            try:
+                self.notebook.complete_sentence(passage, result)
+            except (sqlite3.Error, OSError) as error:
+                self.card.show_notice(f"收藏的句译写入失败：{error}")
+            else:
+                if self.library.isVisible():
+                    self.library.refresh()
+
     def tray_clicked(self, reason):
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
             self.open_home()
@@ -633,6 +652,7 @@ class Window(QWidget):
 
     def invalidate(self):
         self.ticket += 1
+        self.partial_phrase_ticket = None
         self.capture_state = None
         self.search_context = None
         if self.online_job is not None:
@@ -663,7 +683,11 @@ class Window(QWidget):
                                   ("They sat on the river bank and watched the water.", "bank"))
         editor = self.workspace.input
         if not editor.toPlainText().strip():
-            editor.setPlainText(text + "\n\nShe deposited her paycheck at the bank." if word == "bank" else text)
+            if word == "bank":
+                text += ("\n\nShe deposited her paycheck at the bank."
+                         "\nThe ablation study removes one model component."
+                         "\nThe battery housing cracked during the test.")
+            editor.setPlainText(text)
             editor.setTextCursor(editor.document().find(word))
             editor.setFocus()
             editor.lookup_cursor()
@@ -771,13 +795,14 @@ class Window(QWidget):
         if self.card.finish_context(request_id,translated) and self.saved_result is not None:
             passage,result = self.saved_result
             if self.card.rule_displayed.text == passage.text:
-                self.saved_result = passage,(result[0],result[1],translated)
+                self.complete_saved_phrase(passage, (result[0], result[1], translated))
 
     def submit(self, point, image=None, hit=None, passage=None, *, original=None, capture_state=None):
         ticket = self.ticket
         self.capture_state = capture_state
         self.card.show_message("本机翻译", "正在读取并翻译…", point)
-        options = {"cancelled": lambda: ticket != self.ticket or self.stopping}
+        options = {"cancelled": lambda: ticket != self.ticket or self.stopping,
+                   "on_phrase": lambda hit, result, language, kind: self.phrase_ready.emit(ticket, point, hit, result, language, kind)}
         if capture_state is not None:
             options.update(is_crop=True, original=original, defer_expansion=not capture_state["expanded"])
         future = self.pool.submit(analyze, image, hit, passage, self.workspace.source_code, **options)
@@ -788,6 +813,15 @@ class Window(QWidget):
                 self.finished.emit(ticket, point, job)
         future.add_done_callback(completed)
 
+    def show_ready_phrase(self, ticket, point, passage, result, language, kind):
+        if ticket != self.ticket:
+            return
+        self.partial_phrase_ticket = ticket
+        self.saved_result = passage, result
+        self.card.show_result(passage, *result, point, language=language, pos=kind, can_search=False)
+        self.card.begin_phrase_context()
+        self.refresh_home(word=passage.word, language=passage.source_code or "en", gloss=result[1], lookup_at=time.time())
+
     def show_result(self, ticket, point, job):
         if ticket != self.ticket:
             return
@@ -797,6 +831,10 @@ class Window(QWidget):
             self.card.show_original(error.language, error.text, point)
             return
         except Exception as error:
+            if self.partial_phrase_ticket == ticket:
+                self.card.finish_phrase_context("", None)
+                self.partial_phrase_ticket = None
+                return
             self.card.show_message("需要处理", str(error), point)
             return
         if result is None:
@@ -808,6 +846,11 @@ class Window(QWidget):
                 QTimer.singleShot(80, lambda: self.capture(ticket, point, False, passage, state["screen"]))
             return
         self.capture_state = None
+        if self.partial_phrase_ticket == ticket:
+            self.partial_phrase_ticket = None
+            if self.card.finish_phrase_context(result[2], excerpt):
+                self.complete_saved_phrase(passage, result)
+            return
         unknown = result[0] == UNKNOWN
         can_search = bool(passage.selection) and passage.source_code in ("", "en")
         self.search_context = (passage, result, point, language, pos) if can_search else None

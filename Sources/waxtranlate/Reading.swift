@@ -93,7 +93,7 @@ struct ReadingPage: View {
                     if let text = NSPasteboard.general.string(forType: .string) { document.text = text }
                 }
                 Button("试读样文") {
-                    document.text = "These results do not rule out infection.\nThe device ran out of memory before the test ended.\nThey sat on the river bank and watched the water."
+                    document.text = "The ablation study removes one model component.\nThe battery housing cracked during the test.\nThese results do not rule out infection.\nThe device ran out of memory before the test ended.\nThey sat on the river bank and watched the water."
                 }
                 Spacer()
                 if document.busy { Button("取消") { document.cancel() } }

@@ -4,6 +4,15 @@ struct TermMeaning {
     let label: String
     let meaning: String
     let kind: String
+    var phrase: ReadingPhrase? = nil
+}
+
+struct ReadingPhrase: Decodable {
+    let forms: [String]
+    let translation: String
+    let detail: String
+    let cue: String?
+    let exclude: String?
 }
 
 enum LocalTerminology {
@@ -14,6 +23,7 @@ enum LocalTerminology {
         let senses: [String: [[String]]]
         let multiple: [String: String]
         let lowercaseCues: [String: String]
+        let phrases: [ReadingPhrase]
     }
     private static let glossary: Glossary? = {
         let url: URL?
@@ -26,6 +36,35 @@ enum LocalTerminology {
         guard let url, let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(Glossary.self, from: data)
     }()
+
+    private static let phrasesByForm: [String: ReadingPhrase] = Dictionary(uniqueKeysWithValues:
+        (glossary?.phrases ?? []).flatMap { phrase in phrase.forms.map { ($0, phrase) } })
+
+    private static let phrasePattern: NSRegularExpression? = {
+        let forms = phrasesByForm.keys.sorted { $0.count > $1.count }.map {
+            $0.split(separator: " ").map { NSRegularExpression.escapedPattern(for: String($0)) }.joined(separator: #"\h+"#)
+        }
+        guard !forms.isEmpty else { return nil }
+        return try? NSRegularExpression(pattern: #"(?<![A-Za-z0-9_/‐‑-])(?<![A-Za-z0-9_]\.)(?:"# +
+            forms.joined(separator: "|") + #")(?![A-Za-z0-9_/‐‑-]|\.[A-Za-z0-9_])"#, options: .caseInsensitive)
+    }()
+
+    static func phrase(at passage: Passage) -> (range: NSRange, entry: ReadingPhrase)? {
+        guard passage.structure != .code, passage.structure != .path, let hit = passage.selection, hit.length > 0,
+              let candidates = phrasePattern?.matches(in: passage.context, range: NSRange(passage.context.startIndex..., in: passage.context)),
+              let match = candidates.first(where: { NSIntersectionRange($0.range, hit) == hit }),
+              let span = Range(match.range, in: passage.context),
+              let entry = phrasesByForm[passage.context[span].lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")]
+        else { return nil }
+        if let cue = entry.cue {
+            let separator = #"[,;!?，；。！？]|\b(?:but|whereas)\b"#
+            let left = String(passage.context[..<span.lowerBound].suffix(110)).replacingOccurrences(of: separator, with: "\n", options: [.regularExpression, .caseInsensitive])
+            let right = String(passage.context[span.upperBound...].prefix(110)).replacingOccurrences(of: separator, with: "\n", options: [.regularExpression, .caseInsensitive])
+            let evidence = (left.components(separatedBy: "\n").last ?? "") + " " + (right.components(separatedBy: "\n").first ?? "")
+            guard matches(cue, in: evidence), entry.exclude.map({ !matches($0, in: evidence) }) ?? true else { return nil }
+        }
+        return (match.range, entry)
+    }
 
     static func hasUnambiguousSpelling(_ word: String) -> Bool {
         guard let glossary else { return false }
@@ -63,11 +102,11 @@ enum LocalTerminology {
             if passage.text == "Redis", context.range(of: "缓存|数据库|内存|部署|cache|database|deploy", options: [.regularExpression, .caseInsensitive]) != nil {
                 return TermMeaning(label: "名称参考", meaning: "一种内存数据存储系统，常用于缓存。", kind: "技术名称")
             }
-            if passage.text.lowercased() == "attention mask" {
-                return TermMeaning(label: "术语参考", meaning: "注意力掩码，用来控制模型可以关注哪些位置。", kind: "英语术语")
-            }
-            if passage.text.lowercased() == "padding token" {
-                return TermMeaning(label: "术语参考", meaning: "填充词元，用于将不同长度的输入补齐。", kind: "英语术语")
+            if passage.text.contains(where: \.isWhitespace), let found = phrase(at: passage), found.range == selected,
+               passage.sourceLanguage == "en" || passage.sourceLanguage.hasPrefix("zh") {
+                let entry = found.entry
+                return TermMeaning(label: "术语参考", meaning: entry.translation + "，" + entry.detail,
+                                   kind: "英语术语", phrase: entry)
             }
         }
         guard !passage.isPhrase, let selection = passage.selection,

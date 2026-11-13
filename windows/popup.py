@@ -10,7 +10,8 @@ from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsDropShadowEffect, 
 
 from languages import SUPPORTED
 from lookup import DICTIONARY
-from card_policy import automatic_context, bounded_context, chinese_context, needs_confirmation
+from card_policy import automatic_context, bounded_context, chinese_context, needs_confirmation, phrase_range_choices
+from terminology import selected_phrase
 from speech import ListenButton, SpeechPlayer
 from theme import APP_NAME, COLORS, marked_source, plain, theme_css, ui_icon
 
@@ -73,6 +74,8 @@ CARD_DOCUMENT = theme_css("""
     p {margin:0; color:$ink; font-family:'Segoe UI Variable Text','Segoe UI','Microsoft YaHei UI';}
     .details {font-size:11px; color:$muted; margin-bottom:10px;}
     .gloss {font-size:17px; font-weight:600; line-height:138%; margin-bottom:10px;}
+    .termTitle {font-size:19px; font-weight:600; margin-bottom:3px;}
+    .termDetail {font-size:13px; color:$muted; margin-bottom:10px;}
     .region {font-size:16px; font-weight:400; line-height:140%; margin-bottom:10px;}
     .source {font-family:'Spectral','Georgia','Microsoft YaHei UI'; font-size:16px; line-height:132%;}
     .hit {font-weight:600; color:$ink;}
@@ -195,6 +198,10 @@ class Card(QWidget):
         footer = QHBoxLayout(self.actions)
         footer.setContentsMargins(19, 0, 14, 16)
         footer.setSpacing(9)
+        self.range_button = QPushButton("调整范围", objectName="phraseRange")
+        self.range_button.setAccessibleName("调整查词范围")
+        self.range_button.setMenu(QMenu(self.range_button))
+        self.range_button.hide()
         self.save = QPushButton(action_icon(True), "加入生词本", objectName="bookmark")
         self.online = QPushButton(ui_icon("globe", COLORS["accent"]), "", objectName="expand")
         self.online.setAccessibleName("查询百科参考")
@@ -206,6 +213,7 @@ class Card(QWidget):
         self.copy.setToolTip("复制译文")
         footer.addWidget(self.save)
         footer.addStretch()
+        footer.addWidget(self.range_button)
         footer.addWidget(self.expand)
         footer.addWidget(self.copy)
         footer.addWidget(self.online)
@@ -255,11 +263,14 @@ class Card(QWidget):
     def show_message(self, caption, message, point):
         self.loading = caption == "本机翻译"
         self.rule_state = None
+        self.range_button.hide()
         self.rule_request_id = getattr(self,"rule_request_id",0)+1
         self.listen.set_content()
         self.present(caption, f"<p class='message'>{plain(message)}</p>", point)
 
     def show_original(self, language, original, point):
+        self.rule_state = None
+        self.range_button.hide()
         self.listen.set_content()
         content = (f"<p class='message'>支持从{SUPPORTED}译为简体中文。</p>"
                    + f"<p class='source'>{plain(original)}</p>")
@@ -304,6 +315,7 @@ class Card(QWidget):
     def show_result(self, passage, origin, gloss, sentence, point, excerpt=None, language="", pos="",
                     can_save=True, can_search=False, references=(), web_search=False):
         self.loading = False
+        self.set_phrase_choices(passage)
         if passage.selection and not (references or web_search) and (chinese_context(passage) or (passage.structure in ('path','code','fragment','title') or not passage.has_complete_context) or origin == '暂未收录' or origin in ('名称参考','惯用名称参考','术语参考','语境术语参考','多义参考')):
             self.show_rule_result(passage, origin, gloss, sentence, point, language, pos, can_save, can_search, excerpt)
             return
@@ -359,6 +371,29 @@ class Card(QWidget):
         self.present(origin, short, point, translated, can_save, (full, sentence), can_search=can_search,
                      word=passage.word, phonetic=passage.phonetic)
 
+    def set_phrase_choices(self, passage):
+        menu = self.range_button.menu()
+        menu.clear()
+        for label, span in phrase_range_choices(passage):
+            text = passage.text[slice(*span)]
+            action = menu.addAction(label + " · " + text)
+            action.triggered.connect(lambda checked=False, bounds=span: self.term_requested.emit(
+                passage.selecting(*bounds, anchor=passage.anchor or passage.selection)))
+        self.range_button.setVisible(not menu.isEmpty())
+
+    def begin_phrase_context(self):
+        self.rule_waiting = True
+        self.phrase_request_id = self.rule_request_id
+        self.render_rule_card()
+
+    def finish_phrase_context(self, sentence, excerpt):
+        if not self.rule_state or self.phrase_request_id != self.rule_request_id or not self.rule_waiting:
+            return False
+        self.rule_full_translation = sentence
+        self.rule_excerpt_translation = excerpt[1] if excerpt and excerpt[0].text == self.rule_displayed.text else ''
+        translated = sentence if self.rule_displayed.text == self.rule_state[0].text else self.rule_excerpt_translation
+        return self.finish_context(self.rule_request_id, translated, '' if translated else '句译暂不可用。')
+
     def show_rule_result(self, passage, origin, gloss, sentence, point, language, pos, can_save, can_search, excerpt=None):
         self.rule_automatic = origin != '暂未收录' and automatic_context(passage, confirmed=True)
         self.rule_full_translation = sentence
@@ -383,22 +418,27 @@ class Card(QWidget):
                                 fragment=not passage.has_complete_context)
         details = ' · '.join(filter(None,(pos, '英语词条 · 中文语境' if mixed and passage.word.isascii() else '中文语境' if mixed else language)))
         content = f"<p class='details'>{plain(details)}</p><p class='gloss'>{plain(gloss)}</p><p class='details'>{plain(origin)}</p>"
+        if origin == "术语参考" and (phrase := selected_phrase(passage)):
+            content = (f"<p class='details'>英语术语 · 本机词表</p><p class='termTitle'>{plain(phrase['translation'])}</p>"
+                       f"<p class='termDetail'>{plain(phrase['detail'])}</p>")
         part, offset = (passage,0) if self.rule_expanded else bounded_context(passage)
         self.rule_displayed = part
         if passage.structure == 'title' and passage.word != passage.text:
             content += '<p><a href="waxcard://title">翻译整个标题</a></p>'
         if self.rule_context and passage.word != passage.text:
             label = '原文片段' if not passage.has_complete_context else '代码片段' if passage.structure == 'code' else '所在路径' if passage.structure == 'path' else '相关原文节选' if part.text != passage.text else '相关原文'
-            body = ''
-            cursor = 0
-            for match in re.finditer(r'[A-Za-z][A-Za-z0-9+#]*',part.text):
-                body += plain(part.text[cursor:match.start()])
-                a,b = match.start()+offset,match.end()+offset
-                if (a,b) == passage.selection: body += '<b>'+plain(match.group())+'</b>'
-                elif chinese_context(passage): body += f'<a href="waxterm://term/{a}/{b}">{plain(match.group())}</a>'
-                else: body += plain(match.group())
-                cursor = match.end()
-            body += plain(part.text[cursor:])
+            a, b = part.selection
+            def outside(text, start):
+                if not mixed:
+                    return plain(text)
+                pieces, cursor = [], 0
+                for match in re.finditer(r'[A-Za-z][A-Za-z0-9+#]*', text):
+                    left, right = start+offset+match.start(), start+offset+match.end()
+                    pieces.extend((plain(text[cursor:match.start()]),
+                                   f'<a href="waxterm://term/{left}/{right}">{plain(match[0])}</a>'))
+                    cursor = match.end()
+                return ''.join(pieces) + plain(text[cursor:])
+            body = outside(part.text[:a], 0) + '<b>' + plain(part.word) + '</b>' + outside(part.text[b:], b)
             if offset: body = '…'+body
             if offset+len(part.text)<len(passage.text): body += '…'
             content += f"<hr><p class='details'>{label}</p><p class='source'>{body}</p>"
@@ -469,7 +509,7 @@ class Card(QWidget):
         self.more.setVisible(bool(word and can_save))
         self.expand.setChecked(False)
         self.expand.setVisible(full_context is not None and expand_label != "更多释义")
-        self.actions.setVisible(bool(translation) or can_search)
+        self.actions.setVisible(bool(translation) or can_search or not self.range_button.isHidden())
         self.display_context(False)
         if not self.isVisible():
             self.show()

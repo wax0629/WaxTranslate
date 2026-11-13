@@ -269,6 +269,25 @@ enum LookupTranslation {
         return try await translate(passage, provider: Provider(plain: { try await session.translate($0).targetText }, marked: marked), dictionary: await dictionary(), trace: trace, onExcerpt: onExcerpt)
     }
 
+    private static func translateContext(_ passage: Passage, term: ReadingPhrase?, provider: Provider) async throws -> String {
+        if #available(macOS 26.4, *), let term, passage.sourceLanguage == "en", let translate = provider.marked,
+           let selection = passage.selection, let hit = Range(selection, in: passage.context), passage.context[hit] == passage.text {
+            var protected = AttributedString(term.translation)
+            protected.translation.skipsTranslation = true
+            let input = AttributedString(passage.context[..<hit.lowerBound]) + protected + AttributedString(passage.context[hit.upperBound...])
+            if let response = try? await translate(input), response.text.contains(term.translation) {
+                try Task.checkCancellation()
+                // Apple may surround a protected run with spaces even between Chinese characters.
+                let spelling = NSRegularExpression.escapedPattern(for: term.translation)
+                return response.text
+                    .replacingOccurrences(of: #"(?<=[\p{Han}，、：（《]) +(?="# + spelling + ")", with: "", options: .regularExpression)
+                    .replacingOccurrences(of: "(?<=" + spelling + #") +(?=[\p{Han}，。！？；：、）》])"#, with: "", options: .regularExpression)
+            }
+            try Task.checkCancellation()
+        }
+        return try await provider.plain(passage.context)
+    }
+
     static func translate(_ passage: Passage, provider: Provider, dictionary: @autoclosure () async -> [String], trace: LookupTrace = LookupTrace(),
                           onExcerpt: ((LookupResult) async -> Void)? = nil) async throws -> LookupResult {
         try Task.checkCancellation()
@@ -283,9 +302,10 @@ enum LookupTranslation {
         }
         let excerpt = SentenceExcerpt(passage)
         var output: LookupResult
-        if let term = LocalTerminology.lookup(passage), !passage.context.isEmpty, passage.context != passage.text {
+        let term = LocalTerminology.lookup(passage)
+        if let term, !passage.context.isEmpty, passage.context != passage.text {
             let began = LookupTrace.now
-            let sentence = try await provider.plain(excerpt.passage.context)
+            let sentence = try await translateContext(excerpt.passage, term: term.phrase, provider: provider)
             trace.record("translation.term_sentence", since: began)
             output = LookupResult(meaning: TranslationOutput.normalize(term.meaning), origin: .term,
                                   sentenceTranslation: TranslationOutput.normalize(sentence, target: passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans"))
@@ -302,7 +322,7 @@ enum LookupTranslation {
             }
             let began = LookupTrace.now
             do {
-                let translated = try await provider.plain(passage.context)
+                let translated = try await translateContext(passage, term: term?.phrase, provider: provider)
                 output.sentenceTranslation = TranslationOutput.normalize(translated, target: passage.sourceLanguage.hasPrefix("zh") ? "en" : "zh-Hans")
             } catch { try Task.checkCancellation() } // An optional full sentence must not erase the usable excerpt.
             try Task.checkCancellation()

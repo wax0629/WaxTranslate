@@ -4,6 +4,58 @@ import re
 import unicodedata
 
 
+# Whole expressions have their own reading unit. Ambiguous expressions also
+# require nearby evidence before the reader expands a single pointed word.
+READING_PHRASES = [
+    dict(forms=["ablation study", "ablation studies"], translation="消融实验",
+         detail="移除或替换模型中的某一部分，比较结果如何变化。", cue=r"\b(?:models?|components?|encoders?|networks?|datasets?|architectures?)\b|模块|模型|网络|消融实验",
+         exclude=r"\b(?:catheters?|cardiac|atrial|patients?)\b|手术|消融术|导管|患者|心房"),
+    dict(forms=["emergent ability", "emergent abilities", "emergent capability", "emergent capabilities"],
+         translation="涌现能力", detail="模型扩大后才表现出来的能力。",
+         cue=r"\b(?:models?|llms?|scal(?:e|ing))\b|模型|规模|大语言"),
+    dict(forms=["stochastic gradient descent"], translation="随机梯度下降", detail="每次用一个样本或一个小批次估计梯度，再更新参数。"),
+    dict(forms=["gradient descent"], translation="梯度下降", detail="沿着函数值下降的方向逐步更新参数。"),
+    dict(forms=["confidence interval", "confidence intervals"], translation="置信区间", detail="由样本估算的参数范围，按给定的置信水平构造。"),
+    dict(forms=["standard deviation", "standard deviations"], translation="标准差", detail="衡量一组数值相对平均值的离散程度。"),
+    dict(forms=["attention mask", "attention masks"], translation="注意力掩码", detail="用来控制模型可以关注哪些位置。"),
+    dict(forms=["padding token", "padding tokens"], translation="填充词元", detail="用于将不同长度的输入补齐。"),
+    dict(forms=["race condition", "race conditions"], translation="竞态条件", detail="多个操作的执行顺序会改变程序结果。",
+         cue=r"\b(?:threads?|concurren(?:t|cy)|locks?|processes|writes?)\b|并发|线程|进程"),
+]
+
+_PHRASES_BY_FORM = {form: phrase for phrase in READING_PHRASES for form in phrase["forms"]}
+_FORMS = "|".join(re.escape(form).replace(r"\ ", r"[ \t\u00a0\u202f]+")
+                  for form in sorted(_PHRASES_BY_FORM, key=len, reverse=True))
+_PHRASES = re.compile(r"(?<![a-z0-9_/‐‑-])(?<![a-z0-9_]\.)(?:" + _FORMS +
+                      r")(?![a-z0-9_/‐‑-]|\.[a-z0-9_])", re.I | re.ASCII)
+
+
+def phrase_at(text, hit, structure):
+    if not hit or structure in ("code", "path"):
+        return None
+    for match in _PHRASES.finditer(text):
+        if match.start() > hit[0]:
+            break
+        if match.start() <= hit[0] < hit[1] <= match.end():
+            phrase = _PHRASES_BY_FORM[" ".join(match[0].lower().split())]
+            if "cue" in phrase:
+                left = re.split(r"[,;!?，；。！？]|\b(?:but|whereas)\b", text[max(0, match.start()-110):match.start()], flags=re.I)[-1]
+                right = re.split(r"[,;!?，；。！？]|\b(?:but|whereas)\b", text[match.end():match.end()+110], flags=re.I)[0]
+                evidence = left + " " + right
+                matches = lambda pattern: re.search(pattern, evidence, re.I) is not None
+                if not matches(phrase["cue"]) or ("exclude" in phrase and matches(phrase["exclude"])):
+                    return None
+            return match.span(), phrase
+    return None
+
+
+def selected_phrase(passage):
+    if not passage.selection or not any(c.isspace() for c in passage.word) or passage.source_code not in ("", "en", "zh", "zh-Hans"):
+        return None
+    match = phrase_at(passage.text, passage.selection, passage.structure)
+    return match[1] if match and match[0] == passage.selection else None
+
+
 # Each gloss is written for a reader who may not know the English expansion.
 ACRONYMS = {
     "AI": ("artificial intelligence", "人工智能，指让机器完成语言理解、推理等任务的技术。"),
