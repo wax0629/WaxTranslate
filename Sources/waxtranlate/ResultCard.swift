@@ -16,6 +16,7 @@ struct ResultCard: View {
     private let source: Locale.Language
     private let target: Locale.Language
     @State private var dictionaryTask: Task<[String], Never>?
+    @State private var automatic: AutomaticLookup?
     private let term: TermMeaning?
     private let cacheHit: Bool
     private let policy: LookupPolicy
@@ -67,6 +68,8 @@ struct ResultCard: View {
         term = decision.term
         let cached = !decision.needsConfirmation ? (initialResult ?? LookupCache.shared.result(for: passage)) : nil
         cacheHit = cached != nil
+        _automatic = State(initialValue: cached == nil && !decision.needsConfirmation && decision.automaticallyTranslatesContext
+                           ? AutomaticLookup.start(passage, trace: trace) : nil)
         _phase = State(initialValue: cached == nil && term == nil && !decision.needsConfirmation ? .checking : .done)
         _result = State(initialValue: decision.needsConfirmation ? LookupResult(meaning: "", origin: .unresolved) : LookupResult.initial(term: term, cached: cached, dictionary: []))
     }
@@ -129,6 +132,31 @@ struct ResultCard: View {
             if let result { record(result); trace.record("lookup.first_reference", since: began) }
             if policy.needsConfirmation { phase = .done; return }
             if cacheHit { trace.record("lookup.cache_hit", since: began); return }
+            if let automatic {
+                phase = .translating
+                do {
+                    let completed = try await withTaskCancellationHandler {
+                        for await update in automatic.progress {
+                            try Task.checkCancellation()
+                            switch update {
+                            case .sentence(let sentence):
+                                pendingPhraseContext = sentence
+                                trace.record("lookup.first_phrase_context", since: began)
+                            case .excerpt(let excerpt):
+                                result = excerpt
+                                trace.record("lookup.excerpt_meaning", since: began)
+                            }
+                        }
+                        return try await automatic.task.value
+                    } onCancel: { automatic.cancel() }
+                    try Task.checkCancellation()
+                    if let completed { complete(completed); trace.record("lookup.complete", since: began); return }
+                    // A missing language pack is handled by the existing download UI.
+                } catch {
+                    if !Task.isCancelled { phase = .failed }
+                    return
+                }
+            }
             let lookup = result == nil && !isRegion ? Task { await CompactGloss.references(for: passage) } : nil
             dictionaryTask = lookup
             // Start the model while the independent dictionary reference loads.
@@ -137,8 +165,7 @@ struct ResultCard: View {
             if let lookup {
                 let references = await withTaskCancellationHandler { await lookup.value } onCancel: { lookup.cancel() }
                 guard !Task.isCancelled else { return }
-                if let meaning = references.first, result == nil {
-                    let reference = LookupResult(meaning: meaning, origin: .dictionary)
+                if let reference = LookupResult.initialReference(references, for: passage), result == nil {
                     result = reference
                     record(reference)
                     trace.record("lookup.first_reference", since: began)
@@ -169,13 +196,7 @@ struct ResultCard: View {
                     trace.record("lookup.excerpt_meaning", since: began)
                 }
                 try Task.checkCancellation()
-                result = displayed
-                pendingPhraseContext = nil
-                LookupCache.shared.insert(displayed, for: passage)
-                copied = false
-                phase = .done
-                record(displayed)
-                completeSavedPhrase(displayed)
+                complete(displayed)
                 trace.record("lookup.complete", since: began)
             } catch {
                 if !Task.isCancelled { phase = .failed }
@@ -214,7 +235,7 @@ struct ResultCard: View {
             openTerm(url)
             return .handled
         })
-        .onDisappear { manual.cancel(); wordRequest = nil }
+        .onDisappear { automatic?.cancel(); dictionaryTask?.cancel(); manual.cancel(); wordRequest = nil }
         .task(id: referenceAttempt) {
             guard referenceAvailable, referenceAttempt > 0 else { return }
             referenceBusy = true
@@ -395,6 +416,16 @@ struct ResultCard: View {
         }
     }
 
+    private func complete(_ displayed: LookupResult) {
+        result = displayed
+        pendingPhraseContext = nil
+        LookupCache.shared.insert(displayed, for: passage)
+        copied = false
+        phase = .done
+        record(displayed)
+        completeSavedPhrase(displayed)
+    }
+
     private func record(_ result: LookupResult) {
         guard result.canSave(for: passage) else { return }
         if let recordID { notebook.updateLookup(recordID, meaning: result.meaning) }
@@ -413,6 +444,10 @@ struct ResultCard: View {
         }
     }
     private func start() {
+        if dictionaryTask == nil && !isRegion {
+            let passage = passage
+            dictionaryTask = Task.detached { await CompactGloss.references(for: passage) }
+        }
         phase = .translating
         if configuration != nil { configuration?.invalidate() }
         else { configuration = TranslationSession.Configuration(source: source, target: target) }

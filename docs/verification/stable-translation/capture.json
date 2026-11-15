@@ -1,0 +1,166 @@
+{
+  "before": [
+    {
+      "iteration": 1,
+      "milliseconds": 182.90550699748565,
+      "events": [
+        {
+          "durationMs": 47.335962000943255,
+          "elapsedMs": 47.35872300079791,
+          "stage": "capture.enumerate"
+        },
+        {
+          "durationMs": 134.66143699770328,
+          "elapsedMs": 182.2774929969455,
+          "stage": "capture.image"
+        }
+      ]
+    },
+    {
+      "iteration": 2,
+      "milliseconds": 57.4130159948254,
+      "events": [
+        {
+          "durationMs": 25.806278994423337,
+          "elapsedMs": 25.814823995460756,
+          "stage": "capture.enumerate"
+        },
+        {
+          "durationMs": 31.48546900047222,
+          "elapsedMs": 57.40859700017609,
+          "stage": "capture.image"
+        }
+      ]
+    },
+    {
+      "iteration": 3,
+      "milliseconds": 64.15580600150861,
+      "events": [
+        {
+          "durationMs": 30.464764997304883,
+          "elapsedMs": 30.469905999780167,
+          "stage": "capture.enumerate"
+        },
+        {
+          "durationMs": 30.30782700079726,
+          "elapsedMs": 64.14644300093642,
+          "stage": "capture.image"
+        }
+      ]
+    },
+    {
+      "iteration": 4,
+      "milliseconds": 63.6810330033768,
+      "events": [
+        {
+          "durationMs": 24.347719001525547,
+          "elapsedMs": 24.35541999875568,
+          "stage": "capture.enumerate"
+        },
+        {
+          "durationMs": 39.211873001477215,
+          "elapsedMs": 63.67614299961133,
+          "stage": "capture.image"
+        }
+      ]
+    },
+    {
+      "iteration": 5,
+      "milliseconds": 135.50228600070113,
+      "events": [
+        {
+          "durationMs": 46.18995200144127,
+          "elapsedMs": 46.197550000215415,
+          "stage": "capture.enumerate"
+        },
+        {
+          "durationMs": 76.84447200153954,
+          "elapsedMs": 135.48857400019187,
+          "stage": "capture.image"
+        }
+      ]
+    }
+  ],
+  "after": [
+    {
+      "iteration": 1,
+      "milliseconds": 103.51470999739831,
+      "events": [
+        {
+          "durationMs": 43.1229349997011,
+          "elapsedMs": 43.14435300329933,
+          "stage": "capture.enumerate"
+        },
+        {
+          "durationMs": 57.081207996816374,
+          "elapsedMs": 103.38581399992108,
+          "stage": "capture.image"
+        }
+      ]
+    },
+    {
+      "iteration": 2,
+      "milliseconds": 66.20863099669805,
+      "events": [
+        {
+          "durationMs": 31.64743399975123,
+          "elapsedMs": 31.65290800097864,
+          "stage": "capture.enumerate"
+        },
+        {
+          "durationMs": 34.318231999350246,
+          "elapsedMs": 66.17283699597465,
+          "stage": "capture.image"
+        }
+      ]
+    },
+    {
+      "iteration": 3,
+      "milliseconds": 66.27721899712924,
+      "events": [
+        {
+          "durationMs": 27.437652002845425,
+          "elapsedMs": 27.44513700599782,
+          "stage": "capture.enumerate"
+        },
+        {
+          "durationMs": 38.73404699697858,
+          "elapsedMs": 66.2733040007879,
+          "stage": "capture.image"
+        }
+      ]
+    },
+    {
+      "iteration": 4,
+      "milliseconds": 66.4742659937474,
+      "events": [
+        {
+          "durationMs": 28.84386299410835,
+          "elapsedMs": 28.849582995462697,
+          "stage": "capture.enumerate"
+        },
+        {
+          "durationMs": 37.50131099513965,
+          "elapsedMs": 66.46899099723669,
+          "stage": "capture.image"
+        }
+      ]
+    },
+    {
+      "iteration": 5,
+      "milliseconds": 66.63903500157176,
+      "events": [
+        {
+          "durationMs": 27.744648999942,
+          "elapsedMs": 27.750795998144895,
+          "stage": "capture.enumerate"
+        },
+        {
+          "durationMs": 38.791135004430544,
+          "elapsedMs": 66.63182000193046,
+          "stage": "capture.image"
+        }
+      ]
+    }
+  ]
+}

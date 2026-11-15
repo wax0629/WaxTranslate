@@ -151,7 +151,10 @@ import AppKit
         func comparable(_ text: String) -> String {
             text.replacingOccurrences(of: "按 Option", with: "按Option").replacingOccurrences(of: "Option 使用", with: "Option使用")
         }
-        let target = point("Option"), small = Reader.hoverRect(at: target, on: screen)
+        let target = point("Option"), initial = Reader.hoverRect(at: target, on: screen)
+        // Keep the deliberately clipped 900-point fixture: the wider production
+        // crop now contains this wrap in one pass, without discarding clip guards.
+        let small = CGRect(x: 0, y: initial.minY, width: 900, height: initial.height)
         let firstPass = try Reader.recognize(image: crop(small), target: CGPoint(x: (target.x - small.minX) / small.width,
                                                                                  y: (target.y - small.minY) / small.height), isCrop: true)
         try require(comparable(firstPass.context) == comparable(last) && firstPass.extent == .missingStart, "Small crop treated disconnected rows as a sentence: " + firstPass.context)
@@ -161,7 +164,7 @@ import AppKit
             requests.append(area)
             return try crop(area)
         }
-        try require(requests == [small, Reader.expandedHoverRect(at: target, on: screen)], "Expected one bounded expansion: " + String(describing: requests))
+        try require(requests == [initial], "Complete first crop should not repeat OCR: " + String(describing: requests))
         try require(result.text == "Option" && comparable(result.context) == comparable(expected) && result.hasCompleteContext &&
                     result.anchor == (result.context as NSString).range(of: "Option") && LocalTerminology.lookup(result)?.kind == "键名",
                     "Unexpected expanded selection: " + result.context)

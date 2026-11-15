@@ -30,11 +30,13 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try testSecondaryDisplayCoordinates()
         try testCaptureBand()
         try testWrappedOCRInTwoColumns()
+        try testExactHitBeforeAdjacentLeading()
         try testSentenceAtExactOccurrence()
         try testPhraseAtExactOccurrence()
         try await testReadingPhrases()
         try await testConflictingPhraseEvidence()
         try testConciseGloss()
+        try testInitialReferenceSafety()
         try testContextExcerpt()
         try testCardPolicy()
         try testFinalCardRules()
@@ -457,6 +459,16 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         try expect(!event(false, 9.1, modifiers: 16))
     }
 
+    static func testExactHitBeforeAdjacentLeading() throws {
+        // Real accurate Vision boxes: the preceding line's `old` only matches
+        // after vertical padding, while the pointer is inside `bank` itself.
+        let image = try require(NSImage(contentsOfFile: "Tests/Fixtures/adjacent-line-hit.png")?.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let hit = try Reader.recognize(image: image, target: CGPoint(x: 0.5, y: 0.5), isCrop: true)
+        try expect(hit.text == "bank" && hit.context.contains("river bank"))
+        try expect(!hit.hasCompleteContext)
+        print("Accurate OCR: exact second-line bank wins over first-line old's padded box; clipped context stays incomplete.")
+    }
+
     static func testHoverAndRegion(_ sentence: String, anchor: String = "out", expected: String) throws -> Passage {
         let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 32), .foregroundColor: NSColor.black]
         let size = CGSize(width: ceil((sentence as NSString).size(withAttributes: attributes).width) + 60, height: 90)
@@ -524,7 +536,7 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
     static func testCaptureBand() throws {
         let display = CGRect(x: -1792, y: -100, width: 1792, height: 1120)
         let center = Reader.hoverRect(at: CGPoint(x: -1500, y: 460), on: display)
-        try expect(center == CGRect(x: -1792, y: 370, width: 900, height: 180))
+        try expect(center == CGRect(x: -1792, y: 370, width: 1200, height: 180))
         try expect(Reader.hoverRect(at: CGPoint(x: -1, y: 500), on: display).maxX == display.maxX)
         try expect(Reader.hoverRect(at: CGPoint(x: -1, y: 1019), on: display).maxY == display.maxY)
         try expect(Reader.hoverRect(at: CGPoint(x: -1791, y: -99), on: display).minY == display.minY)
@@ -736,6 +748,18 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         print("Alignment regressions: one bounded retry, exact second occurrence, conditional/fragment guards, secondary unconfirmed reference, old API, cancellation and cache passed.")
     }
 
+    static func testInitialReferenceSafety() throws {
+        let passage = Passage(text: "casualty", context: "She manages a casualty insurance agency.", language: "en")
+        try expect(LookupResult.initialReference(["伤亡人员"], for: passage) == nil)
+        let isolated = Passage(text: "casualty", context: "casualty", language: "en")
+        try expect(LookupResult.initialReference(["伤亡人员"], for: isolated)?.origin == .dictionary)
+        let fragment = Passage(text: "casualty", context: "casualty insurance", language: "en", extent: .missingBoth)
+        try expect(LookupResult.initialReference(["伤亡人员"], for: fragment)?.origin == .dictionary)
+        let known = LookupResult(meaning: "意外", origin: .sentence, sentenceTranslation: "她管理一家意外保险机构。")
+        try expect(LookupResult.initial(term: nil, cached: known, dictionary: ["伤亡人员"])?.meaning == "意外")
+        print("Initial gloss: contextual lookup waits for evidence; standalone and fragment references and confirmed cache remain available.")
+    }
+
     static func testInstalledTranslation(ruledOut: Passage, ranOut: Passage) async throws {
         let source = Locale.Language(identifier: "en")
         let target = Locale.Language(identifier: "zh-Hans")
@@ -744,6 +768,10 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
             return
         }
         let session = TranslationSession(installedSource: source, target: target)
+        let insurance = Passage(text: "casualty", context: "At the time, I was managing a commercial casualty insurance agency in the suburbs of Detroit, Michigan.", language: "en")
+        let insuranceResult = try await LookupTranslation.translate(insurance, session: session, dictionary: ["伤亡人员"])
+        try expect(insuranceResult.origin == .sentence && insuranceResult.meaning.contains("意外") && !insuranceResult.meaning.contains("伤亡"))
+        print("User regression casualty →", insuranceResult.meaning)
         for context in ["In a magpie, the black and white feathers are easy to recognize.", "Among the magpie population, this behavior is common.", "I saw a magpie in the garden.", "The account is added to magpie."] {
             let result = try await LookupTranslation.translate(Passage(text: "magpie", context: context, language: "en"), session: session, dictionary: [])
             try expect(result.meaning == "喜鹊" && result.sentenceTranslation != nil)

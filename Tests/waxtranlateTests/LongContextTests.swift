@@ -27,6 +27,7 @@ import Translation
         try await failureBoundaries()
         try await providerAndPersistence()
         try await progressiveMeaning()
+        try await linkedWholeContext()
         try await installed()
     }
 
@@ -45,6 +46,27 @@ import Translation
         let barkSource = "They examined the tree bark before leaving."
         try check(LookupTranslation.alignedMeaning(in: marked("他们检查了树皮。", "皮"), passage: Passage(text: "bark", context: barkSource, language: "en")) == "树皮", "compound completion only worked for bank")
         try check(!ContextWordAlignment.isCompoundNounHead(Passage(text: "bank", context: "They watched the river\n\nbank.", language: "en")), "compound crossed a paragraph boundary")
+        let input = LookupTranslation.markedSentence(noun)!
+        let strong = input.runs.filter { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true }.map { String(input[$0.range].characters) }.joined()
+        let compound = input.runs.filter { $0.inlinePresentationIntent?.contains(.emphasized) == true }.map { String(input[$0.range].characters) }.joined()
+        try check(strong == "bank" && compound == "river bank", "nested markers changed the source occurrence")
+        var recovered = AttributedString("他们在河岸边休息。")
+        recovered[Range(("他们在河岸边休息。" as NSString).range(of: "河岸边"), in: recovered)!].inlinePresentationIntent = .emphasized
+        try check(LookupTranslation.alignedMeaning(in: recovered, passage: noun) == "河岸边", "native compound alignment was lost")
+        try check(LookupTranslation.alignedMeaning(in: recovered, passage: modifier) == nil, "compound fallback leaked to its modifier")
+        let fires = Passage(text: "fires", context: "Over seventy forest fires broke out.", language: "en")
+        func counted(_ prefix: String, middle: String = "森林", tail: String = "火灾", linked: Bool = true) -> AttributedString {
+            var classifier = AttributedString("起"), head = AttributedString(tail), modifier = AttributedString(middle)
+            classifier.inlinePresentationIntent = [.stronglyEmphasized, .emphasized]
+            head.inlinePresentationIntent = [.stronglyEmphasized, .emphasized]
+            if linked { modifier.inlinePresentationIntent = .emphasized }
+            return AttributedString(prefix) + classifier + modifier + head + AttributedString("正在燃烧。")
+        }
+        try check(LookupTranslation.alignedMeaning(in: counted("爆发了70多"), passage: fires) == "森林火灾", "counted compound retained classifier or lost noun")
+        for bad in [counted("爆发了"), counted("爆发了70多", middle: "森林", tail: "燃烧"), counted("爆发了70多", linked: false)] {
+            try check(LookupTranslation.alignedMeaning(in: bad, passage: fires) == nil, "counted noun accepted missing number, verb or disconnected span")
+        }
+        try check(LookupTranslation.alignedMeaning(in: counted("爆发了70多"), passage: modifier) == nil, "counted noun leaked to a modifier")
         print("Compound target boundaries: complete noun heads, preserve modifiers, non-bank words and paragraph guard passed.")
     }
 
@@ -71,6 +93,17 @@ import Translation
             print("Recorded recovery →", sample.id, meaning ?? "unconfirmed")
             if !correct { failures.append("\(sample.id): expected \(sample.expected), got \(meaning ?? "unconfirmed")") }
             try check(count <= 3, sample.id + ": unbounded requests")
+            var batchedCount = 0
+            let batched = try await alignment.recover(batch: { values in
+                try check(values == Array(requests.prefix(2)), "batch changed the occurrence or marker order")
+                batchedCount = 2
+                return Array(sample.responses.prefix(2))
+            }) { request in
+                try check(request == requests[batchedCount], "batch retry changed the occurrence")
+                defer { batchedCount += 1 }
+                return sample.responses[batchedCount]
+            }
+            try check(batched == meaning && batchedCount <= 3, "batch changed confirmation/conflict decisions for " + sample.id)
         }
         try check(failures.isEmpty, failures.joined(separator: "; "))
         print("Recorded alignment outputs:", corpus.cases.count, "passed (including synonyms, copied source tokens, object exclusion and rejected evidence).")
@@ -178,6 +211,56 @@ import Translation
         try check(events == ["河岸", "full"] && result.sentenceTranslation == "他们坐在河岸上看水。",
                   "confirmed sense must precede full translation and avoid waiting for the dictionary")
         print("Confirmed excerpt appeared before the full sentence; unambiguous alignment bypassed dictionary waiting.")
+    }
+
+    private static func linkedWholeContext() async throws {
+        let passage = Passage(text: "bank", context: river, language: "en")
+        let excerpt = SentenceExcerpt(passage)
+        let input = LookupTranslation.linkedContext(passage, excerpt: excerpt)!
+        try check(String(input.characters) == river, "linked context altered original text")
+        let linked = input.runs.filter { $0.link == LookupTranslation.excerptLink }.map { String(input[$0.range].characters) }.joined()
+        try check(linked == excerpt.passage.context, "linked context marked the wrong excerpt")
+        let short = "他们坐在河岸上看水。", full = "走过村庄后，" + short
+        var output = AttributedString(full)
+        output[Range((full as NSString).range(of: short), in: output)!].link = LookupTranslation.excerptLink
+        output[Range((full as NSString).range(of: "河岸"), in: output)!].inlinePresentationIntent = .stronglyEmphasized
+        var calls = 0
+        let provider = LookupTranslation.Provider(plain: { _ in throw Failure(description: "linked context redundantly translated again") }, marked: { value in
+            calls += 1
+            try check(String(value.characters) == river, "linked context discarded original conditions")
+            return .init(text: full, attributed: output)
+        }, supportsContextLinks: true)
+        let result = try await LookupTranslation.translate(passage, provider: provider, dictionary: [])
+        try check(calls == 1 && result.meaning == "河岸" && result.sentenceTranslation == full && result.excerptTranslation == short,
+                  "one whole-context response did not supply the exact gloss and excerpt")
+        try check(LookupTranslation.linkedExcerpt(AttributedString(full)) == nil, "missing link was accepted")
+        var all = AttributedString(full); all.link = LookupTranslation.excerptLink
+        try check(LookupTranslation.linkedExcerpt(all) == nil, "whole-sentence link was accepted as an excerpt")
+        var part = AttributedString("岸"); part.link = LookupTranslation.excerptLink
+        try check(LookupTranslation.linkedExcerpt(part + AttributedString("和") + part) == nil, "discontinuous excerpt was accepted")
+        var outside = AttributedString("河岸，") + output
+        outside[Range(NSRange(location: 0, length: 2), in: outside)!].inlinePresentationIntent = .stronglyEmphasized
+        try check(LookupTranslation.alignedMeaning(in: outside, passage: passage, requiredLink: LookupTranslation.excerptLink) == nil,
+                  "a different occurrence outside the excerpt was accepted")
+        var partial = AttributedString("他们坐在河岸。")
+        partial[Range(NSRange(location: 5, length: 1), in: partial)!].inlinePresentationIntent = .stronglyEmphasized
+        partial[Range(NSRange(location: 5, length: 1), in: partial)!].link = LookupTranslation.excerptLink
+        try check(LookupTranslation.alignedMeaning(in: partial, passage: passage, requiredLink: LookupTranslation.excerptLink) == nil,
+                  "completing a noun crossed the excerpt boundary")
+        var fallbackCalls: [String] = []
+        let fallback = LookupTranslation.Provider(plain: { _ in throw Failure(description: "successful full translation was repeated") }, marked: { value in
+            let source = String(value.characters)
+            fallbackCalls.append(source)
+            if source == river { return .init(text: full, attributed: nil) }
+            try check(source == excerpt.passage.context, "fallback changed excerpt source")
+            var value = AttributedString(short)
+            value[Range((short as NSString).range(of: "河岸"), in: value)!].inlinePresentationIntent = .stronglyEmphasized
+            return .init(text: short, attributed: value)
+        }, supportsContextLinks: true)
+        let restored = try await LookupTranslation.translate(passage, provider: fallback, dictionary: [])
+        try check(fallbackCalls.count == 2 && restored.meaning == "河岸" && restored.sentenceTranslation == full && restored.excerptTranslation == short,
+                  "lost link did not reuse the original full sentence")
+        print("Linked full context: one model response, exact source, complete translation and excerpt, missing/discontinuous markers rejected.")
     }
 
     private static func installed() async throws {

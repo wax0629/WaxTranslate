@@ -27,16 +27,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("corpus", type=Path)
     parser.add_argument("samples", type=Path, help="Ignored local JSON for the native reader check")
-    parser.add_argument("--round", type=int, choices=(1, 2), default=1,
-                        help="EWT round 2 takes the next eight disjoint pairs per genre")
+    parser.add_argument("--round", type=int, choices=(1, 2, 3), default=1,
+                        help="Take disjoint pairs per genre in fixed hash order (EWT: eight, GUM: three)")
+    parser.add_argument("--head-only", action="store_true", help="Emit headword-only samples for the latency/quality benchmark; never mark unreviewed meanings as passing")
     args = parser.parse_args()
     data = args.corpus.read_bytes()
     corpus = CORPORA.get(hashlib.sha256(data).hexdigest())
     if corpus is None:
         parser.error("Use UD English EWT 4dc8e10 or GUM 34d01cb (r2.15 test split)")
     name, count = corpus
-    if name == "GUM" and args.round != 1:
-        parser.error("GUM has one preselected evaluation round")
     cases, counts = defaultdict(list), Counter()
     triggers = set()
     for block in data.decode().strip().split("\n\n"):
@@ -72,6 +71,8 @@ def main():
         batch = ordered[start:start + count]
         samples.extend(batch)
         print(f"{genre}: {len(pairs)} eligible, {len(batch)} sampled")
+    if args.head_only:
+        samples = [dict(id=case["id"], text=case["text"], word=case["word"], expected=[]) for case in samples]
     args.samples.write_text(json.dumps(samples, ensure_ascii=False))
     print(dict(counts), "unique glossary activations", len(triggers), "sampled", len(samples))
     for sentence_id, selection, translation in sorted(triggers):
