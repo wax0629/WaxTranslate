@@ -238,6 +238,15 @@ import Translation
         try check(LookupTranslation.linkedExcerpt(all) == nil, "whole-sentence link was accepted as an excerpt")
         var part = AttributedString("岸"); part.link = LookupTranslation.excerptLink
         try check(LookupTranslation.linkedExcerpt(part + AttributedString("和") + part) == nil, "discontinuous excerpt was accepted")
+        var outside = AttributedString("河岸，") + output
+        outside[Range(NSRange(location: 0, length: 2), in: outside)!].inlinePresentationIntent = .stronglyEmphasized
+        try check(LookupTranslation.alignedMeaning(in: outside, passage: passage, requiredLink: LookupTranslation.excerptLink) == nil,
+                  "a different occurrence outside the excerpt was accepted")
+        var partial = AttributedString("他们坐在河岸。")
+        partial[Range(NSRange(location: 5, length: 1), in: partial)!].inlinePresentationIntent = .stronglyEmphasized
+        partial[Range(NSRange(location: 5, length: 1), in: partial)!].link = LookupTranslation.excerptLink
+        try check(LookupTranslation.alignedMeaning(in: partial, passage: passage, requiredLink: LookupTranslation.excerptLink) == nil,
+                  "completing a noun crossed the excerpt boundary")
         var fallbackCalls: [String] = []
         let fallback = LookupTranslation.Provider(plain: { _ in throw Failure(description: "successful full translation was repeated") }, marked: { value in
             let source = String(value.characters)

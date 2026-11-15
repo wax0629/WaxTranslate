@@ -279,7 +279,7 @@ enum LookupTranslation {
         return AttributedString(passage.context[..<range.lowerBound]) + mark + AttributedString(passage.context[range.upperBound...])
     }
 
-    static func alignedMeaning(in output: AttributedString, isPhrase: Bool = false, passage: Passage? = nil) -> String? {
+    static func alignedMeaning(in output: AttributedString, isPhrase: Bool = false, passage: Passage? = nil, requiredLink: URL? = nil) -> String? {
         // Accept only one contiguous translated span. Some language pairs may
         // drop the emphasis or apply it to the whole sentence.
         var span: Range<AttributedString.Index>?
@@ -287,7 +287,7 @@ enum LookupTranslation {
             ? .stronglyEmphasized : passage.flatMap(ContextWordAlignment.nounHeadRange) != nil ? .emphasized : .stronglyEmphasized
         for run in output.runs where run.inlinePresentationIntent?.contains(intent) == true {
             if let previous = span, previous.upperBound != run.range.lowerBound {
-                return passage.flatMap { countedNounMeaning(in: output, passage: $0) }
+                return passage.flatMap { countedNounMeaning(in: output, passage: $0, requiredLink: requiredLink) }
             }
             span = (span?.lowerBound ?? run.range.lowerBound)..<run.range.upperBound
         }
@@ -297,6 +297,10 @@ enum LookupTranslation {
         let prefix = String(output[..<span.lowerBound].characters).utf16.count
         let range = NSRange(location: prefix, length: String(output[span].characters).utf16.count)
         let completed = ContextWordAlignment.completeTargetWord(range, in: plain, compoundHead: passage.map(ContextWordAlignment.isCompoundNounHead) ?? false)
+        if let requiredLink {
+            guard let attributedRange = Range(completed, in: output),
+                  output[attributedRange].runs.allSatisfy({ $0.link == requiredLink }) else { return nil }
+        }
         guard let selected = Range(completed, in: plain) else { return nil }
         let gloss = String(plain[selected]).trimmingCharacters(in: trim)
         let sentence = plain.trimmingCharacters(in: trim)
@@ -311,7 +315,7 @@ enum LookupTranslation {
     // Accept the enclosing, independently marked compound only when all its
     // remaining words are nouns and the classifier follows an explicit number.
     // Never join unrelated highlighted spans or guess from a dictionary sense.
-    private static func countedNounMeaning(in output: AttributedString, passage: Passage) -> String? {
+    private static func countedNounMeaning(in output: AttributedString, passage: Passage, requiredLink: URL?) -> String? {
         guard ContextWordAlignment.nounHeadRange(passage) != nil else { return nil }
         let strong = output.runs.filter { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true }
         let compound = output.runs.filter { $0.inlinePresentationIntent?.contains(.emphasized) == true }
@@ -319,6 +323,7 @@ enum LookupTranslation {
               compound.first?.range.lowerBound == first.range.lowerBound,
               compound.last?.range.upperBound == last.range.upperBound,
               zip(compound, compound.dropFirst()).allSatisfy({ $0.range.upperBound == $1.range.lowerBound }) else { return nil }
+        if let requiredLink, !compound.allSatisfy({ $0.link == requiredLink }) { return nil }
         let classifier = String(output[first.range].characters)
         guard classifier.count == 1, "个位名条张件只头匹座辆艘架起场次份本部家所间".contains(classifier),
               String(output[..<first.range.lowerBound].characters).range(of: #"[0-9０-９零〇一二两三四五六七八九十百千万亿]+[多余]?\s*$"#, options: .regularExpression) != nil else { return nil }
@@ -468,7 +473,7 @@ enum LookupTranslation {
                 // original sentence. Do not translate it a second time later.
                 fullTranslation = response.text
                 if let attributed = response.attributed, let short = linkedExcerpt(attributed),
-                   let aligned = alignedMeaning(in: attributed, passage: passage) {
+                   let aligned = alignedMeaning(in: attributed, passage: passage, requiredLink: excerptLink) {
                     try Task.checkCancellation()
                     let gloss = needsBoundaryVerification(aligned) ? verifiedBoundaryMeaning(aligned, references: await dictionary()) : aligned
                     if let gloss {

@@ -17,6 +17,7 @@ bundle="${WAX_BENCH_BUNDLE:-$work/StableTranslation.app}"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp Info.plist "$bundle/Contents/Info.plist"
 cp "$source/Assets/Lexicon/reading-terms.json" "$bundle/Contents/Resources/"
+cp Tests/Fixtures/stable-translation.json "$bundle/Contents/Resources/"
 binary="$bundle/Contents/MacOS/waxtranlate"
 swiftc -O -whole-module-optimization -parse-as-library "${flags[@]}" -target "$(uname -m)-apple-macosx15.2" \
   "$source"/Sources/waxtranlate/*.swift \
