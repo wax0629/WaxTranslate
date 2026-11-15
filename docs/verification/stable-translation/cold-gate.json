@@ -1,0 +1,22 @@
+{
+  "uncached": {
+    "samples": 10,
+    "p50_ms": 596.8,
+    "p95_ms": 1449.1,
+    "max_ms": 1449.1,
+    "over_1s": 1,
+    "quality_pass": 10,
+    "quality_fail": 0,
+    "quality_unscored": 0
+  }
+}
+{
+  "failed_target_samples": [
+    {
+      "id": "casualty-insurance",
+      "iteration": 1,
+      "ms": 1449.1,
+      "quality": true
+    }
+  ]
+}

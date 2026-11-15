@@ -1,0 +1,10 @@
+sample=first word_ms=477.8 meaning_ms=648.8
+sample=neighbor word_ms=93.5 meaning_ms=258.5
+sample=changed word_ms=461.1 meaning_ms=665.6
+sample=other-sense word_ms=344.3 meaning_ms=499.7
+sample=repeat word_ms=89.3 meaning_ms=89.4
+sample=shift-key word_ms=368.6 meaning_ms=513.2
+sample=work-shift word_ms=328.5 meaning_ms=496.9
+sample=model-study word_ms=387.4 meaning_ms=538.9
+Passed: replacement at identical coordinates, blank crop, cancellation and recovery.
+Passed: 8 accurate offscreen lookups, including the same word in different contexts.

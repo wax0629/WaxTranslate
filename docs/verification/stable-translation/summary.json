@@ -1,0 +1,59 @@
+{
+  "baseline": {
+    "uncached": {
+      "samples": 33,
+      "p50_ms": 704.5,
+      "p95_ms": 15002.5,
+      "max_ms": 15003.0,
+      "over_1s": 14,
+      "quality_pass": 27,
+      "quality_fail": 6,
+      "quality_unscored": 0
+    },
+    "cached": {
+      "samples": 27,
+      "p50_ms": 401.1,
+      "p95_ms": 1094.0,
+      "max_ms": 1174.8,
+      "over_1s": 3,
+      "quality_pass": 27,
+      "quality_fail": 0,
+      "quality_unscored": 0
+    }
+  },
+  "current": {
+    "uncached": {
+      "samples": 30,
+      "p50_ms": 627.0,
+      "p95_ms": 924.0,
+      "max_ms": 936.0,
+      "over_1s": 0,
+      "quality_pass": 30,
+      "quality_fail": 0,
+      "quality_unscored": 0
+    },
+    "cached": {
+      "samples": 30,
+      "p50_ms": 378.7,
+      "p95_ms": 597.1,
+      "max_ms": 618.8,
+      "over_1s": 0,
+      "quality_pass": 30,
+      "quality_fail": 0,
+      "quality_unscored": 0
+    }
+  },
+  "cold": {
+    "samples": 10,
+    "p50_ms": 596.8,
+    "p95_ms": 1449.1,
+    "max_ms": 1449.1,
+    "over_1s": 1,
+    "quality_pass": 10,
+    "quality_fail": 0,
+    "quality_unscored": 0
+  },
+  "code_revision": "828034fec77da92d0b91eca6da59d460029102b6",
+  "baseline_revision": "60274b341b308b049ce9ce00de58cf1d5653204e",
+  "coverage": "Controlled Retina pixels through production OCR, native translation, result publication and layout; no physical input or screen capture in these rows."
+}

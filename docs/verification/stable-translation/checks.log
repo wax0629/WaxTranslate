@@ -1,0 +1,95 @@
+Accurate OCR: exact second-line bank wins over first-line old's padded box; clipped context stays incomplete.
+Apple phrase checks: emergent capabilities | 该模型没有显示涌现能力。; battery housing | 电池外壳 | .
+Initial gloss: contextual lookup waits for evidence; standalone and fragment references and confirmed cache remain available.
+Card acceptance: editor structure, comments, title scope, local evidence, INTEGER, speech routes, exact links, cancelled/retried context, saving and cache scope passed.
+Foreign context policy: known terms auto-display bilingual source; Chinese remains manual; standalone/safety boundaries passed.
+Mixed English reference → INTEGER 整数
+Mixed English reference → LookupTranslation 名称组成词参考（不代表代码功能）：Lookup：查表；Translation：译文
+Alignment regressions: one bounded retry, exact second occurrence, conditional/fragment guards, secondary unconfirmed reference, old API, cancellation and cache passed.
+Compound target boundaries: complete noun heads, preserve modifiers, non-bank words and paragraph guard passed.
+Recorded recovery → river-formatting-lost 河岸
+Recorded recovery → money-probe-reordered 银行
+Recorded recovery → first-bank-probe-ambiguous unconfirmed
+Recorded recovery → second-bank-copied-token 河岸
+Recorded recovery → negative-probe-conflict unconfirmed
+Recorded recovery → tree-bark 树皮
+Recorded recovery → dog-bark-synonym 叫声
+Recorded recovery → lifting-crane 起重机
+Recorded recovery → bird-crane-copied-token 鹤
+Recorded recovery → charge-object-excluded 充电
+Recorded alignment outputs: 10 passed (including synonyms, copied source tokens, object exclusion and rejected evidence).
+Alignment failure boundaries: 6 malformed/conflicting outputs, selection/structure/language guards, service failure and cancellation passed.
+Plain-provider recovery: UTF-16 occurrence, 2-probe budget, original translation, cache isolation, save and reload passed.
+Confirmed excerpt appeared before the full sentence; unambiguous alignment bypassed dictionary waiting.
+Linked full context: one model response, exact source, complete translation and excerpt, missing/discontinuous markers rejected.
+Live long-context → long-river 河岸 273 ms
+Live long-context → long-money 银行 237 ms
+Live long-context → repeated-first 银行 235 ms
+Live long-context → repeated-last 河岸 176 ms
+Live long-context → emoji-offset 河岸 279 ms
+Live long-context → sentence-start 银行 190 ms
+Live long-context → sentence-end 河岸边 254 ms
+Live long-context → negative-river 河岸 215 ms
+Live long-context → conditional-river 河岸 211 ms
+Live long-context → contrast-two-senses 河岸 164 ms
+Live long-context → tree-bark 树皮 203 ms
+Live long-context → dog-bark 叫声 194 ms
+Live long-context → lifting-crane 起重机 204 ms
+Live long-context → bird-crane 鹤 159 ms
+Live long-context → charging-battery 充电 173 ms
+Live long-context → negative-phrase 排除 328 ms
+Live long-context: 16 queries plus a plain-only provider passed; no unresolved result counts as success.
+User regression casualty → 意外
+Boundary check → 喜鹊 / 在喜鹊中，黑白相间的羽毛很容易辨认。
+Boundary check → 喜鹊 / 在喜鹊种群中，这种行为很常见。
+Boundary check → 喜鹊 / 我在花园里看到了一只喜鹊。
+Boundary check → 喜鹊 / 该帐户被添加到喜鹊中。
+Long context → 河岸 origin: sentence / 他们坐在河岸上，看着水慢慢流向远处的山脉。
+Incomplete source → retained API explanation / 传感器 ; no automatic sentence translation
+Automatic foreign term → VoiceOver Apple 的屏幕朗读辅助功能。 / 在 macOS 辅助功能设置中启用旁白。
+Automatic foreign term → Redis 一种内存数据存储系统，常用于缓存。 / 部署Redis作为应用程序缓存。
+tulip → 郁金香
+A red tulip blooms in the garden. → 郁金香
+They sat on the river bank and watched the water. → 岸边 / 他们坐在河岸边，看着水。
+She deposited her paycheck at the bank. → 银行 / 她把工资支票存入了银行。
+Vision → rule out → 排除 / 这些结果并不排除感染。
+Vision → ran out of → 用完了 / 测试结束前，设备的内存用完了。
+Vision → look up → 查一下 / 请在离开前查一下地址。
+Vision → Look up → 仰望 / 仰望天花板，看看星星。
+Unaligned memory →  / 测试结束前，设备的内存用完了。
+Live mixed context → INTEGER 整数类型，用于存储没有小数部分的数值。 / The test version has been installed, and INTEGER now displays simplified integers.
+Live mixed context → LookupTranslation 名称组成词参考（不代表代码功能）：Lookup：查表；Translation：译文 / Sources/waxtranlate/LookupTranslation.swift
+Japanese → 猫 / 猫在睡觉。
+Passed: capture geometry, cursor-free Retina configuration, small mixed text, OCR, packed typography, phrase selection, exact occurrences, vocabulary migration, review, language routing, dashboard persistence, corrupt-data preservation, reading cancellation, mixed-language terminology, unchanged-result boundaries, verified gloss boundaries, bounded bilingual context, reference boundaries, Option tap guards and Dock preferences.
+Boundary corpus: 160/160 passed; 91 base cases; 13 categories.
+Passed: bounded capture recovery/cancellation, changed-screen rejection, source maps, completeness cache isolation and legacy/save/recent persistence.
+Vision boundary wrap-light-system → complete The engineer checked the sensor before starting the experiment.
+Vision boundary negation-light-system → complete Do not remove the sensor until the experiment has finished.
+Vision boundary comments-light-system → complete The engineer checked the sensor before starting the experiment.
+Vision boundary list-light-system → complete - Inspect the instrument and record the sensor temperature.
+Vision boundary paragraph-light-system → complete The sensor remains connected.
+Vision boundary columns-light-system → complete The engineer checked the sensor before starting the experiment.
+Vision boundary abbreviation-light-system → complete Dr. Chen checked the sensor.
+Vision boundary decimal-light-system → complete Version 3.14.2 reports 2.5 units for the sensor.
+Vision boundary clipped-start-light-system → missingStart sensor before starting the experiment.
+Vision boundary clipped-end-light-system → missingEnd The engineer checked the sensor
+Vision boundary clipped-both-light-system → missingBoth sensor before starting the experiment
+Vision boundary wrap-dark-mono → uncertain The engineer checked the sensor before starting the experiment
+Vision safe fallback: OCR omitted sentence-final punctuation; no punctuation was fabricated.
+Vision boundary negation-dark-mono → complete Do not remove the sensor until the experiment has finished.
+Vision boundary comments-dark-mono → complete The engineer checked the sensor before starting the experiment.
+Vision boundary list-dark-mono → complete - Inspect the instrument and record the sensor temperature.
+Vision boundary paragraph-dark-mono → complete The sensor remains connected.
+Vision boundary columns-dark-mono → complete The engineer checked the sensor before starting the experiment.
+Vision boundary abbreviation-dark-mono → complete Dr. Chen checked the sensor.
+Vision boundary decimal-dark-mono → complete Version 3.14.2 reports 2.5 units for the sensor.
+Vision boundary clipped-start-dark-mono → missingStart sensor before starting the experiment.
+Vision boundary clipped-end-dark-mono → missingEnd The engineer checked the sensor
+Vision boundary clipped-both-dark-mono → missingBoth sensor before starting the experiment
+Passed: 22 real Vision boundary/crop checks (including explicitly recorded safe punctuation-loss fallbacks); offscreen synthetic text only.
+Passed: mixed-script OCR, clipped wrap, bounded recovery, keyboard context, local definitions and occurrence-specific senses.
+Passed: initial denial, close/retry, replacement, grant and revocation; no system permission changes.
+Passed: mounted native region and unconfirmed cards do not write notebook activity.
+Passed: mounted confirmed card records the recovered contextual meaning.
+Passed: real card sends no automatic reference requests with either legacy preference; word-only manual request, offline retry and HTTP failure (intercepted, no network).
+Passed: detached native worker cancellation, replaced card cannot publish/cache/save, replacement keeps its own river sense (offscreen).

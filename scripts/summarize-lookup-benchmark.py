@@ -36,10 +36,10 @@ def main():
     if args.csv:
         with args.csv.open("w", newline="") as output:
             writer = csv.writer(output)
-            writer.writerow(["sample", "iteration", "cache", "ms", "quality", "stage", "duration_ms", "elapsed_ms"])
+            writer.writerow(["run", "sample", "iteration", "cache", "ms", "quality", "stage", "duration_ms", "elapsed_ms"])
             for row in rows:
                 for event in row["events"]:
-                    writer.writerow([row["id"], row["iteration"], row.get("cacheHit", False),
+                    writer.writerow([row.get("run", ""), row["id"], row["iteration"], row.get("cacheHit", False),
                                      round(row["milliseconds"], 1), row.get("quality", "unscored"), event["stage"],
                                      round(event["durationMs"], 1), round(event["elapsedMs"], 1)])
     failures = [dict(id=row["id"], iteration=row["iteration"], ms=round(row["milliseconds"], 1),

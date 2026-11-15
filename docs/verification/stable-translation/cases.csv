@@ -1,0 +1,11 @@
+case,before_first_median_ms,before_quality_pass,after_first_median_ms,after_first_max_ms,after_quality_pass,meaning
+casualty-insurance,1557.5,3,852.3,860.4,3,意外
+casualty-accident,605.6,3,508.6,543.9,3,人伤亡
+river-bank,691.1,3,568.5,615.3,3,岸边
+money-bank,570.2,3,544.5,550.0,3,银行
+rule-out,508.0,3,497.6,497.6,3,排除
+ops-team,1087.4,3,910.1,924.0,3,行动小组
+mailing-list,1020.7,3,774.3,808.6,3,邮件列表
+battery-housing,698.7,3,649.8,654.9,3,电池外壳
+long-river,15002.2,0,912.1,936.0,3,河岸
+model-study,559.3,3,531.8,638.7,3,消融实验，移除或替换模型中的某一部分，比较结果如何变化。

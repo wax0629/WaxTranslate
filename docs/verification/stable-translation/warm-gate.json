@@ -1,0 +1,25 @@
+{
+  "uncached": {
+    "samples": 30,
+    "p50_ms": 627.0,
+    "p95_ms": 924.0,
+    "max_ms": 936.0,
+    "over_1s": 0,
+    "quality_pass": 30,
+    "quality_fail": 0,
+    "quality_unscored": 0
+  },
+  "cached": {
+    "samples": 30,
+    "p50_ms": 378.7,
+    "p95_ms": 597.1,
+    "max_ms": 618.8,
+    "over_1s": 0,
+    "quality_pass": 30,
+    "quality_fail": 0,
+    "quality_unscored": 0
+  }
+}
+{
+  "failed_target_samples": []
+}

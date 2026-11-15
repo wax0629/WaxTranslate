@@ -85,3 +85,5 @@ Windows 的离屏回归、独立桌面回归、多语 OCR 专项，以及 macOS 
 [Windows 回归测试集](docs/verification/windows-regression/README.md)集中提供61条用户用例、固定输入、预期结果、CSV表和按组执行入口，并区分自动检查与待人工验收。
 
 当前句译触发规则见 [翻译逻辑](docs/translation-logic.md)。
+
+Mac 稳定释义的分段计时、基线对比、1 秒目标与质量回归见[性能验证记录](docs/verification/stable-translation/README.md)。
