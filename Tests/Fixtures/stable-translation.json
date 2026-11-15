@@ -1,0 +1,12 @@
+[
+  {"id":"casualty-insurance","text":"I started trading in 1978. At the time, I was managing a commercial casualty insurance agency in the suburbs of Detroit, Michigan.","word":"casualty","expected":["意外","事故","财产","责任"]},
+  {"id":"casualty-accident","text":"The accident caused one casualty.","word":"casualty","expected":["伤","死"]},
+  {"id":"river-bank","text":"They sat on the river bank and watched the water.","word":"bank","expected":["岸"]},
+  {"id":"money-bank","text":"She deposited her paycheck at the bank.","word":"bank","expected":["银行"]},
+  {"id":"rule-out","text":"These results do not rule out infection.","word":"out","expected":["排除"]},
+  {"id":"ops-team","text":"The commander sent an Ops team to rescue the hostages.","word":"team","phrase":"Ops team","expected":["行动小组","行动团队","行动队"]},
+  {"id":"mailing-list","text":"I added your email address to the mailing list.","word":"list","phrase":"mailing list","expected":["邮件列表","邮件名单"]},
+  {"id":"battery-housing","text":"The engineer inspected the battery housing for cracks.","word":"housing","phrase":"battery housing","expected":["电池外壳"]},
+  {"id":"long-river","text":"After a very long walk through the quiet village and past the old houses where people were preparing for the evening, they sat on the river bank and watched the water flow slowly toward the distant mountains.","word":"bank","expected":["岸"]},
+  {"id":"model-study","text":"The ablation study removes one model component.","word":"study","expected":["消融实验"]}
+]

@@ -62,13 +62,23 @@ struct ContextWordAlignment {
         compoundHead = Self.isCompoundNounHead(passage)
     }
 
-    func recover(exactPhrase: Bool = false, using translate: (String) async throws -> String) async throws -> String? {
+    func recover(exactPhrase: Bool = false, batch: (([String]) async throws -> [String])? = nil,
+                 using translate: (String) async throws -> String) async throws -> String? {
         var agreement: Range<Int>?
         var confirmations = 0
+        let first: [String]?
+        if let batch {
+            try Task.checkCancellation()
+            do { first = try await batch(probes.prefix(2).map(\.text)) }
+            catch is CancellationError { throw CancellationError() }
+            catch { try Task.checkCancellation(); return nil }
+            try Task.checkCancellation()
+            guard first?.count == 2 else { return nil }
+        } else { first = nil }
         for (index, probe) in probes.enumerated() {
             try Task.checkCancellation()
             let translated: String
-            do { translated = try await translate(probe.text) }
+            do { translated = index < (first?.count ?? 0) ? first![index] : try await translate(probe.text) }
             catch is CancellationError { throw CancellationError() }
             catch { try Task.checkCancellation(); return nil }
             try Task.checkCancellation()
@@ -104,7 +114,7 @@ struct ContextWordAlignment {
         nounHeadRange(passage) != nil
     }
 
-    private static func nounHeadRange(_ passage: Passage) -> NSRange? {
+    static func nounHeadRange(_ passage: Passage) -> NSRange? {
         guard passage.sourceLanguage == "en", !passage.isPhrase, let selection = passage.selection,
               let selected = Range(selection, in: passage.context), passage.context[selected] == passage.text else { return nil }
         let tokenizer = NLTokenizer(unit: .word)

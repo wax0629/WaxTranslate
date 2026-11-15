@@ -111,9 +111,30 @@ enum Reader {
         return configuration
     }
 
+    static func screenshot(filter: SCContentFilter, bounds: CGRect, screen: CGRect, scale: CGFloat) async throws -> CGImage {
+        if #available(macOS 26.0, *) {
+            // The still-image API avoids initializing the stream capture path.
+            // Keep the same source rectangle, native pixels and window filter.
+            let configuration = SCScreenshotConfiguration()
+            configuration.sourceRect = sourceRect(bounds, on: screen)
+            configuration.width = max(1, Int((bounds.width * scale).rounded()))
+            configuration.height = max(1, Int((bounds.height * scale).rounded()))
+            configuration.showsCursor = false
+            configuration.dynamicRange = .sdr
+            configuration.displayIntent = .local
+            let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: configuration)
+            guard let image = output.sdrImage else { throw CocoaError(.fileReadUnknown) }
+            return image
+        }
+        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: screenshotConfiguration(bounds: bounds, screen: screen, scale: scale))
+    }
+
     static func hoverRect(at point: CGPoint, on screen: CGRect) -> CGRect {
         let height = min(screen.height / 4, 180)
-        let width = min(screen.width, 900)
+        // A normal reading line can extend more than 450 points to either side
+        // of the hit. Read that line once instead of clipping it and repeating
+        // accurate OCR over a much taller recovery image.
+        let width = min(screen.width, 1200)
         let bottom = min(max(point.y - height / 2, screen.minY), screen.maxY - height)
         let left = min(max(point.x - width / 2, screen.minX), screen.maxX - width)
         return CGRect(x: left, y: bottom, width: width, height: height)
@@ -160,9 +181,8 @@ enum Reader {
         }
         func image(in area: CGRect) async throws -> CGImage {
             try Task.checkCancellation()
-            let configuration = screenshotConfiguration(bounds: area, screen: display.frame, scale: display.scale)
             let began = LookupTrace.now
-            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+            let image = try await screenshot(filter: filter, bounds: area, screen: display.frame, scale: display.scale)
             trace.record("capture.image", since: began)
             try Task.checkCancellation()
             return image
@@ -202,6 +222,7 @@ enum Reader {
                 let began = LookupTrace.now
                 let size = CGSize(width: current.width, height: current.height)
                 let fingerprint = Self.digest(current)
+                trace.record("capture.fingerprint", since: began)
                 try Task.checkCancellation()
                 let lines: [VNRecognizedText]
                 if let previous, previous.displayID == displayID, previous.area == area, previous.size == size,
@@ -209,13 +230,16 @@ enum Reader {
                     lines = previous.lines
                     trace.record("capture.ocr_reused", since: began)
                 } else {
+                    let ocrBegan = LookupTrace.now
                     lines = try await Reader.linesCancellable(in: current, language: language)
                     if let fingerprint {
                         try Task.checkCancellation()
                         last = Entry(area: area, displayID: displayID, language: language, size: size, digest: fingerprint, lines: lines)
                     }
-                    trace.record("capture.ocr", since: began)
+                    trace.record("capture.ocr", since: ocrBegan)
                 }
+                let contextBegan = LookupTrace.now
+                defer { trace.record("lookup.context", since: contextBegan) }
                 return try Reader.passage(in: lines, size: size, target: target(in: area), language: language, isCrop: true)
             }
             // For nearby words, first sample the same area again. Changed pixels run
@@ -312,13 +336,20 @@ enum Reader {
             return Passage(text: text, context: "", language: requested)
         }
         let point = CGPoint(x: target.x * size.width, y: target.y * size.height)
-        return try SentenceContext.passage(in: lines.flatMap { fragments(of: $0, imageSize: size, point: point) }, language: requested,
+        // Resolve exact glyph hits across all lines before allowing vertical
+        // leading. Otherwise the enlarged box on the preceding line can win
+        // over the actual word under the pointer on the following line.
+        var fragments = lines.flatMap { Self.fragments(of: $0, imageSize: size, point: point, allowLeading: false) }
+        if !fragments.contains(where: { $0.hit != nil }) {
+            fragments = lines.flatMap { Self.fragments(of: $0, imageSize: size, point: point, allowLeading: true) }
+        }
+        return try SentenceContext.passage(in: fragments, language: requested,
                                            captureBounds: isCrop ? CGRect(origin: .zero, size: size) : nil)
     }
 
     // Vision can group two columns on the same baseline into one observation.
     // Split at large spatial gaps, keeping punctuation between ordinary words.
-    private static func fragments(of line: VNRecognizedText, imageSize: CGSize, point: CGPoint) -> [TextLine] {
+    private static func fragments(of line: VNRecognizedText, imageSize: CGSize, point: CGPoint, allowLeading: Bool) -> [TextLine] {
         let text = line.string
         let tokenizer = NLTokenizer(unit: .word)
         tokenizer.string = text
@@ -345,7 +376,7 @@ enum Reader {
             let start = i == 0 ? text.startIndex : words[0].range.lowerBound
             let end = i + 1 == groups.count ? text.endIndex : groups[i + 1][0].range.lowerBound
             let fragment = text[start..<end].drop(while: { $0.isWhitespace })
-            let hit = wordRange(at: point, in: words, text: text).map {
+            let hit = wordRange(at: point, in: words, text: text, allowLeading: allowLeading).map {
                 NSRange(location: $0.lowerBound.utf16Offset(in: text) - fragment.startIndex.utf16Offset(in: text),
                         length: NSRange($0, in: text).length)
             }
@@ -355,12 +386,12 @@ enum Reader {
     }
 
     private static func wordRange(at point: CGPoint,
-        in words: [(range: Range<String.Index>, frame: CGRect)], text: String) -> Range<String.Index>? {
+        in words: [(range: Range<String.Index>, frame: CGRect)], text: String, allowLeading: Bool) -> Range<String.Index>? {
         let exact = words.filter { $0.frame.contains(point) }
         // Small UI text has tight glyph boxes rather than a full text line.
         // Allow a little vertical leading while keeping the actual word's
         // horizontal span, so nearby whitespace never selects another word.
-        let hits = exact.isEmpty ? words.filter {
+        let hits = exact.isEmpty && allowLeading ? words.filter {
             $0.frame.insetBy(dx: 0, dy: -$0.frame.height * 0.2).contains(point)
         } : exact
         guard let first = hits.first else { return nil }
