@@ -76,7 +76,7 @@ struct LookupResult {
 @MainActor enum TranslationWarmup {
     private static var task: Task<Void, Never>?
     static func start() {
-        guard #available(macOS 26.0, *), task == nil else { return }
+        guard #available(macOS 26.0, *), task == nil, BundledTranslation(source: "en") == nil else { return }
         task = Task.detached(priority: .utility) {
             let source = Locale.Language(identifier: "en"), target = Locale.Language(identifier: "zh-Hans")
             guard await LanguageAvailability().status(from: source, to: target) == .installed else { return }
@@ -99,12 +99,14 @@ final class AutomaticLookup: @unchecked Sendable {
     let task: Task<LookupResult?, Error>
 
     static func start(_ passage: Passage, trace: LookupTrace) -> AutomaticLookup? {
+        if let bundled = BundledTranslation(source: passage.sourceLanguage) {
+            return AutomaticLookup(passage, trace: trace, bundled: bundled)
+        }
         guard #available(macOS 26.0, *) else { return nil }
-        return AutomaticLookup(passage, trace: trace)
+        return AutomaticLookup(passage, trace: trace, bundled: nil)
     }
 
-    @available(macOS 26.0, *)
-    private init(_ passage: Passage, trace: LookupTrace) {
+    private init(_ passage: Passage, trace: LookupTrace, bundled: BundledTranslation?) {
         let (stream, continuation) = AsyncStream<Progress>.makeStream()
         progress = stream
         task = Task.detached(priority: .userInitiated) {
@@ -122,6 +124,11 @@ final class AutomaticLookup: @unchecked Sendable {
                 references = values
                 return values
             }
+            if let bundled {
+                return try await LookupTranslation.translate(passage, provider: bundled.provider, dictionary: await dictionary(),
+                    trace: trace, onSentence: { continuation.yield(.sentence($0)) }, onExcerpt: { continuation.yield(.excerpt($0)) })
+            }
+            guard #available(macOS 26.0, *) else { return nil }
             let session = TranslationSession(installedSource: source, target: target)
             trace.record("translation.session", since: began)
             do {

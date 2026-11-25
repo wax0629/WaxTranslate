@@ -23,7 +23,7 @@ try {
     $env:PYTHONUTF8 = '1'
     & "$target\runtime\python.exe" windows\check_launcher.py $target $shortcut
     if ($LASTEXITCODE) { throw 'Installed launcher failed' }
-    & "$target\runtime\python.exe" windows\check_offline_install.py
+    & "$target\runtime\python.exe" windows\check_offline_install.py visuals\offline-install
     if ($LASTEXITCODE) { throw 'Offline reading failed' }
     & "$target\runtime\python.exe" -c "from notebook import Notebook; Notebook().record_lookup(word='catalog', language='en', gloss='目录')"
     if ($LASTEXITCODE) { throw 'Could not seed the real notebook' }

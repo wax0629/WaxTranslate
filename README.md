@@ -42,9 +42,11 @@ Mac 已通过 160 项共享断句检查、22 项 Vision 检查、12 类原生卡
 
 双端支持对照阅读、生词复习、真实统计与最近查询，采用统一纸色、字体层级与简洁卡片。**外语自然句中的普通词和已确认术语/名称自动显示适长原文与对应译文；中文语境中的英文词由用户点击才句译。** 原文内其他术语按确切位置点击，注释去掉行首 // 且不接相邻代码，标题提供整译，路径/片段与未知名称保留边界。[翻译逻辑图](docs/translation-logic.md) · [开发与验收记录](docs/development.md)
 
-Mac 使用 Vision 和 Apple 本机翻译，Windows 使用本地 OCR 和离线模型，语言包分别管理；两端不要求译文逐字一致。
+Mac 使用 Vision 识字。双端安装包自带英中双向翻译模型，Mac 的其他语言使用 Apple 本机翻译，Windows 使用本地 OCR 和可选语言包；两端不要求译文逐字一致。
 
 ## WaxTranslate Windows 桌面版
+
+**离线安装。** [本轮安装包和验证记录](https://github.com/wax0629/WaxTranslate/pull/113)。在 Windows 11 x64 上双击 `WaxTranslate-Windows-x64-Setup.exe`，按提示安装，然后从开始菜单打开 WaxTranslate。在「对照翻译」输入英文或中文，保持自动识别，按 Ctrl+Enter 即可英中互译。模型、运行程序与默认 OCR 资源都在安装包内。
 
 **使用便携包。** 登录 GitHub 后下载便携包，解开下载文件，再完整解开其中的 ZIP，双击 `WaxTranslate.exe`。程序默认在系统托盘待命；点击托盘图标或再次双击启动器可打开主窗口。[下载已验证的 Windows x64 便携包](https://github.com/wax0629/WaxTranslate/actions/runs/42843354986/artifacts/13778150668) · [交付记录](https://github.com/wax0629/WaxTranslate/issues/96) · [Windows 构建列表](https://github.com/wax0629/WaxTranslate/actions/workflows/windows-desktop.yml)
 
@@ -63,6 +65,12 @@ Mac 使用 Vision 和 Apple 本机翻译，Windows 使用本地 OCR 和离线模
 ```
 
 ## macOS 安装和运行
+
+本轮提供 `WaxTranslate-macOS-Universal-test.dmg`，可用于本机测试。此包使用临时签名，联网下载后首次打开可能被 Gatekeeper 拦截。正式签名和公证将在发布环境就绪后执行。[试用进度与实测](https://github.com/wax0629/WaxTranslate/pull/113)
+
+在 Intel 或 Apple 芯片的 Mac（macOS 15.2 及以上）打开 DMG，把应用拖入「应用程序」后打开。在「对照翻译」输入英文，按 ⌘Enter 即可翻译。英中双向翻译无需下载语言包，应用内阅读可直接使用。
+
+### 从源码运行
 
 在装有 Swift 6 和 macOS 26.4 或更新 SDK 的 Mac 上，从仓库根目录构建安装。应用显示名为「我靠翻译」，磁盘文件名沿用 `waxtranlate.app`。
 
@@ -87,3 +95,7 @@ Windows 的离屏回归、独立桌面回归、多语 OCR 专项，以及 macOS 
 当前句译触发规则见 [翻译逻辑](docs/translation-logic.md)。
 
 Mac 稳定释义的分段计时、基线对比、1 秒目标与质量回归见[性能验证记录](docs/verification/stable-translation/README.md)。
+
+## 维护者打包
+
+Mac 构建使用 Python 3.12、CMake 3.31 和支持 macOS 26.4+ 的 SDK。运行 `python3 macos/package.py` 可生成双架构离线测试 DMG，正式分发时同时传入 `--identity "Developer ID Application: …" --notary-profile <钥匙串配置名>` 来签名、公证并装订离线凭据。Windows 运行 `windows/package.py` 后从输出 ZIP 解出 WaxTranslate 目录，通过 Inno Setup 6 编译 `windows/installer.iss`，传入 `/DAppSource=<已解开的 WaxTranslate 目录>` 和 `/DOutputDir=<输出目录>`。首次构建需要下载已锁定的依赖。

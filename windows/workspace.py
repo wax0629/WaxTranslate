@@ -262,7 +262,7 @@ class TextWorkspace(QWidget):
     def set_source_language(self, code):
         self.source_code = self.input.source_code = code
         self.source_label.setText("中文" if code == "zh" else NAMES.get(code, "自动识别"))
-        self.target_label.setText(("英语" if code == "zh" else "简体中文") if code else "中文 / 英文")
+        self.target_label.setText({"zh": "英语", "": "中文 / 英文"}.get(code, "简体中文"))
         self.reset_result()
 
     def set_single_click(self, checked):

@@ -51,6 +51,16 @@ enum CaptureShortcut: String, CaseIterable, Identifiable {
     @Published var showOnLaunch: Bool { didSet { defaults.set(showOnLaunch, forKey: "window.showOnLaunch") } }
     @Published var showInDock: Bool { didSet { defaults.set(showInDock, forKey: "window.showInDock") } }
 
+    func shouldOpenInitialWindow() -> Bool {
+        if showOnLaunch { return true }
+        let key = "window.openedFirstLaunch"
+        guard defaults.object(forKey: key) == nil else { return false }
+        defaults.set(true, forKey: key)
+        let previousKeys = ["window.showOnLaunch", "window.showInDock", "reading.sourceLanguage",
+                            "capture.shortcut", "notebook.entries.v1", "notebook.activity.v1"]
+        return previousKeys.allSatisfy { defaults.object(forKey: $0) == nil }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         language = ReadingLanguage(rawValue: defaults.string(forKey: "reading.sourceLanguage") ?? "") ?? .auto
