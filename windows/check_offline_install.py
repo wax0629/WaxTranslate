@@ -20,7 +20,7 @@ def main():
         reader.show()
         for code, source, expected in (("en", "Thank you.", "谢"), ("zh", "谢谢你。", "thank")):
             assert translation_dir(code).is_relative_to(BUNDLED_MODELS)
-            reader.set_source_language(code)
+            reader.set_source_language("")
             reader.input.setPlainText(source)
             reader.translate_text()
             deadline = time.monotonic() + 45

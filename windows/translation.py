@@ -8,6 +8,7 @@ from threading import Lock
 import ctranslate2
 import sentencepiece
 
+from card_policy import chinese_context
 from install_model import MODELS, file_identity, translation_dir
 from languages import HANGUL, NAMES, SHORT_CYRILLIC, SUPPORTED, detect_source
 from lexicon import lookup_entry
@@ -226,8 +227,12 @@ def translate_text(text, stop, source_code=""):
     for part in paragraphs:
         if stop.is_set():
             raise CancelledError()
-        if any(c.isalpha() for c in part):
-            result.append(translate(Passage(part, source_code=source_code))[1])
-        else:
+        if not any(c.isalpha() for c in part):
             result.append(part)
+            continue
+        passage = Passage(part, source_code=source_code)
+        if source_code == "zh" or (not source_code and chinese_context(passage)):
+            result.append(translate_leg(passage, "zh").text)
+        else:
+            result.append(translate(passage)[1])
     return "".join(result)

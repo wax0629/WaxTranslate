@@ -196,9 +196,16 @@ def check(root, shortcut=None):
             launched = wt.DWORD()
             user.GetWindowThreadProcessId(window, ctypes.byref(launched))
             pid = launched.value
-            executable = subprocess.check_output(["powershell.exe", "-NoProfile", "-Command",
-                                                  f"(Get-Process -Id {pid}).Path"], text=True).strip()
-            assert Path(executable).samefile(root / "runtime/pythonw.exe"), executable
+            handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+            assert handle
+            try:
+                length = wt.DWORD(32768)
+                path = ctypes.create_unicode_buffer(length.value)
+                kernel.QueryFullProcessImageNameW.argtypes = (wt.HANDLE, wt.DWORD, wt.LPWSTR, ctypes.POINTER(wt.DWORD))
+                assert kernel.QueryFullProcessImageNameW(handle, 0, path, ctypes.byref(length))
+                assert Path(path.value).samefile(root / "runtime/pythonw.exe"), path.value
+            finally:
+                kernel.CloseHandle(handle)
         else:
             launcher_pid = launch(command if login else [exe])
             pid, = wait_for(lambda: python_children(launcher_pid), "the launcher's child")
