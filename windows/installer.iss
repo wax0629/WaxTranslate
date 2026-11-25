@@ -26,7 +26,7 @@ WizardStyle=modern
 Source: "{#AppSource}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\WaxTranslate"; Filename: "{app}\WaxTranslate.exe"; Parameters: "--show"
+Name: "{userprograms}\WaxTranslate"; Filename: "{app}\WaxTranslate.exe"; Parameters: "--show"
 
 [Run]
 Filename: "{app}\WaxTranslate.exe"; Parameters: "--show"; Description: "Open WaxTranslate"; Flags: nowait postinstall skipifsilent

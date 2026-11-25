@@ -5,8 +5,9 @@ $setupFile = (Resolve-Path $Setup).Path
 $target = Join-Path $env:RUNNER_TEMP '离线安装 WaxTranslate'
 $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'offline-user'
 $rules = @()
+$installLog = Join-Path $env:RUNNER_TEMP 'wax-offline-install.log'
 function Install-App {
-    $p = Start-Process $setupFile -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$target`"" -Wait -PassThru
+    $p = Start-Process $setupFile -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=`"$installLog`" /DIR=`"$target`"" -Wait -PassThru
     if ($p.ExitCode) { throw "Installer exited $($p.ExitCode)" }
 }
 try {
@@ -15,10 +16,12 @@ try {
     }
     Install-App
     $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'WaxTranslate.lnk'
-    $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
-    if ($link.TargetPath -ne "$target\WaxTranslate.exe" -or $link.Arguments -ne '--show') { throw 'Missing installed Start menu shortcut' }
+    if (-not (Test-Path $shortcut)) {
+        Select-String -Path $installLog -Pattern 'shortcut|\.lnk|\.exe|install mode' | Select-Object -Last 25
+        throw "Missing Start menu shortcut at $shortcut"
+    }
     $env:PYTHONUTF8 = '1'
-    & "$target\runtime\python.exe" windows\check_launcher.py $target --installed
+    & "$target\runtime\python.exe" windows\check_launcher.py $target $shortcut
     if ($LASTEXITCODE) { throw 'Installed launcher failed' }
     & "$target\runtime\python.exe" windows\check_offline_install.py
     if ($LASTEXITCODE) { throw 'Offline reading failed' }
