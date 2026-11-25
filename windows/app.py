@@ -948,7 +948,7 @@ def main():
     apply_theme(app)
     window = Window()
     activation.activated.connect(window.open_home)
-    if not window.tray.isVisible():
+    if "--show" in sys.argv[1:] or not window.tray.isVisible():
         window.show()
     return app.exec()
 

@@ -12,13 +12,14 @@ internal static class Launcher
     [STAThread]
     private static int Main(string[] args)
     {
+        bool show = args.Length == 1 && args[0] == "--show";
         bool background = args.Length == 1 && args[0] == "--background";
         string root = AppDomain.CurrentDomain.BaseDirectory;
         string python = Path.Combine(root, "runtime", "pythonw.exe");
         string script = Path.Combine(root, "windows", "app.py");
         try
         {
-            string arguments = "\"" + script + "\"" + (background ? " --background" : "");
+            string arguments = "\"" + script + "\"" + (background ? " --background" : show ? " --show" : "");
             Process.Start(new ProcessStartInfo(python, arguments) {
                 UseShellExecute = false, WorkingDirectory = root
             });
@@ -27,7 +28,7 @@ internal static class Launcher
         catch (Exception error)
         {
             if (!background)
-                MessageBox.Show("请完整解压便携包后再启动。\n" + error.Message, "WaxTranslate");
+                MessageBox.Show("请重新安装 WaxTranslate 或完整解压便携包后再启动。\n" + error.Message, "WaxTranslate");
             return 1;
         }
     }

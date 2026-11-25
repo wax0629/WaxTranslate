@@ -139,7 +139,7 @@ def verify_frame(window):
         user.SetCursorPos(old.x, old.y)
 
 
-def check(root):
+def check(root, installed=False):
     from instance import EVENT_NAME
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication, QSystemTrayIcon
@@ -188,19 +188,20 @@ def check(root):
         prefs.sync()
         assert prefs.status() == QSettings.NoError
         taskbar_visible = show_taskbar is not False or not has_tray
-        launcher_pid = launch(command if login else [exe])
+        start_visible = installed and not login and show_taskbar is None
+        launcher_pid = launch(command if login else [exe, "--show"] if start_visible else [exe])
         pid, = wait_for(lambda: python_children(launcher_pid), "the launcher's child")
         process = kernel.OpenProcess(0x00100001, False, pid)  # SYNCHRONIZE | PROCESS_TERMINATE
         assert process
         try:
             wait_for(lambda: python_children(pid), "the app's background gesture listener")
-            if has_tray:
-                assert not visible_main(), "Cold startup showed the main window"
+            if has_tray and not start_visible:
+                assert not visible_main(), "Cold background startup showed the main window"
             else:
                 wait_for(visible_main, "visible fallback without a system tray")
             repeat = launch(command)
             wait_for(lambda: not python_children(repeat), "the redundant background launch to exit")
-            if has_tray:
+            if has_tray and not start_visible:
                 assert not visible_main(), "Repeated login launch raised the hidden app"
             launch([exe])
             window = wait_for(visible_main, "the manually activated window")
@@ -247,4 +248,4 @@ def check(root):
 
 if __name__ == "__main__":
     with TemporaryDirectory() as profile, patch.dict(os.environ, {"LOCALAPPDATA": profile}):
-        check(Path(sys.argv[1]))
+        check(Path(sys.argv[1]), installed="--installed" in sys.argv[2:])

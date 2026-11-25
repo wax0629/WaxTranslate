@@ -15,7 +15,7 @@ permissions:
 jobs:
   desktop:
     runs-on: windows-2025
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,6 +30,20 @@ jobs:
           $target = Join-Path $env:RUNNER_TEMP '便携测试 Windows x64'
           [IO.Compression.ZipFile]::ExtractToDirectory((Resolve-Path dist\WaxTranslate-Windows-x64.zip), $target)
           "PORTABLE_APP=$target\WaxTranslate" >> $env:GITHUB_ENV
+      - name: Build per-user offline installer
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          & $compiler "/DAppSource=$env:PORTABLE_APP" "/DOutputDir=$pwd\dist" windows\installer.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Install, translate with outbound traffic blocked, then reinstall and uninstall
+        shell: pwsh
+        run: .\windows\check-offline-installer.ps1 -Setup dist\WaxTranslate-Windows-x64-Setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WaxTranslate-Windows-x64-Setup
+          path: dist/WaxTranslate-Windows-x64-Setup.exe
+          compression-level: 0
       - name: Verify the actual launcher and repeat activation
         shell: pwsh
         run: |
