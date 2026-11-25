@@ -139,7 +139,7 @@ def verify_frame(window):
         user.SetCursorPos(old.x, old.y)
 
 
-def check(root):
+def check(root, shortcut=None):
     from instance import EVENT_NAME
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication, QSystemTrayIcon
@@ -188,19 +188,38 @@ def check(root):
         prefs.sync()
         assert prefs.status() == QSettings.NoError
         taskbar_visible = show_taskbar is not False or not has_tray
-        launcher_pid = launch(command if login else [exe])
-        pid, = wait_for(lambda: python_children(launcher_pid), "the launcher's child")
+        start_visible = bool(shortcut and not login and show_taskbar is None)
+        if start_visible:
+            # ShellExecute resolves the installed .lnk, including its Unicode path and arguments.
+            os.startfile(shortcut)
+            window = wait_for(visible_main, "visible first window from the installed shortcut")
+            launched = wt.DWORD()
+            user.GetWindowThreadProcessId(window, ctypes.byref(launched))
+            pid = launched.value
+            handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+            assert handle
+            try:
+                length = wt.DWORD(32768)
+                path = ctypes.create_unicode_buffer(length.value)
+                kernel.QueryFullProcessImageNameW.argtypes = (wt.HANDLE, wt.DWORD, wt.LPWSTR, ctypes.POINTER(wt.DWORD))
+                assert kernel.QueryFullProcessImageNameW(handle, 0, path, ctypes.byref(length))
+                assert Path(path.value).samefile(root / "runtime/pythonw.exe"), path.value
+            finally:
+                kernel.CloseHandle(handle)
+        else:
+            launcher_pid = launch(command if login else [exe])
+            pid, = wait_for(lambda: python_children(launcher_pid), "the launcher's child")
         process = kernel.OpenProcess(0x00100001, False, pid)  # SYNCHRONIZE | PROCESS_TERMINATE
         assert process
         try:
             wait_for(lambda: python_children(pid), "the app's background gesture listener")
-            if has_tray:
-                assert not visible_main(), "Cold startup showed the main window"
+            if has_tray and not start_visible:
+                assert not visible_main(), "Cold background startup showed the main window"
             else:
                 wait_for(visible_main, "visible fallback without a system tray")
             repeat = launch(command)
             wait_for(lambda: not python_children(repeat), "the redundant background launch to exit")
-            if has_tray:
+            if has_tray and not start_visible:
                 assert not visible_main(), "Repeated login launch raised the hidden app"
             launch([exe])
             window = wait_for(visible_main, "the manually activated window")
@@ -247,4 +266,4 @@ def check(root):
 
 if __name__ == "__main__":
     with TemporaryDirectory() as profile, patch.dict(os.environ, {"LOCALAPPDATA": profile}):
-        check(Path(sys.argv[1]))
+        check(Path(sys.argv[1]), sys.argv[2] if len(sys.argv) > 2 else None)

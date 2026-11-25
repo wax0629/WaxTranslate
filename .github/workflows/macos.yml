@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'Sources/**'
+      - 'macos/**'
       - 'Tests/**'
       - 'Assets/Lexicon/**'
       - 'Assets/Editorial/**'
@@ -16,6 +17,7 @@ on:
     branches: [main]
     paths:
       - 'Sources/**'
+      - 'macos/**'
       - 'Tests/**'
       - 'Assets/Lexicon/**'
       - 'Package.swift'
@@ -31,7 +33,7 @@ permissions:
 jobs:
   native:
     runs-on: macos-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Select an SDK that supports attributed translation
@@ -58,6 +60,7 @@ jobs:
       - name: Record toolchain
         run: |
           sw_vers
+          uname -m
           swift --version
           xcrun --show-sdk-version
       - name: OCR, persistence, reading and glossary regressions
@@ -81,3 +84,18 @@ jobs:
           path: card-layout-artifacts
       - name: Build release
         run: swift build -c release -j 2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build universal offline installer
+        run: |
+          python3 -m pip install cmake==3.31.6
+          python3 macos/package.py
+      - name: Install the DMG and translate using the native offline engine
+        run: ./scripts/check-macos-installer.sh dist/WaxTranslate-macOS-Universal-test.dmg --engine-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WaxTranslate-macOS-Universal-test
+          path: dist/WaxTranslate-macOS-Universal-test.dmg
+          compression-level: 0

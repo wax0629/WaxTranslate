@@ -25,7 +25,7 @@ struct TranslationRequest: Identifiable, Equatable {
         translationLanguage = request?.target ?? "zh-Hans"
         translation = ""
         busy = true
-        status = "正在翻译…首次使用时可按系统提示下载语言包。"
+        status = "正在本机翻译…"
     }
 
     func cancel() {
@@ -40,7 +40,7 @@ struct TranslationRequest: Identifiable, Equatable {
         busy = false
         self.request = nil
         switch result {
-        case .success(let output): translation = TranslationOutput.normalize(output, target: request.target); status = "译文已更新 · Apple 本机翻译"
+        case .success(let output): translation = TranslationOutput.normalize(output, target: request.target); status = "译文已更新 · 本机翻译"
         case .failure: status = "翻译未完成。请检查语言包后重试，也可在设置中选择源语言。"
         }
     }
@@ -54,6 +54,18 @@ struct TranslationRunner: View {
     @State private var configuration: TranslationSession.Configuration?
 
     var body: some View {
+        if let bundled = BundledTranslation(source: request.source) {
+            Color.clear.frame(width: 0, height: 0).task(id: request.id) {
+                do {
+                    let text = try await bundled.plain(request.text)
+                    try Task.checkCancellation()
+                    completion(request, .success(text))
+                } catch { if !Task.isCancelled { completion(request, .failure(error)) } }
+            }
+        } else { systemTranslation }
+    }
+
+    private var systemTranslation: some View {
         Color.clear.frame(width: 0, height: 0)
             .onAppear {
                 configuration = TranslationSession.Configuration(source: Locale.Language(identifier: request.source),

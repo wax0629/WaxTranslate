@@ -102,7 +102,7 @@ import Combine
                 let recent = notebook.recent.first(where: { $0.word == ProcessInfo.processInfo.arguments[index + 1] }) {
             present(recent.passage.value, at: CGPoint(x: NSScreen.main?.visibleFrame.midX ?? 400, y: NSScreen.main?.visibleFrame.midY ?? 400), focus: true)
         }
-        else if preferences.showOnLaunch || ProcessInfo.processInfo.arguments.contains("--show") { showLibrary() }
+        else if preferences.shouldOpenInitialWindow() || ProcessInfo.processInfo.arguments.contains("--show") { showLibrary() }
         if !testHover || ProcessInfo.processInfo.arguments.contains("--test-hover-series") {
             TranslationWarmup.start()
             if preferences.shortcut != .disabled, captureAccess() {

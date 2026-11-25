@@ -263,7 +263,7 @@ struct SettingsPage: View {
                     ForEach(ReadingLanguage.allCases.filter { $0 != .auto }) { language in
                         languageRow(language)
                     }
-                    Text("语言包由 Apple 提供，下载后可在本机使用；以当前系统显示的可用状态为准。").font(.caption).foregroundStyle(DeskTheme.muted)
+                    Text(BundledTranslation(source: "en") == nil ? "语言包由 Apple 提供，可下载到本机使用。" : "安装包已包含英中双向翻译。其他语言可按需下载到本机。").font(.caption).foregroundStyle(DeskTheme.muted)
                 }
                 BookRule()
                 VStack(alignment: .leading, spacing: 13) {
@@ -329,6 +329,10 @@ struct SettingsPage: View {
         captureAllowed = CGPreflightScreenCaptureAccess()
         let availability = LanguageAvailability()
         for language in ReadingLanguage.allCases where language != .auto {
+            if BundledTranslation(source: language.rawValue) != nil {
+                states[language.rawValue] = .installed
+                continue
+            }
             let status = await availability.status(from: Locale.Language(identifier: language.rawValue),
                 to: Locale.Language(identifier: language == .chinese ? "en" : "zh-Hans"))
             guard !Task.isCancelled else { return }

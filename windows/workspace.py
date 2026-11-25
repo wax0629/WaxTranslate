@@ -175,16 +175,16 @@ class TextWorkspace(QWidget):
         self.panes.setSpacing(0)
         spread.addLayout(self.panes, 1)
         self.input = ReadingEditor(objectName="input")
-        self.input.setPlaceholderText("在这里粘贴要译成中文的原文…")
+        self.input.setPlaceholderText("在这里粘贴原文…")
         self.input.setAccessibleName("原文")
         self.output = QPlainTextEdit(objectName="translation")
-        self.output.setAccessibleName("简体中文译文")
+        self.output.setAccessibleName("译文")
         self.output.setReadOnly(True)
         self.binding = QFrame(objectName="binding")
         self.binding.setMinimumSize(1, 1)
         self.headers = []
         for name, editor, panel in (("自动识别", self.input, "editor"),
-                                    ("简体中文", self.output, "translationPane")):
+                                    ("中文 / 英文", self.output, "translationPane")):
             frame = QFrame(objectName=panel)
             box = QVBoxLayout(frame)
             box.setContentsMargins(18, 10, 18, 12)
@@ -214,6 +214,7 @@ class TextWorkspace(QWidget):
                 header.addWidget(self.example)
                 header.addWidget(self.lookup_hint)
             else:
+                self.target_label = language
                 self.copy = QPushButton("复制译文")
                 self.copy.setProperty("role", "quiet")
                 self.copy.setToolTip("复制整段译文 (Ctrl+Shift+C)")
@@ -260,7 +261,8 @@ class TextWorkspace(QWidget):
 
     def set_source_language(self, code):
         self.source_code = self.input.source_code = code
-        self.source_label.setText(NAMES.get(code, "自动识别"))
+        self.source_label.setText("中文" if code == "zh" else NAMES.get(code, "自动识别"))
+        self.target_label.setText({"zh": "英语", "": "中文 / 英文"}.get(code, "简体中文"))
         self.reset_result()
 
     def set_single_click(self, checked):

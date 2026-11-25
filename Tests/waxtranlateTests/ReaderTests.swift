@@ -423,6 +423,14 @@ private func expect(_ condition: Bool, line: Int = #line) throws {
         defer { defaults.removePersistentDomain(forName: domain) }
         let fresh = Preferences(defaults: defaults)
         try expect(fresh.shortcut == .option && !fresh.showInDock)
+        try expect(fresh.shouldOpenInitialWindow())
+        try expect(!Preferences(defaults: defaults).shouldOpenInitialWindow())
+        defaults.removeObject(forKey: "window.openedFirstLaunch")
+        fresh.showOnLaunch = false
+        try expect(!Preferences(defaults: defaults).shouldOpenInitialWindow())
+        fresh.showOnLaunch = true
+        try expect(Preferences(defaults: defaults).shouldOpenInitialWindow())
+
         fresh.shortcut = .controlOption
         fresh.showInDock = true
         let reloaded = Preferences(defaults: defaults)
